@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>GitHub Lines の設定</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="head">
+      <h1>GitHub Lines</h1>
+      <p class="lede">
+        GitHub のファイル一覧に、ディレクトリ内での行数の割合バーとツリーマップを表示します。
+      </p>
+    </header>
+
+    <section class="card">
+      <h2>アクセストークン</h2>
+      <p class="hint">
+        未設定でも public リポジトリでは動作しますが、GitHub API のレート制限が
+        <strong>60 回/時</strong> になります。トークンを登録すると
+        <strong>5,000 回/時</strong> になり、private リポジトリでも使えます。
+      </p>
+      <label class="field">
+        <span class="label">Personal Access Token</span>
+        <input id="token" type="password" autocomplete="off" spellcheck="false"
+               placeholder="github_pat_… または ghp_…">
+      </label>
+      <p class="hint">
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">
+          Fine-grained token を作成
+        </a>
+        — 必要な権限は <code>Repository permissions → Contents: Read-only</code> のみです。
+        トークンはこの端末の <code>chrome.storage.local</code> にのみ保存され、外部には送信しません。
+      </p>
+      <p class="status" id="token-status" data-tone="idle"></p>
+      <button class="btn" id="verify" type="button">トークンを検証</button>
+    </section>
+
+    <section class="card">
+      <h2>閾値</h2>
+      <p class="hint">1 ファイルの行数がこの値を超えたら色を変えて警告します。</p>
+      <div class="row">
+        <label class="field narrow">
+          <span class="label">注意 (黄)</span>
+          <input id="warnLines" type="number" min="1" step="50">
+        </label>
+        <label class="field narrow">
+          <span class="label">警告 (赤)</span>
+          <input id="dangerLines" type="number" min="1" step="50">
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>表示</h2>
+      <label class="check">
+        <input id="showInlineBars" type="checkbox">
+        <span>ファイル一覧に割合バーを表示する</span>
+      </label>
+      <label class="check">
+        <input id="showTreemapButton" type="checkbox">
+        <span>ツリーマップのボタンを表示する</span>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>行数のカウント</h2>
+      <label class="check">
+        <input id="fetchExactLines" type="checkbox">
+        <span>実際の行数を取得する（オフにするとバイト数からの推定のみ）</span>
+      </label>
+      <div class="row">
+        <label class="field narrow">
+          <span class="label">1 画面あたりの取得上限</span>
+          <input id="maxExactFetch" type="number" min="0" step="50">
+        </label>
+        <label class="field narrow">
+          <span class="label">並列数</span>
+          <input id="concurrency" type="number" min="1" max="16" step="1">
+        </label>
+      </div>
+      <p class="hint">
+        取得した行数は blob SHA をキーにキャッシュされます。git の blob SHA は内容のハッシュなので、
+        ブランチやコミットが変わっても内容が同じファイルは再取得されません。
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>除外</h2>
+      <label class="check">
+        <input id="respectGitattributes" type="checkbox">
+        <span>
+          <code>.gitattributes</code> の <code>linguist-generated</code> /
+          <code>linguist-vendored</code> を尊重する
+        </span>
+      </label>
+      <label class="check">
+        <input id="excludeGenerated" type="checkbox">
+        <span>下記のパターンに一致するファイルを除外する</span>
+      </label>
+      <label class="field">
+        <span class="label">除外パターン（1 行に 1 つ、glob）</span>
+        <textarea id="excludePatterns" rows="12" spellcheck="false"></textarea>
+      </label>
+      <p class="hint">
+        バイナリ（画像・フォント・アーカイブ等）は拡張子で判定して常に除外されます。
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>キャッシュ</h2>
+      <p class="hint" id="cache-stats">…</p>
+      <button class="btn" id="clear-cache" type="button">キャッシュを削除</button>
+    </section>
+
+    <footer class="foot">
+      <button class="btn primary" id="save" type="button">保存</button>
+      <button class="btn" id="reset" type="button">初期設定に戻す</button>
+      <span class="status" id="save-status" data-tone="idle"></span>
+    </footer>
+  </main>
+
+  <script src="../lib/namespace.js"></script>
+  <script src="../lib/patterns.js"></script>
+  <script src="../lib/settings.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

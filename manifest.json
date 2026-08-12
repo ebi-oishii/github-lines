@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "GitHub Lines",
+  "version": "0.1.0",
+  "description": "GitHub のファイル一覧に行数の割合バーとツリーマップを表示し、肥大化したファイルを一目で見つけられるようにします。",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://github.com/*",
+    "https://api.github.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": [
+        "src/lib/namespace.js",
+        "src/lib/patterns.js",
+        "src/lib/settings.js",
+        "src/content/util.js",
+        "src/content/page.js",
+        "src/content/store.js",
+        "src/content/inline.js",
+        "src/content/treemap.js",
+        "src/content/main.js"
+      ],
+      "css": ["src/styles/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "src/options/options.html",
+  "action": {
+    "default_title": "GitHub Lines の設定",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

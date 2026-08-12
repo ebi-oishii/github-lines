@@ -1,0 +1,401 @@
+/* All injected UI. Colours follow GitHub's own theme tokens where they exist,
+   with hardcoded fallbacks so the extension still looks right if GitHub
+   renames them. */
+
+:root {
+  --ghl-ok: #0969da;
+  --ghl-warn: #bf8700;
+  --ghl-danger: #cf222e;
+  --ghl-dir: #8250df;
+  --ghl-muted: #8c959f;
+  --ghl-track: rgba(140, 149, 159, 0.22);
+  --ghl-surface: var(--bgColor-default, var(--color-canvas-default, #ffffff));
+  --ghl-surface-alt: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  --ghl-border: var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  --ghl-fg: var(--fgColor-default, var(--color-fg-default, #1f2328));
+  --ghl-fg-muted: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ghl-ok: #4493f8;
+    --ghl-warn: #d29922;
+    --ghl-danger: #f85149;
+    --ghl-dir: #a371f7;
+    --ghl-muted: #8b949e;
+    --ghl-track: rgba(139, 148, 158, 0.24);
+  }
+}
+
+/* GitHub's explicit theme switch wins over the OS preference. */
+html[data-color-mode='light'] {
+  --ghl-ok: #0969da;
+  --ghl-warn: #bf8700;
+  --ghl-danger: #cf222e;
+  --ghl-dir: #8250df;
+  --ghl-track: rgba(140, 149, 159, 0.22);
+}
+html[data-color-mode='dark'] {
+  --ghl-ok: #4493f8;
+  --ghl-warn: #d29922;
+  --ghl-danger: #f85149;
+  --ghl-dir: #a371f7;
+  --ghl-track: rgba(139, 148, 158, 0.24);
+}
+
+/* ------------------------------------------------------------- row cells */
+
+.ghl-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 11px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ghl-fg-muted);
+  white-space: nowrap;
+}
+
+.ghl-bar {
+  display: block;
+  width: 72px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ghl-track);
+  overflow: hidden;
+}
+
+.ghl-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ghl-ok);
+  transition: width 220ms ease, background-color 220ms ease;
+}
+
+.ghl-cell[data-severity='warn'] .ghl-bar-fill { background: var(--ghl-warn); }
+.ghl-cell[data-severity='danger'] .ghl-bar-fill { background: var(--ghl-danger); }
+.ghl-cell[data-severity='dir'] .ghl-bar-fill { background: var(--ghl-dir); }
+
+.ghl-cell[data-severity='danger'] .ghl-num {
+  color: var(--ghl-danger);
+  font-weight: 600;
+}
+.ghl-cell[data-severity='warn'] .ghl-num { color: var(--ghl-warn); }
+
+.ghl-num {
+  min-width: 48px;
+  text-align: right;
+}
+
+.ghl-pct {
+  min-width: 30px;
+  text-align: right;
+  opacity: 0.72;
+}
+
+.ghl-cell[data-state='excluded'] .ghl-num,
+.ghl-cell[data-state='unknown'] .ghl-num {
+  min-width: 0;
+  font-style: italic;
+  opacity: 0.6;
+}
+
+.ghl-flash {
+  animation: ghl-flash 1.2s ease;
+}
+@keyframes ghl-flash {
+  0%, 100% { background: transparent; }
+  25% { background: color-mix(in srgb, var(--ghl-ok) 22%, transparent); }
+}
+
+/* Keep GitHub's filename from eating the whole cell, so our bar can sit at a
+   fixed right edge and stay aligned down the column. Scoped with :has() so we
+   only touch rows we have actually injected into. */
+.react-directory-filename-column:has(> .ghl-cell) {
+  display: flex;
+  align-items: center;
+}
+.react-directory-filename-column:has(> .ghl-cell) > .overflow-hidden {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .ghl-bar { width: 42px; }
+  .ghl-pct { display: none; }
+}
+
+/* ------------------------------------------------------------ summary bar */
+
+.ghl-summary {
+  margin: 0 0 8px;
+  padding: 8px 12px 9px;
+  border: 1px solid var(--ghl-border);
+  border-radius: 6px;
+  background: var(--ghl-surface-alt);
+  font-size: 12px;
+  color: var(--ghl-fg);
+}
+
+.ghl-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.ghl-summary-title {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ghl-fg-muted);
+  flex: 0 0 auto;
+}
+
+.ghl-summary-stats {
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghl-spacer { flex: 1 1 auto; }
+
+.ghl-summary-status {
+  font-size: 11px;
+  color: var(--ghl-fg-muted);
+  white-space: nowrap;
+}
+.ghl-summary-status[data-tone='warn'] { color: var(--ghl-warn); }
+.ghl-summary-status[data-tone='error'] { color: var(--ghl-danger); }
+
+.ghl-btn {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ghl-fg);
+  background: var(--ghl-surface);
+  border: 1px solid var(--ghl-border);
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.ghl-btn:hover { background: var(--ghl-surface-alt); }
+.ghl-btn-quiet { background: transparent; }
+
+.ghl-stack {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--ghl-track);
+}
+
+.ghl-seg {
+  display: block;
+  height: 100%;
+  background: var(--ghl-ok);
+  box-shadow: inset -1px 0 0 var(--ghl-surface-alt);
+}
+.ghl-seg[data-alt='1'] { filter: brightness(1.28); }
+.ghl-seg[data-tone='warn'] { background: var(--ghl-warn); }
+.ghl-seg[data-tone='danger'] { background: var(--ghl-danger); }
+.ghl-seg[data-tone='dir'] { background: var(--ghl-dir); }
+.ghl-seg[data-tone='rest'] { background: var(--ghl-muted); opacity: 0.55; }
+.ghl-seg-clickable { cursor: pointer; }
+.ghl-seg-clickable:hover { filter: brightness(1.45); }
+
+.ghl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ghl-fg-muted);
+}
+
+.ghl-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghl-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--ghl-ok);
+  flex: 0 0 auto;
+}
+.ghl-legend-item[data-tone='warn'] .ghl-legend-dot { background: var(--ghl-warn); }
+.ghl-legend-item[data-tone='danger'] .ghl-legend-dot { background: var(--ghl-danger); }
+.ghl-legend-item[data-tone='dir'] .ghl-legend-dot { background: var(--ghl-dir); }
+.ghl-legend-item[data-tone='rest'] .ghl-legend-dot { background: var(--ghl-muted); }
+
+/* ---------------------------------------------------------------- modal */
+
+.ghl-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(1, 4, 9, 0.6);
+  backdrop-filter: blur(2px);
+}
+
+.ghl-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 100%);
+  height: min(82vh, 900px);
+  background: var(--ghl-surface);
+  border: 1px solid var(--ghl-border);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(1, 4, 9, 0.45);
+  overflow: hidden;
+  color: var(--ghl-fg);
+  font-size: 12px;
+}
+
+.ghl-modal-head,
+.ghl-modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  flex: 0 0 auto;
+}
+.ghl-modal-head { border-bottom: 1px solid var(--ghl-border); }
+.ghl-modal-foot {
+  border-top: 1px solid var(--ghl-border);
+  background: var(--ghl-surface-alt);
+}
+
+.ghl-tm-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ghl-crumb {
+  padding: 2px 4px;
+  font: inherit;
+  color: var(--ghl-ok);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.ghl-crumb:hover { background: var(--ghl-track); }
+.ghl-crumb-current {
+  color: var(--ghl-fg);
+  font-weight: 600;
+  cursor: default;
+}
+.ghl-crumb-sep { color: var(--ghl-fg-muted); }
+
+.ghl-tm-stats {
+  font-variant-numeric: tabular-nums;
+  color: var(--ghl-fg-muted);
+  white-space: nowrap;
+}
+
+.ghl-tm-status {
+  font-size: 11px;
+  color: var(--ghl-fg-muted);
+  white-space: nowrap;
+}
+
+.ghl-tm-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  margin: 8px;
+  overflow: hidden;
+}
+
+.ghl-tm-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ghl-fg-muted);
+}
+
+.ghl-tm-tile {
+  position: absolute;
+  border-radius: 3px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.ghl-tm-group {
+  border: 1px solid var(--ghl-border);
+  background: var(--ghl-surface-alt);
+}
+
+.ghl-tm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--ghl-fg-muted);
+  background: var(--ghl-track);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.ghl-tm-leaf {
+  display: flex;
+  align-items: flex-start;
+  padding: 3px 5px;
+  border: 1px solid var(--ghl-surface);
+  background: color-mix(in srgb, var(--ghl-ok) 42%, transparent);
+}
+.ghl-tm-leaf[data-severity='warn'] { background: color-mix(in srgb, var(--ghl-warn) 52%, transparent); }
+.ghl-tm-leaf[data-severity='danger'] { background: color-mix(in srgb, var(--ghl-danger) 62%, transparent); }
+.ghl-tm-leaf[data-severity='dir'] { background: color-mix(in srgb, var(--ghl-dir) 42%, transparent); }
+.ghl-tm-leaf[data-kind='aggregate'] { background: var(--ghl-track); }
+
+.ghl-tm-clickable { cursor: pointer; }
+.ghl-tm-clickable:hover { outline: 2px solid var(--ghl-fg); outline-offset: -2px; }
+
+.ghl-tm-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--ghl-fg);
+}
+
+.ghl-tm-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghl-tm-value {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
