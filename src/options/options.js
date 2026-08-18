@@ -89,8 +89,24 @@ async function ghGet(path, headers) {
     status: res.status,
     limit: res.headers.get('x-ratelimit-limit'),
     remaining: res.headers.get('x-ratelimit-remaining'),
+    // Classic tokens report their scopes here. Fine-grained tokens do not send
+    // the header at all, which is how the two are told apart.
+    scopes: res.headers.get('x-oauth-scopes'),
     body: res.ok ? await res.json().catch(() => null) : null,
   };
+}
+
+/* Classic tokens have no read-only scope for repository contents: `repo` and
+   `public_repo` both grant write. Worth saying out loud, because this extension
+   only ever reads. */
+const WRITE_SCOPES = new Set(['repo', 'public_repo', 'delete_repo', 'repo:invite', 'workflow']);
+
+function writeGranting(scopeHeader) {
+  if (!scopeHeader) return null; // fine-grained: no scope header
+  return scopeHeader
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s && (WRITE_SCOPES.has(s) || s.startsWith('write:') || s.startsWith('admin:')));
 }
 
 /* Asks GitHub which owners this token can actually reach, so the routing
@@ -165,10 +181,22 @@ async function verifyRow(row) {
       ? `対象: ${found.slice(0, 4).join(', ')}${found.length > 4 ? ` ほか${found.length - 4}件` : ''}`
       : '対象のオーナーを特定できませんでした — 手動で入力してください';
 
+    const writable = writeGranting(user.scopes);
+    let kindNote = '';
+    let tone = found.length ? 'ok' : 'error';
+    if (writable === null) {
+      kindNote = ' / fine-grained';
+    } else if (writable.length) {
+      kindNote = ` / ⚠ 書き込み権限を含みます（${writable.join(', ')}）`;
+      if (tone === 'ok') tone = 'warn';
+    } else {
+      kindNote = ' / classic（読み取りのみ）';
+    }
+
     setStatus(
       status,
-      `${login} として有効 — ${summary}（残り ${user.remaining}/${user.limit} 回/時）`,
-      found.length ? 'ok' : 'error'
+      `${login} として有効 — ${summary}（残り ${user.remaining}/${user.limit} 回/時）${kindNote}`,
+      tone
     );
   } catch (e) {
     setStatus(status, `確認に失敗しました: ${e.message}`, 'error');

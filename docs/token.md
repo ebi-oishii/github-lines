@@ -26,6 +26,29 @@
 > [「Each token is limited to access resources owned by a single user or organization」](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
 > です。この拡張が複数トークンに対応しているのは、まさにこの制約のためです。
 
+### 読み取り専用にできるのは fine-grained だけ
+
+Classic token には**リポジトリの内容を読み取り専用にする scope が存在しません**。
+`repo` は "read and write access to code"、`public_repo` も public に対する read/write で、
+どちらも書き込みを含みます（[scope 一覧](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)）。
+読み取り専用トークンは GitHub に長年 feature request が出ていますが、classic には実装されていません。
+
+| やりたいこと | 方法 |
+|---|---|
+| 読み取り専用にする | **fine-grained token（`Contents: Read-only`）一択。** org ごとに作って拡張に複数登録 |
+| org を横断して 1 つで済ませる | classic（`repo`）。ただし**書き込み権限も渡すことになる** |
+
+トレードオフはこの 2 つだけです。「org 横断」と「読み取り専用」は、
+GitHub の仕様上どちらか一方しか選べません。
+
+**この拡張自体は GET しか発行しません。** 書き込み権限を持つトークンを渡しても、
+拡張がリポジトリを変更することはありません。これは思想ではなく検証済みの事実で、
+スモークテストが「全 API リクエストが GET であること」を毎回確認しています
+（`scripts/smoke.mjs`）。
+
+また、オプション画面で「検証してオーナーを自動取得」を押すと、書き込み権限を含むトークンには
+`⚠ 書き込み権限を含みます（repo, workflow）` と警告が出ます。
+
 ## 1. GitHub でトークンを作る
 
 ### Fine-grained token の場合

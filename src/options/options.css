@@ -197,4 +197,8 @@ input:focus, textarea:focus {
 .status { font-size: 12px; }
 .status[data-tone="ok"] { color: var(--ok); }
 .status[data-tone="error"] { color: var(--danger); }
+.status[data-tone="warn"] { color: #9a6700; }
+@media (prefers-color-scheme: dark) {
+  .status[data-tone="warn"] { color: #d29922; }
+}
 .status[data-tone="idle"] { color: var(--fg-muted); }

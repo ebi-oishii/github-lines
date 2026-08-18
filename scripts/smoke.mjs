@@ -141,7 +141,7 @@ try {
     const url = req.url();
     // /_private/browser/stats is github.com's own telemetry, not ours.
     if (url.startsWith('https://api.github.com/') && !url.includes('/_private/')) {
-      apiRequests.push(url);
+      apiRequests.push({ url, method: req.method() });
     }
   });
 
@@ -263,11 +263,20 @@ try {
   assert(realErrors.length === 0, `no page errors${realErrors.length ? ': ' + realErrors[0] : ''}`);
 
   const seen = new Set();
-  const duplicates = apiRequests.filter((u) => (seen.has(u) ? true : (seen.add(u), false)));
+  const duplicates = apiRequests.filter((r) => (seen.has(r.url) ? true : (seen.add(r.url), false)));
   assert(
     duplicates.length === 0,
     `no API request is made twice (${apiRequests.length} total)` +
-      (duplicates.length ? ` — repeated: ${duplicates[0]}` : '')
+      (duplicates.length ? ` — repeated: ${duplicates[0].url}` : '')
+  );
+
+  // Classic tokens have no read-only scope, so some users have no choice but to
+  // hand this a write-capable token. Prove it only ever reads.
+  const mutating = apiRequests.filter((r) => r.method !== 'GET');
+  assert(
+    mutating.length === 0,
+    `every API request is a GET (${apiRequests.length} checked)` +
+      (mutating.length ? ` — found ${mutating[0].method} ${mutating[0].url}` : '')
   );
 
   console.log(`\nscreenshots: ${path.relative(process.cwd(), OUT_DIR)}/`);
