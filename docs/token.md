@@ -3,24 +3,72 @@
 未設定でも public リポジトリでは動きますが、GitHub API のレート制限が **60 回/時**（IP 単位）です。
 トークンを登録すると **5,000 回/時** になり、private リポジトリでも使えるようになります。
 
+## 0. どちらの種類を使うか
+
+**Organization のリポジトリも見たいかどうかで変わります。** ここを間違えると
+「private だけ出ない」「org のリポジトリだけ出ない」という状態になります。
+
+| | Fine-grained token | Classic token |
+|---|---|---|
+| 対象にできる範囲 | **1 トークンにつき所有者 1 つだけ**（自分 *または* 1 つの org） | 自分のリポジトリ + **所属する全 org**（`repo` scope） |
+| 個人 + org を見たい | **org ごとにトークンが必要** → この拡張に複数登録する | 1 つで足りる |
+| org 側の許可 | 必要なことが多い（承認待ちになる） | org が classic を禁止していなければ不要 |
+| SAML SSO | 認可が必要 | 認可が必要 |
+| 権限の絞り込み | 細かい（Contents: Read-only だけにできる） | 粗い（`repo` は書き込みも含む） |
+
+- **所属 org がない、または個人リポジトリだけでいい** → Fine-grained（推奨。権限を最小にできる）
+- **複数の org のリポジトリを横断して見たい** → Classic が手っ取り早い。
+  ただし `repo` scope は書き込み権限も含むので、会社のポリシーで禁止されていることがあります
+- **会社の org を見たい** → まず org のポリシーを確認してください。
+  fine-grained のみ許可、classic のみ許可、どちらも承認制、というパターンがあります
+
+> GitHub の仕様上、fine-grained token は
+> [「Each token is limited to access resources owned by a single user or organization」](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+> です。この拡張が複数トークンに対応しているのは、まさにこの制約のためです。
+
 ## 1. GitHub でトークンを作る
 
-https://github.com/settings/personal-access-tokens/new （Fine-grained token）
+### Fine-grained token の場合
+
+https://github.com/settings/personal-access-tokens/new
 
 | 項目 | 設定 |
 |---|---|
 | Token name | 何でも可（例: `github-lines`） |
 | Expiration | 任意 |
-| Repository access | 使いたい範囲。`All repositories` か `Only select repositories` |
+| **Resource owner** | **ここが最重要。** 自分のアカウント、または対象の **Organization** を選ぶ |
+| Repository access | `All repositories` か `Only select repositories` |
 | **Permissions → Repository permissions → Contents** | **`Read-only`** ← これだけ |
 
 `Metadata: Read-only` は自動で付きます。他の権限は不要です。
 
-「Generate token」を押すと `github_pat_…` が表示されるのでコピーします。
-画面を離れると二度と表示されません。
+**Resource owner に org を選ぶと**、その org のリポジトリ用のトークンになります。
+自分の個人リポジトリは対象外になるので、両方見たい場合は**トークンを 2 つ作って**
+拡張に両方登録します（[複数アカウントを使い分ける](#複数アカウントを使い分ける)）。
 
-> Classic token（`ghp_…`）でも動きます。その場合の scope は `repo`、
-> public リポジトリだけでよければ `public_repo` です。
+Resource owner のドロップダウンに org が出てこない場合は、その org が fine-grained token を
+許可していません。org の管理者に確認するか、Classic token を使ってください。
+
+org が承認制の場合、作成したトークンは **`pending`（承認待ち）** になり、
+org のオーナーが承認するまで private リポジトリにはアクセスできません。
+（自分が org のオーナーなら自動承認されます。）
+
+### Classic token の場合
+
+https://github.com/settings/tokens/new
+
+| 項目 | 設定 |
+|---|---|
+| scope | `repo`（public だけでよければ `public_repo`） |
+
+これ 1 つで、自分のリポジトリと**所属する全 org** のリポジトリにアクセスできます。
+SAML SSO を使っている org がある場合は、作成後にトークン一覧で
+**「Configure SSO」→ 対象 org を Authorize** してください。これを忘れると 404 になります。
+
+---
+
+「Generate token」を押すとトークンが表示されるのでコピーします。
+画面を離れると二度と表示されません。
 
 ## 2. 拡張に登録する
 
@@ -28,8 +76,12 @@ https://github.com/settings/personal-access-tokens/new （Fine-grained token）
 2. **GitHub Lines** の「詳細」→ **拡張機能のオプション**
    （ツールバーのアイコンを右クリック →「オプション」でも開けます）
 3. **Personal Access Token** の欄に貼り付ける
-4. **「トークンを検証」** を押す → `有効です — 残り 4998/5000 回/時` と出れば OK
+4. **「検証してオーナーを自動取得」** を押す
+   → `ebi-oishii として有効 — 対象: ebi-oishii, my-org` のように出れば OK。
+   このトークンで見えるオーナーが自動で入ります
 5. **「保存」** を押す ← 検証しただけでは保存されません
+
+2 つ目以降のトークンは「＋ トークンを追加」で行を増やして同じことをします。
 
 保存すると、開いている GitHub のタブにも即座に反映されます。
 
@@ -59,11 +111,12 @@ public でしか試せない場合は、サマリー行の右端に出ていた
 | このトークンを使うオーナー | カンマ区切り（例: `ebi-oishii, my-org`） |
 | 既定 | どのオーナーにも一致しないときに使う 1 つ |
 
-**「検証してオーナーを自動取得」**を押すと、そのトークンのアカウント名と所属 Organization を
-GitHub に問い合わせて欄を埋めます。ラベルが空ならアカウント名が入ります。手作業は基本不要です。
+**「検証してオーナーを自動取得」**を押すと、**そのトークンで実際に見えるリポジトリの所有者**を
+GitHub に問い合わせて欄を埋めます。発行者のアカウント名ではなく実際の到達範囲を見るので、
+org を Resource owner にした fine-grained token でも正しく org 名が入ります。
 
-> Fine-grained token は Organization の一覧取得が許可されていないことがあります。
-> その場合はアカウント名だけが入るので、org 名は手で足してください。
+> 見えるリポジトリが 100 件を超える場合、最初の 100 件（最終更新順）からオーナーを拾います。
+> 足りなければ手で追記してください。
 
 ### 選ばれ方
 
@@ -92,31 +145,44 @@ GitHub に問い合わせて欄を埋めます。ラベルが空ならアカウ�
 同じリポジトリに対してトークンを回して枠を稼ぐようなことはしません
 （[規約上の理由](api-usage-and-terms.md#複数トークンの扱い)）。
 
-## Organization のリポジトリを見る場合
+## Organization のリポジトリが出ないとき
 
-社内 org 配下を見たいときは、ここで詰まりがちです。
+チェック順です。
 
-### Fine-grained token は org 側の許可が必要
+### 1. トークンの種類と Resource owner
 
-org が fine-grained token を許可していないと、Repository access に org のリポジトリが
-出てきません。org の Settings → Personal access tokens で許可されているか確認するか、
-承認申請が必要です。
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| org のリポジトリだけ出ない（個人のは出る） | fine-grained token の Resource owner が自分になっている | その org を Resource owner にしたトークンを別途作り、拡張に追加する |
+| Resource owner に org が出てこない | その org が fine-grained token を許可していない | org 管理者に確認、または Classic token（`repo`）を使う |
+| どの org のも出ない | Classic token の SSO 未認可 | トークン一覧で「Configure SSO」→ 対象 org を Authorize |
 
-許可が下りない場合、`Only select repositories` で自分がアクセスできるリポジトリだけを
-指定した token なら通ることがあります。それも駄目なら Classic token を試してください。
+fine-grained token は 1 つにつき所有者 1 つだけなので、
+**個人 + org(A) + org(B) を見たいならトークンは 3 つ**必要です。
+それぞれ拡張に登録し、「このトークンを使うオーナー」欄に対応する名前を入れてください
+（[複数アカウントを使い分ける](#複数アカウントを使い分ける)）。
 
-### SAML SSO が有効な org
+### 2. 承認待ちになっていないか
 
-Classic token の場合、トークン一覧でそのトークンの横にある
-**「Configure SSO」→ 対象 org を Authorize** をしないと 404 になります。
+org が承認制の場合、作ったトークンは `pending` のまま使えません。
+https://github.com/settings/personal-access-tokens で状態を確認してください。
+`Pending` と出ていれば、org のオーナーの承認待ちです。
+
+### 3. org のポリシーで禁止されていないか
+
+org 側の Settings → Third-party Access / Personal access tokens で、
+fine-grained や classic が制限されていることがあります。会社の org ではよくあります。
 
 ### 拡張側の表示
 
 | 表示 | 原因 |
 |---|---|
 | `private リポジトリ — 設定でトークンを登録してください` | トークン未設定 |
-| `リポジトリにアクセスできません（トークンの権限を確認）` | 権限不足、org 未許可、SSO 未認可のいずれか |
+| `リポジトリにアクセスできません（〇〇 の権限を確認）` | 括弧内のラベルのトークンで見えなかった。権限不足・org 未許可・承認待ち・SSO 未認可のいずれか |
 | `トークンが無効です — 設定を確認してください` | 期限切れ、失効、貼り間違い |
+
+括弧内が意図と違うトークンなら、そのリポジトリのオーナー名を正しいトークンの
+「このトークンを使うオーナー」欄に足してください。
 
 ## 保存場所とセキュリティ
 

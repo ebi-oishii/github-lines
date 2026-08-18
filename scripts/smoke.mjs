@@ -90,6 +90,25 @@ try {
 
     await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
     await page.fill('.token-row:nth-child(1) .token-value', process.env.GITHUB_TOKEN);
+
+    // Owner auto-discovery: asks GitHub which owners this token can reach.
+    await page.click('.token-row:nth-child(1) .token-verify');
+    await page.waitForFunction(
+      () => {
+        const s = document.querySelector('.token-row:nth-child(1) .token-status');
+        return s && s.textContent && !/確認中/.test(s.textContent);
+      },
+      { timeout: 20000 }
+    );
+    const verdict = await page.$eval('.token-row:nth-child(1) .token-status', (n) => n.textContent);
+    const discovered = await page.$eval('.token-row:nth-child(1) .token-owners', (n) => n.value);
+    const autoLabel = await page.$eval('.token-row:nth-child(1) .token-label', (n) => n.value);
+
+    assert(/として有効/.test(verdict), `verify identified the token (${verdict})`);
+    assert(discovered.trim().length > 0, `owners were auto-filled (${discovered})`);
+    assert(autoLabel.trim().length > 0, `label was auto-filled (${autoLabel})`);
+
+    // Now point it at the repo under test so routing can be exercised.
     await page.fill('.token-row:nth-child(1) .token-owners', owner);
     await page.fill('.token-row:nth-child(1) .token-label', 'scoped');
 

@@ -82,69 +82,93 @@ function collectTokens() {
   return { tokens, defaultTokenId };
 }
 
-/* Asks GitHub who this token is, and which owners it can reach, so the routing
-   configures itself. Costs two API requests. */
+async function ghGet(path, headers) {
+  const res = await fetch(`https://api.github.com${path}`, { headers });
+  return {
+    ok: res.ok,
+    status: res.status,
+    limit: res.headers.get('x-ratelimit-limit'),
+    remaining: res.headers.get('x-ratelimit-remaining'),
+    body: res.ok ? await res.json().catch(() => null) : null,
+  };
+}
+
+/* Asks GitHub which owners this token can actually reach, so the routing
+   configures itself.
+
+   The owners come from the repositories the token can see, not from whoever
+   issued it. A fine-grained token is scoped to a single resource owner, so one
+   made for an organization is issued by you but can only see that org — filling
+   in your own username there would route your personal repos to a token that
+   cannot read them. */
 async function verifyRow(row) {
   const status = row.querySelector('.token-status');
   const token = row.querySelector('.token-value').value.trim();
+
+  if (!token) {
+    setStatus(status, 'トークンが未入力です', 'error');
+    return;
+  }
 
   setStatus(status, '確認中…', 'idle');
 
   const headers = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
+    Authorization: `Bearer ${token}`,
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   try {
-    const res = await fetch('https://api.github.com/user', { headers });
-    const limit = res.headers.get('x-ratelimit-limit');
-    const remaining = res.headers.get('x-ratelimit-remaining');
-
-    if (!token) {
-      setStatus(status, 'トークンが未入力です', 'error');
-      return;
-    }
-    if (res.status === 401) {
+    const user = await ghGet('/user', headers);
+    if (user.status === 401) {
       setStatus(status, 'トークンが無効です', 'error');
       return;
     }
-    if (!res.ok) {
-      setStatus(status, `確認に失敗しました (HTTP ${res.status})`, 'error');
+    if (!user.ok) {
+      setStatus(status, `確認に失敗しました (HTTP ${user.status})`, 'error');
       return;
     }
 
-    const user = await res.json();
+    const login = user.body && user.body.login;
     const owners = new Set(
       row.querySelector('.token-owners').value.split(',').map((o) => o.trim()).filter(Boolean)
     );
-    if (user.login) owners.add(user.login);
 
-    // Organizations are best-effort: a fine-grained token may not be allowed to
-    // list them, which is not a failure.
-    let orgNote = '';
-    try {
-      const orgRes = await fetch('https://api.github.com/user/orgs?per_page=100', { headers });
-      if (orgRes.ok) {
-        const orgs = await orgRes.json();
-        for (const org of orgs) if (org.login) owners.add(org.login);
-        orgNote = orgs.length ? ` / org ${orgs.length} 件` : '';
-      } else {
-        orgNote = ' / org は取得不可（手動で追記してください）';
+    // What the token can actually see.
+    const repos = await ghGet('/user/repos?per_page=100&sort=pushed', headers);
+    const discovered = new Set();
+    if (repos.ok && Array.isArray(repos.body)) {
+      for (const repo of repos.body) {
+        if (repo.owner && repo.owner.login) discovered.add(repo.owner.login);
       }
-    } catch (_) {
-      orgNote = ' / org は取得不可';
     }
+
+    // Organizations are best-effort: a fine-grained token is usually not
+    // allowed to list them, which is not a failure.
+    const orgs = await ghGet('/user/orgs?per_page=100', headers);
+    if (orgs.ok && Array.isArray(orgs.body)) {
+      for (const org of orgs.body) if (org.login) discovered.add(org.login);
+    }
+
+    // Only fall back to the issuing account if nothing else turned up — for an
+    // org-scoped token that would be the wrong answer.
+    if (!discovered.size && login) discovered.add(login);
+    for (const owner of discovered) owners.add(owner);
 
     row.querySelector('.token-owners').value = [...owners].join(', ');
-    if (!row.querySelector('.token-label').value.trim() && user.login) {
-      row.querySelector('.token-label').value = user.login;
+    if (!row.querySelector('.token-label').value.trim()) {
+      row.querySelector('.token-label').value = [...discovered][0] || login || '';
     }
+
+    const found = [...discovered];
+    const summary = found.length
+      ? `対象: ${found.slice(0, 4).join(', ')}${found.length > 4 ? ` ほか${found.length - 4}件` : ''}`
+      : '対象のオーナーを特定できませんでした — 手動で入力してください';
 
     setStatus(
       status,
-      `${user.login} として有効 — 残り ${remaining}/${limit} 回/時${orgNote}`,
-      'ok'
+      `${login} として有効 — ${summary}（残り ${user.remaining}/${user.limit} 回/時）`,
+      found.length ? 'ok' : 'error'
     );
   } catch (e) {
     setStatus(status, `確認に失敗しました: ${e.message}`, 'error');
