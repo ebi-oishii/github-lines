@@ -263,10 +263,13 @@
         return `GitHub の二次レート制限により一時停止中${untilText(err.reset)}`;
       case 'throttled':
         return '短時間に取得しすぎたため待機中 — しばらくすると再開します';
-      case 'bad_token': return 'トークンが無効です — 設定を確認してください';
+      case 'bad_token':
+        return `${err.tokenLabel || 'トークン'} が無効です — 設定を確認してください`;
       case 'not_found':
+        // With several accounts configured, naming the one that was tried is
+        // the difference between a useful message and a mystery.
         return err.authenticated
-          ? 'リポジトリにアクセスできません（トークンの権限を確認）'
+          ? `リポジトリにアクセスできません（${err.tokenLabel || 'トークン'} の権限を確認）`
           : 'private リポジトリ — 設定でトークンを登録してください';
       case 'timeout':
         return 'バックグラウンドが応答しません — ページを更新してください';

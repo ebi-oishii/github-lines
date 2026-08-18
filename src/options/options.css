@@ -140,6 +140,60 @@ input:focus, textarea:focus {
   background: linear-gradient(to top, var(--bg) 70%, transparent);
 }
 
+/* --------------------------------------------------------------- tokens */
+
+.token-row {
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.token-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.token-head .token-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn.quiet {
+  color: var(--fg-muted);
+  border-color: transparent;
+  background: transparent;
+}
+.btn.quiet:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.token-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.token-status { flex: 1 1 200px; }
+
+#add-token { margin-bottom: 12px; }
+
 .status { font-size: 12px; }
 .status[data-tone="ok"] { color: var(--ok); }
 .status[data-tone="error"] { color: var(--danger); }

@@ -57,7 +57,7 @@ try {
 
   if (TOKEN) {
     await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
-    await page.fill('#token', TOKEN);
+    await page.fill('.token-row:nth-child(1) .token-value', TOKEN);
     await page.click('#save');
     await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
     console.log('token configured\n');

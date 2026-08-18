@@ -3,10 +3,13 @@
    render. Unlike scripts/test.mjs this exercises the service worker, the
    GitHub API calls and the CSS.
 
-   Costs roughly 15 GitHub API requests per run. Unauthenticated that is a
-   quarter of the hourly budget, so either run it sparingly or export a token:
+   Costs roughly 30 GitHub API requests per run — half the unauthenticated
+   hourly budget — so either run it sparingly or export a token:
 
-     GITHUB_TOKEN=ghp_... node scripts/smoke.mjs
+     GITHUB_TOKEN=$(gh auth token) node scripts/smoke.mjs
+
+   With a token it also configures a second, invalid token as the default, so a
+   regression in per-owner token routing fails the run.
 
    Usage: node scripts/smoke.mjs [url]
           node scripts/smoke.mjs --headed   (watch it happen)
@@ -75,14 +78,36 @@ try {
 
   // Feed the extension a token if one is in the environment, by driving its own
   // options page — the same path a user takes.
+  //
+  // Two tokens are configured on purpose: the real one scoped to the owner
+  // under test, and a deliberately invalid one as the default. If per-owner
+  // routing regresses, the run picks the invalid default and fails loudly
+  // instead of quietly passing.
   if (process.env.GITHUB_TOKEN) {
+    const owner = new URL(TARGET_URL).pathname.split('/').filter(Boolean)[0];
     const worker = context.serviceWorkers()[0] || (await context.waitForEvent('serviceworker'));
     const extensionId = new URL(worker.url()).host;
+
     await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
-    await page.fill('#token', process.env.GITHUB_TOKEN);
+    await page.fill('.token-row:nth-child(1) .token-value', process.env.GITHUB_TOKEN);
+    await page.fill('.token-row:nth-child(1) .token-owners', owner);
+    await page.fill('.token-row:nth-child(1) .token-label', 'scoped');
+
+    await page.click('#add-token');
+    await page.fill('.token-row:nth-child(2) .token-value', 'not-a-real-token-routing-probe');
+    await page.fill('.token-row:nth-child(2) .token-label', 'bad-default');
+    await page.check('.token-row:nth-child(2) .token-default');
+
     await page.click('#save');
     await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
-    console.log('configured GITHUB_TOKEN via the options page');
+
+    const saved = await page.$eval('#save-status', (n) => n.textContent);
+    assert(/2 件/.test(saved), `both tokens saved (${saved})`);
+    assert(
+      (await page.$$('.token-row')).length === 2,
+      'the options page renders both tokens after reload'
+    );
+    console.log(`configured 2 tokens — real one scoped to "${owner}", invalid one as default\n`);
   }
 
   const consoleErrors = [];

@@ -110,15 +110,27 @@ async function pruneTrees() {
 
 /* ------------------------------------------------------------- rate limit */
 
-const rate = { limit: null, remaining: null, reset: null, authenticated: false };
+/* Rate limits are per account, so every token gets its own budget and its own
+   pause state. The anonymous identity uses the key ''. */
+const ANON = '';
+const identities = new Map();
 
-function noteRate(res) {
+function identity(id) {
+  let state = identities.get(id);
+  if (!state) {
+    state = { id, label: '', limit: null, remaining: null, reset: null, recent: [], pausedUntil: 0 };
+    identities.set(id, state);
+  }
+  return state;
+}
+
+function noteRate(state, res) {
   const limit = res.headers.get('x-ratelimit-limit');
   const remaining = res.headers.get('x-ratelimit-remaining');
   const reset = res.headers.get('x-ratelimit-reset');
-  if (limit != null) rate.limit = Number(limit);
-  if (remaining != null) rate.remaining = Number(remaining);
-  if (reset != null) rate.reset = Number(reset) * 1000;
+  if (limit != null) state.limit = Number(limit);
+  if (remaining != null) state.remaining = Number(remaining);
+  if (reset != null) state.reset = Number(reset) * 1000;
 }
 
 /* Self-throttling.
@@ -132,47 +144,71 @@ const RATE_WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 600;      // two thirds of the documented 900
 const MAX_SLOT_WAIT_MS = 15_000; // rather report "throttled" than hang the UI
 
-const recentRequests = [];
-let pausedUntil = 0;
-
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function pauseUntil(timestamp) {
-  if (timestamp > pausedUntil) pausedUntil = timestamp;
+function pauseIdentity(state, timestamp) {
+  if (timestamp > state.pausedUntil) state.pausedUntil = timestamp;
 }
 
-/* Resolves once it is our turn, or false if that would take too long. */
-async function acquireSlot() {
+/* Resolves once it is this identity's turn, or false if that would take too long. */
+async function acquireSlot(state) {
   const deadline = Date.now() + MAX_SLOT_WAIT_MS;
 
   for (;;) {
     const now = Date.now();
 
-    if (now < pausedUntil) {
-      if (pausedUntil > deadline) return false;
-      await sleep(Math.min(1000, pausedUntil - now));
+    if (now < state.pausedUntil) {
+      if (state.pausedUntil > deadline) return false;
+      await sleep(Math.min(1000, state.pausedUntil - now));
       continue;
     }
 
-    while (recentRequests.length && now - recentRequests[0] > RATE_WINDOW_MS) {
-      recentRequests.shift();
+    while (state.recent.length && now - state.recent[0] > RATE_WINDOW_MS) {
+      state.recent.shift();
     }
-    if (recentRequests.length < MAX_PER_WINDOW) {
-      recentRequests.push(now);
+    if (state.recent.length < MAX_PER_WINDOW) {
+      state.recent.push(now);
       return true;
     }
 
-    const freesAt = recentRequests[0] + RATE_WINDOW_MS;
+    const freesAt = state.recent[0] + RATE_WINDOW_MS;
     if (freesAt > deadline) return false;
     await sleep(Math.max(50, freesAt - now));
   }
 }
 
-/* ------------------------------------------------------------------ fetch */
+/* ---------------------------------------------------------- token routing */
 
-async function token() {
+/* Learned owner -> token id, so the fallback below runs at most once per owner.
+   Memory only: relearning after the worker restarts costs one request. */
+const ownerToken = new Map();
+
+function describe(entry) {
+  if (!entry) return '';
+  return entry.label || (entry.owners && entry.owners[0]) || 'トークン';
+}
+
+/* The token to try first, then any others worth trying if it cannot see the
+   repository. Order is deterministic per owner — never a rotation to stretch
+   the rate limit. */
+async function tokenCandidates(owner, allowFallback) {
   const s = await GHL.settings.get();
-  return (s.token || '').trim();
+  const usable = (s.tokens || []).filter((t) => t.token);
+  if (!usable.length) return [null];
+
+  const lower = String(owner || '').toLowerCase();
+  const learnedId = lower ? ownerToken.get(lower) : null;
+  const learned = learnedId ? usable.find((t) => t.id === learnedId) : null;
+  const first = learned || GHL.settings.tokenForOwner(s, owner);
+
+  if (!allowFallback || !lower || usable.length < 2) return [first];
+
+  // A token explicitly scoped to this owner is the user's stated answer; do not
+  // go rummaging through their other accounts when it fails.
+  const isScoped = first.owners.some((o) => o.toLowerCase() === lower);
+  if (isScoped && !learned) return [first];
+
+  return [first, ...usable.filter((t) => t.id !== first.id)];
 }
 
 function fail(code, extra) {
@@ -182,27 +218,31 @@ function fail(code, extra) {
   return err;
 }
 
-async function ghFetch(path, { accept = 'application/vnd.github+json' } = {}) {
-  if (!(await acquireSlot())) {
-    throw fail('throttled', { reset: pausedUntil, authenticated: rate.authenticated });
-  }
+/* ------------------------------------------------------------------ fetch */
 
-  const tok = await token();
-  rate.authenticated = !!tok;
+async function ghFetchAs(entry, path, accept) {
+  const state = identity(entry ? entry.id : ANON);
+  state.label = describe(entry);
+
+  if (!(await acquireSlot(state))) {
+    throw fail('throttled', { reset: state.pausedUntil, authenticated: !!entry, tokenLabel: state.label });
+  }
 
   const headers = {
     Accept: accept,
     'X-GitHub-Api-Version': '2022-11-28',
   };
-  if (tok) headers.Authorization = `Bearer ${tok}`;
+  if (entry) headers.Authorization = `Bearer ${entry.token}`;
 
   const res = await fetch(API + path, { headers });
-  noteRate(res);
+  noteRate(state, res);
 
   if (res.ok) return res;
 
   let detail = '';
   try { detail = (await res.json()).message || ''; } catch (_) { /* not json */ }
+
+  const context = { authenticated: !!entry, tokenLabel: state.label };
 
   // Secondary rate limit. GitHub's guidance: honour retry-after if present,
   // otherwise back off for at least a minute. Either way, stop sending.
@@ -212,24 +252,47 @@ async function ghFetch(path, { accept = 'application/vnd.github+json' } = {}) {
     (retryAfter > 0 || /secondary rate limit/i.test(detail));
 
   if (isSecondary) {
-    const waitMs = retryAfter > 0 ? retryAfter * 1000 : 60_000;
-    pauseUntil(Date.now() + waitMs);
-    throw fail('secondary_rate_limit', { reset: pausedUntil, authenticated: rate.authenticated });
+    pauseIdentity(state, Date.now() + (retryAfter > 0 ? retryAfter * 1000 : 60_000));
+    throw fail('secondary_rate_limit', { ...context, reset: state.pausedUntil });
   }
 
   // Primary rate limit: nothing will succeed until the window resets, so stop
   // rather than spending the next minute collecting 403s.
-  if ((res.status === 403 || res.status === 429) && rate.remaining === 0) {
-    if (rate.reset) pauseUntil(rate.reset);
-    throw fail('rate_limit', { reset: rate.reset, authenticated: rate.authenticated });
+  if ((res.status === 403 || res.status === 429) && state.remaining === 0) {
+    if (state.reset) pauseIdentity(state, state.reset);
+    throw fail('rate_limit', { ...context, reset: state.reset });
   }
 
-  if (res.status === 401) throw fail('bad_token');
-  if (res.status === 404) throw fail('not_found', { authenticated: rate.authenticated });
+  if (res.status === 401) throw fail('bad_token', context);
+  if (res.status === 404) throw fail('not_found', context);
 
-  const err = fail(`http_${res.status}`);
+  const err = fail(`http_${res.status}`, context);
   err.message = detail || err.message;
   throw err;
+}
+
+/* `owner` selects the identity; `fallback` allows trying the user's other
+   accounts when the chosen one cannot see the repository. Only worth setting on
+   the first request for a repository — the answer is then remembered. */
+async function ghFetch(path, { accept = 'application/vnd.github+json', owner = '', fallback = false } = {}) {
+  const candidates = await tokenCandidates(owner, fallback);
+  const lower = String(owner || '').toLowerCase();
+  let lastError;
+
+  for (const entry of candidates) {
+    try {
+      const res = await ghFetchAs(entry, path, accept);
+      if (lower && entry) ownerToken.set(lower, entry.id);
+      return res;
+    } catch (err) {
+      lastError = err;
+      // A 404 is what GitHub returns when a token simply cannot see a private
+      // repository, so it is the only error worth retrying as someone else.
+      if (err.code !== 'not_found') throw err;
+    }
+  }
+
+  throw lastError;
 }
 
 /* -------------------------------------------------------------- handlers */
@@ -241,13 +304,17 @@ const SHA_RE = /^[0-9a-f]{40}$/i;
 async function resolveRef({ owner, repo, ref }) {
   const res = await ghFetch(`/repos/${owner}/${repo}/commits/${ref}`, {
     accept: 'application/vnd.github.sha',
+    owner,
   });
   return (await res.text()).trim();
 }
 
 async function fetchTree(owner, repo, target, recursive) {
+  // First request for this repository, so this is where it is worth finding out
+  // which of the user's accounts can actually see it.
   const res = await ghFetch(
-    `/repos/${owner}/${repo}/git/trees/${target}${recursive ? '?recursive=1' : ''}`
+    `/repos/${owner}/${repo}/git/trees/${target}${recursive ? '?recursive=1' : ''}`,
+    { owner, fallback: true }
   );
   const json = await res.json();
   return {
@@ -324,6 +391,7 @@ function countLines(text) {
 async function fetchBlobText({ owner, repo, sha }) {
   const res = await ghFetch(`/repos/${owner}/${repo}/git/blobs/${sha}`, {
     accept: 'application/vnd.github.raw',
+    owner,
   });
   return res.text();
 }
@@ -395,7 +463,13 @@ const HANDLERS = {
   LINES: getLines,
   CACHED_LINES: getCachedLines,
   BLOB_TEXT: getBlobText,
-  RATE: async () => ({ ok: true, rate }),
+  RATE: async () => ({
+    ok: true,
+    identities: [...identities.values()].map((s) => ({
+      id: s.id, label: s.label, limit: s.limit, remaining: s.remaining,
+      reset: s.reset, pausedUntil: s.pausedUntil,
+    })),
+  }),
   CLEAR_CACHE: clearCache,
   CACHE_STATS: cacheStats,
   PING: async () => ({ ok: true }),

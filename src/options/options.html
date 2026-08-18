@@ -21,21 +21,50 @@
         <strong>60 回/時</strong> になります。トークンを登録すると
         <strong>5,000 回/時</strong> になり、private リポジトリでも使えます。
       </p>
-      <label class="field">
-        <span class="label">Personal Access Token</span>
-        <input id="token" type="password" autocomplete="off" spellcheck="false"
-               placeholder="github_pat_… または ghp_…">
-      </label>
+      <p class="hint">
+        複数のアカウントを使い分けている場合は、トークンを複数登録して
+        <strong>オーナー（ユーザー名 / Organization 名）ごとに</strong>割り当てられます。
+        あるアカウントのトークンで別アカウントの private リポジトリは読めないためです。
+      </p>
+
+      <div id="token-list"></div>
+      <button class="btn" id="add-token" type="button">＋ トークンを追加</button>
+
       <p class="hint">
         <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">
           Fine-grained token を作成
         </a>
         — 必要な権限は <code>Repository permissions → Contents: Read-only</code> のみです。
-        トークンはこの端末の <code>chrome.storage.local</code> にのみ保存され、外部には送信しません。
+        トークンはこの端末の <code>chrome.storage.local</code> にのみ保存され、
+        <code>api.github.com</code> 以外には送信しません。
       </p>
-      <p class="status" id="token-status" data-tone="idle"></p>
-      <button class="btn" id="verify" type="button">トークンを検証</button>
     </section>
+
+    <template id="token-row-template">
+      <div class="token-row">
+        <div class="token-head">
+          <label class="radio" title="どのオーナーにも一致しないときに使うトークン">
+            <input type="radio" name="default-token" class="token-default">
+            <span>既定</span>
+          </label>
+          <input class="token-label" type="text" spellcheck="false" placeholder="ラベル（例: 個人 / 仕事）">
+          <button class="btn quiet token-remove" type="button" aria-label="このトークンを削除">削除</button>
+        </div>
+        <label class="field">
+          <span class="label">Personal Access Token</span>
+          <input class="token-value" type="password" autocomplete="off" spellcheck="false"
+                 placeholder="github_pat_… または ghp_…">
+        </label>
+        <label class="field">
+          <span class="label">このトークンを使うオーナー（カンマ区切り）</span>
+          <input class="token-owners" type="text" spellcheck="false" placeholder="ebi-oishii, my-org">
+        </label>
+        <div class="token-actions">
+          <button class="btn token-verify" type="button">検証してオーナーを自動取得</button>
+          <span class="status token-status" data-tone="idle"></span>
+        </div>
+      </div>
+    </template>
 
     <section class="card">
       <h2>閾値</h2>

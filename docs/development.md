@@ -4,7 +4,7 @@
 
 ```bash
 npm install
-npm test             # ロジック + DOM テスト（46 件、ネットワーク不要）
+npm test             # ロジック + DOM テスト（56 件、ネットワーク不要）
 npm run smoke        # 実 Chrome に読み込んで github.com で動作確認
 npm run measure      # API リクエスト数を実測
 npm run icons        # icons/*.png を再生成
@@ -59,9 +59,10 @@ github.com から `api.github.com` を直接叩けません。加えて、キャ
 
 ## テスト
 
-### `scripts/test.mjs`（46 件、ネットワーク不要）
+### `scripts/test.mjs`（56 件、ネットワーク不要）
 
 - 純粋なロジック: glob、`.gitattributes`、行数推定、集計、treemap の配置アルゴリズム
+- トークンのルーティング: オーナーごとの選択、旧形式からの移行
 - service worker との通信: タイムアウト、リトライ、コンテキスト消失
 - DOM: **GitHub の実 HTML を切り出したフィクスチャ**（`tests/fixtures/tree-page.html`）に対して、
   コンテキスト抽出・行の検出・バーの注入を検証
@@ -70,6 +71,8 @@ github.com から `api.github.com` を直接叩けません。加えて、キャ
 ### `scripts/smoke.mjs`
 
 未パッケージの拡張を実際の Chrome に読み込み、github.com を開いて確認します。
+実トークンを対象オーナーに紐づけ、**無効なトークンを「既定」に置いた状態で**実行するので、
+オーナーごとのルーティングが壊れると失敗します。
 バー・ツリーマップ・遷移・「同じ URL を二度取得していないこと」を検証し、
 `tests/screenshots/` にスクリーンショットを保存します。失敗時は `failure.png` が残ります。
 

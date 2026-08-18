@@ -376,6 +376,92 @@ check('squarify respects a rect origin offset', () => {
   }
 });
 
+/* ------------------------------------------------------------ multi-token */
+
+/* A token issued by one account cannot read another account's private
+   repositories, so which token to use is decided per repository owner. */
+
+check('settings: a legacy single token becomes the first entry', () => {
+  const s = settings.normalise({ token: 'ghp_legacy', warnLines: 400 });
+  assertEqual(s.tokens.length, 1);
+  assertEqual(s.tokens[0].token, 'ghp_legacy');
+  assertEqual(s.defaultTokenId, s.tokens[0].id, 'and becomes the default');
+  assertEqual(s.warnLines, 400, 'other settings survive');
+  assertEqual(s.token, undefined, 'the old field is dropped');
+});
+
+check('settings: migration does not duplicate an already-migrated token', () => {
+  const once = settings.normalise({ token: 'ghp_a' });
+  const twice = settings.normalise({ token: 'ghp_a', tokens: once.tokens });
+  assertEqual(twice.tokens.length, 1);
+});
+
+check('settings: tokens are given ids and trimmed', () => {
+  const s = settings.normalise({ tokens: [{ token: '  ghp_x  ', owners: [' me ', ''] }] });
+  assertEqual(s.tokens[0].token, 'ghp_x');
+  assert(s.tokens[0].id, 'an id is assigned');
+  assertEqual(s.tokens[0].owners.join(','), 'me', 'blank owners dropped');
+});
+
+check('settings: a dangling defaultTokenId falls back to the first token', () => {
+  const s = settings.normalise({
+    tokens: [{ id: 'a', token: 'ghp_a' }, { id: 'b', token: 'ghp_b' }],
+    defaultTokenId: 'deleted',
+  });
+  assertEqual(s.defaultTokenId, 'a');
+});
+
+function twoAccounts() {
+  return settings.normalise({
+    tokens: [
+      { id: 'personal', label: '個人', token: 'ghp_personal', owners: ['ebi-oishii'] },
+      { id: 'work', label: '仕事', token: 'ghp_work', owners: ['Acme-Corp', 'acme-labs'] },
+    ],
+    defaultTokenId: 'personal',
+  });
+}
+
+check('tokenForOwner: routes by owner', () => {
+  const s = twoAccounts();
+  assertEqual(settings.tokenForOwner(s, 'ebi-oishii').id, 'personal');
+  assertEqual(settings.tokenForOwner(s, 'acme-labs').id, 'work');
+});
+
+check('tokenForOwner: owner matching ignores case', () => {
+  const s = twoAccounts();
+  assertEqual(settings.tokenForOwner(s, 'acme-corp').id, 'work', 'lowercased URL owner');
+  assertEqual(settings.tokenForOwner(s, 'EBI-OISHII').id, 'personal');
+});
+
+check('tokenForOwner: an unknown owner gets the default', () => {
+  const s = twoAccounts();
+  assertEqual(settings.tokenForOwner(s, 'sindresorhus').id, 'personal');
+
+  s.defaultTokenId = 'work';
+  assertEqual(settings.tokenForOwner(s, 'sindresorhus').id, 'work', 'follows the default');
+});
+
+check('tokenForOwner: falls back to the first usable token', () => {
+  const s = settings.normalise({
+    tokens: [{ id: 'a', token: '' }, { id: 'b', token: 'ghp_b' }],
+  });
+  assertEqual(settings.tokenForOwner(s, 'whoever').id, 'b', 'blank tokens are skipped');
+});
+
+check('tokenForOwner: no tokens means anonymous', () => {
+  assertEqual(settings.tokenForOwner(settings.normalise({}), 'anyone'), null);
+  assertEqual(settings.tokenForOwner(settings.normalise({ tokens: [{ token: '' }] }), 'x'), null);
+});
+
+check('tokenForOwner: the same owner always gets the same token', () => {
+  // Deterministic on purpose: rotating tokens to stretch the rate limit is
+  // exactly what GitHub's terms prohibit.
+  const s = twoAccounts();
+  const picks = new Set();
+  for (let i = 0; i < 20; i++) picks.add(settings.tokenForOwner(s, 'sindresorhus').id);
+  assertEqual(picks.size, 1, 'no rotation');
+});
+
 /* ---------------------------------------------------------------- transport */
 
 /* An MV3 service worker gets terminated when idle, and one killed mid-request
