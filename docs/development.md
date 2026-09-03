@@ -4,7 +4,7 @@
 
 ```bash
 npm install
-npm test             # ロジック + DOM テスト（56 件、ネットワーク不要）
+npm test             # ロジック + DOM テスト（61 件、ネットワーク不要）
 npm run smoke        # 実 Chrome に読み込んで github.com で動作確認
 npm run measure      # API リクエスト数を実測
 npm run icons        # icons/*.png を再生成
@@ -15,6 +15,8 @@ npm run fixture      # GitHub の実 HTML からテスト用フィクスチャ�
 
 ```bash
 GITHUB_TOKEN=$(gh auth token) npm run smoke
+node scripts/smoke.mjs --manual    # 手動モード（ボタンを押して取得）を検証
+node scripts/smoke.mjs --headed    # 実際の動きを見る
 ```
 
 ## コード構成
@@ -59,7 +61,7 @@ github.com から `api.github.com` を直接叩けません。加えて、キャ
 
 ## テスト
 
-### `scripts/test.mjs`（56 件、ネットワーク不要）
+### `scripts/test.mjs`（61 件、ネットワーク不要）
 
 - 純粋なロジック: glob、`.gitattributes`、行数推定、集計、treemap の配置アルゴリズム
 - トークンのルーティング: オーナーごとの選択、旧形式からの移行
@@ -67,6 +69,7 @@ github.com から `api.github.com` を直接叩けません。加えて、キャ
 - DOM: **GitHub の実 HTML を切り出したフィクスチャ**（`tests/fixtures/tree-page.html`）に対して、
   コンテキスト抽出・行の検出・バーの注入を検証
 - クライアントサイド遷移: `main.js` を実際に動かして、遷移時の再描画とテアダウンを検証
+- 行数取得のモード: 自動 / 手動 / 取得しない の挙動と、旧 boolean からの移行
 
 ### `scripts/smoke.mjs`
 

@@ -7,7 +7,6 @@ const $ = (id) => document.getElementById(id);
 const CHECKBOXES = [
   'showInlineBars',
   'showTreemapButton',
-  'fetchExactLines',
   'excludeGenerated',
   'respectGitattributes',
 ];
@@ -218,6 +217,11 @@ async function fill() {
 
   for (const id of CHECKBOXES) $(id).checked = !!s[id];
   for (const id of NUMBERS) $(id).value = s[id];
+
+  const mode = document.querySelector(`input[name="exactLinesMode"][value="${s.exactLinesMode}"]`)
+    || document.querySelector('input[name="exactLinesMode"][value="auto"]');
+  mode.checked = true;
+
   $('excludePatterns').value = (s.excludePatterns || []).join('\n');
 }
 
@@ -225,6 +229,9 @@ function collect() {
   const patch = collectTokens();
 
   for (const id of CHECKBOXES) patch[id] = $(id).checked;
+
+  const mode = document.querySelector('input[name="exactLinesMode"]:checked');
+  if (mode) patch.exactLinesMode = mode.value;
   for (const id of NUMBERS) {
     const n = Number($(id).value);
     if (Number.isFinite(n) && n >= 0) patch[id] = n;

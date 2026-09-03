@@ -188,6 +188,15 @@ html[data-color-mode='dark'] {
 .ghl-btn:hover { background: var(--ghl-surface-alt); }
 .ghl-btn-quiet { background: transparent; }
 
+/* Manual mode's "fetch line counts" button — the one action the strip offers. */
+.ghl-btn-primary {
+  color: #ffffff;
+  background: var(--ghl-ok);
+  border-color: transparent;
+  font-weight: 600;
+}
+.ghl-btn-primary:hover { filter: brightness(1.1); background: var(--ghl-ok); }
+
 .ghl-stack {
   display: flex;
   width: 100%;

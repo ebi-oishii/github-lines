@@ -95,10 +95,25 @@
 
     <section class="card">
       <h2>行数のカウント</h2>
-      <label class="check">
-        <input id="fetchExactLines" type="checkbox">
-        <span>実際の行数を取得する（オフにするとバイト数からの推定のみ）</span>
-      </label>
+      <div class="field">
+        <span class="label">実際の行数の取得</span>
+        <label class="check">
+          <input type="radio" name="exactLinesMode" value="auto">
+          <span><strong>自動</strong> — ページを開いたら取得する</span>
+        </label>
+        <label class="check">
+          <input type="radio" name="exactLinesMode" value="manual">
+          <span><strong>手動</strong> — 一覧の上に出る「行数を取得」ボタンを押したときだけ取得する。
+            押すまではバイト数からの推定値（<code>~</code> 付き）を表示します</span>
+        </label>
+        <label class="check">
+          <input type="radio" name="exactLinesMode" value="off">
+          <span><strong>取得しない</strong> — 推定値のみ。1 画面あたり API 1 リクエストで済みます</span>
+        </label>
+      </div>
+      <p class="hint">
+        どのモードでも、過去に取得してキャッシュ済みのファイルは API を使わずに実測値で表示されます。
+      </p>
       <div class="row">
         <label class="field narrow">
           <span class="label">1 画面あたりの取得上限</span>

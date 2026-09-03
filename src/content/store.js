@@ -152,7 +152,9 @@
 
     const state = {
       ctx,
-      status: 'loading',   // loading | estimated | refining | ready | error
+      // loading | estimated | pending | refining | ready | error
+      //   pending = manual mode, waiting for the user to ask for exact counts
+      status: 'loading',
       error: null,
       warning: null,
       truncated: false,
@@ -160,11 +162,97 @@
       index: null,
       learner: patterns.createRatioLearner(),
       progress: { done: 0, total: 0 },
+      pending: 0,          // files a manual fetch would request
       settings: null,
     };
 
     const emitNow = () => { if (!cancelled) onUpdate(state); };
     const emit = util.throttle(emitNow, 140);
+
+    let queue = [];        // files still worth fetching
+    let running = null;    // in-flight exact pass, so a double click is harmless
+
+    function refresh() {
+      applyEstimates(state.index, state.learner);
+      rollup(state.root);
+    }
+
+    /* Fills in everything already in the cache. Costs no API requests, so it
+       runs even when exact counts are switched off. */
+    async function applyCached(files) {
+      const shas = files.slice(0, CACHE_PROBE_LIMIT).map((n) => n.sha);
+      if (!shas.length) return;
+
+      const cached = await util.send({ type: 'CACHED_LINES', shas });
+      if (cancelled || !cached.ok) return;
+
+      let hits = 0;
+      for (const node of files) {
+        const lines = cached.lines[node.sha];
+        if (lines === undefined) continue;
+        node.lines = lines;
+        node.exact = true;
+        state.learner.observe(node.path, node.size, lines);
+        hits++;
+      }
+      if (hits) {
+        refresh();
+        emitNow();
+      }
+    }
+
+    async function runExactPass() {
+      const settings = state.settings;
+      const todo = queue.filter((n) => !n.exact);
+      if (!todo.length) {
+        state.pending = 0;
+        state.status = 'ready';
+        emitNow();
+        return;
+      }
+
+      state.status = 'refining';
+      state.warning = null;
+      state.progress = { done: 0, total: todo.length };
+      emitNow();
+
+      let stopped = false;
+      const tasks = todo.map((node) => async () => {
+        if (cancelled || stopped) return null;
+        const r = await util.send({
+          type: 'LINES', owner: ctx.owner, repo: ctx.repo, sha: node.sha, size: node.size,
+        });
+        if (!r.ok) {
+          // Running out of quota mid-scan is expected on an unauthenticated
+          // install; stop rather than burning the rest of the queue on 403s.
+          if (FATAL_ERRORS.has(r.error)) {
+            stopped = true;
+            state.warning = r;
+          }
+          return null;
+        }
+        node.lines = r.lines;
+        node.exact = true;
+        state.learner.observe(node.path, node.size, r.lines);
+        return r;
+      });
+
+      await util.pool(tasks, settings.concurrency, () => {
+        if (cancelled) return;
+        state.progress.done++;
+        refresh();
+        emit();
+      });
+
+      if (cancelled) return;
+
+      const remaining = queue.filter((n) => !n.exact).length;
+      state.pending = remaining;
+      // In manual mode, leaving the button up lets the user retry whatever the
+      // rate limit cut short.
+      state.status = settings.exactLinesMode === 'manual' && remaining ? 'pending' : 'ready';
+      emitNow();
+    }
 
     (async () => {
       const settings = await GHL.settings.get();
@@ -218,8 +306,7 @@
         : () => false;
 
       classify(state.index, isExcluded, () => false);
-      applyEstimates(state.index, state.learner);
-      rollup(state.root);
+      refresh();
       state.status = 'estimated';
       emitNow();
 
@@ -228,15 +315,8 @@
       if (cancelled) return;
       if (rules.length) {
         classify(state.index, isExcluded, patterns.makeLinguistMatcher(rules));
-        applyEstimates(state.index, state.learner);
-        rollup(state.root);
+        refresh();
         emitNow();
-      }
-
-      if (!settings.fetchExactLines) {
-        state.status = 'ready';
-        emitNow();
-        return;
       }
 
       // --- exact counts ---------------------------------------------------
@@ -244,35 +324,15 @@
       const subtree = collectFiles(dirNode).filter((n) => !n.excluded && n.size > 0);
       subtree.sort((a, b) => b.size - a.size);
 
-      // Everything we already know, in one round trip.
-      const probe = subtree.slice(0, CACHE_PROBE_LIMIT).map((n) => n.sha);
-      if (probe.length) {
-        const cached = await util.send({ type: 'CACHED_LINES', shas: probe });
-        if (cancelled) return;
-        if (cached.ok) {
-          let hits = 0;
-          for (const node of subtree) {
-            const lines = cached.lines[node.sha];
-            if (lines === undefined) continue;
-            node.lines = lines;
-            node.exact = true;
-            state.learner.observe(node.path, node.size, lines);
-            hits++;
-          }
-          if (hits) {
-            applyEstimates(state.index, state.learner);
-            rollup(state.root);
-            emitNow();
-          }
-        }
-      }
+      await applyCached(subtree);
+      if (cancelled) return;
 
       // Direct children of the visible directory matter most — those are the
       // rows the user is comparing right now.
       const directChildren = new Set(
         [...dirNode.children.values()].filter((n) => n.type === 'file').map((n) => n.path)
       );
-      const queue = subtree
+      queue = subtree
         .filter((n) => fetchable(n, settings.maxBlobBytes))
         .sort((a, b) => {
           const ad = directChildren.has(a.path) ? 0 : 1;
@@ -281,48 +341,22 @@
         })
         .slice(0, settings.maxExactFetch);
 
-      if (!queue.length) {
+      state.pending = queue.length;
+
+      if (settings.exactLinesMode === 'off' || !queue.length) {
+        state.pending = 0;
         state.status = 'ready';
         emitNow();
         return;
       }
 
-      state.status = 'refining';
-      state.progress = { done: 0, total: queue.length };
-      emitNow();
+      if (settings.exactLinesMode === 'manual') {
+        state.status = 'pending';
+        emitNow();
+        return;
+      }
 
-      let stopped = false;
-      const tasks = queue.map((node) => async () => {
-        if (cancelled || stopped) return null;
-        const r = await util.send({
-          type: 'LINES', owner: ctx.owner, repo: ctx.repo, sha: node.sha, size: node.size,
-        });
-        if (!r.ok) {
-          // Running out of quota mid-scan is expected on an unauthenticated
-          // install; stop rather than burning the rest of the queue on 403s.
-          if (FATAL_ERRORS.has(r.error)) {
-            stopped = true;
-            state.warning = r;
-          }
-          return null;
-        }
-        node.lines = r.lines;
-        node.exact = true;
-        state.learner.observe(node.path, node.size, r.lines);
-        return r;
-      });
-
-      await util.pool(tasks, settings.concurrency, () => {
-        if (cancelled) return;
-        state.progress.done++;
-        applyEstimates(state.index, state.learner);
-        rollup(state.root);
-        emit();
-      });
-
-      if (cancelled) return;
-      state.status = 'ready';
-      emitNow();
+      await runExactPass();
     })().catch((err) => {
       if (cancelled) return;
       state.status = 'error';
@@ -330,7 +364,20 @@
       emitNow();
     });
 
-    return { cancel() { cancelled = true; } };
+    return {
+      cancel() { cancelled = true; },
+      /* Manual mode: run the exact pass now. Safe to call repeatedly. */
+      fetchExact() {
+        if (cancelled || !state.index || running) return running;
+        running = runExactPass()
+          .catch((err) => {
+            state.warning = { error: 'exception', message: String(err && err.message || err) };
+            emitNow();
+          })
+          .finally(() => { running = null; });
+        return running;
+      },
+    };
   }
 
   GHL.store = { load, collectFiles, rollup, buildTree };
