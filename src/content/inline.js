@@ -140,6 +140,7 @@
         el('span', { class: 'ghl-summary-stats' }),
         el('span', { class: 'ghl-spacer' }),
         el('span', { class: 'ghl-summary-status' }),
+        el('button', { class: 'ghl-btn ghl-btn-primary', type: 'button', 'data-ghl-action': 'fetch' }),
         el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [
           'ツリーマップ',
         ]),
@@ -149,14 +150,17 @@
     ]);
   }
 
-  function renderSummary(state, dirNode, onTreemap) {
+  function renderSummary(state, dirNode, handlers) {
     const anchor = GHL.page.findSummaryAnchor();
     if (!anchor) return;
 
     let node = document.getElementById(SUMMARY_ID);
     if (!node) {
       node = buildSummary();
-      node.querySelector('[data-ghl-action="treemap"]').addEventListener('click', onTreemap);
+      node.querySelector('[data-ghl-action="treemap"]')
+        .addEventListener('click', () => handlers.onTreemap && handlers.onTreemap());
+      node.querySelector('[data-ghl-action="fetch"]')
+        .addEventListener('click', () => handlers.onFetchExact && handlers.onFetchExact());
     }
     if (node.previousElementSibling !== anchor && node.parentElement !== anchor.parentElement) {
       anchor.parentElement.insertBefore(node, anchor);
@@ -165,9 +169,20 @@
     }
 
     const settings = state.settings;
-    const button = node.querySelector('[data-ghl-action="treemap"]');
-    button.hidden = !settings.showTreemapButton;
-    button.disabled = !state.index;
+    const treemapButton = node.querySelector('[data-ghl-action="treemap"]');
+    treemapButton.hidden = !settings.showTreemapButton;
+    treemapButton.disabled = !state.index;
+
+    // Manual mode: nothing is fetched until this is pressed.
+    const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
+    const offerFetch = state.status === 'pending' && state.pending > 0;
+    fetchButton.hidden = !offerFetch;
+    if (offerFetch) {
+      fetchButton.textContent = `行数を取得（${fmt(state.pending)}）`;
+      fetchButton.title =
+        `${fmt(state.pending)} ファイルの行数を GitHub から取得します\n` +
+        '（同じ数だけ API リクエストを使います。取得済みのファイルは含みません）';
+    }
 
     const stats = node.querySelector('.ghl-summary-stats');
     const status = node.querySelector('.ghl-summary-status');
@@ -239,6 +254,7 @@
     if (state.warning) return errorText(state.warning);
     if (state.status === 'loading') return '読み込み中…';
     if (state.status === 'estimated') return 'バイト数から推定中…';
+    if (state.status === 'pending') return 'バイト数からの推定値';
     if (state.status === 'refining') {
       return `実行数を取得中 ${state.progress.done}/${state.progress.total}`;
     }
@@ -288,7 +304,7 @@
 
   const EMPTY_DIR = { children: new Map(), total: 0, fileCount: 0, allExact: true };
 
-  function render(state, onTreemap) {
+  function render(state, handlers) {
     const settings = state.settings;
     if (!settings) return;
 
@@ -300,11 +316,11 @@
     // be indistinguishable from "extension not running".
     if (!dirNode) {
       clearRows();
-      renderSummary(state, EMPTY_DIR, onTreemap);
+      renderSummary(state, EMPTY_DIR, handlers);
       return;
     }
 
-    renderSummary(state, dirNode, onTreemap);
+    renderSummary(state, dirNode, handlers);
 
     if (!settings.showInlineBars) {
       clearRows();

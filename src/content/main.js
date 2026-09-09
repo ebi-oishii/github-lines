@@ -12,11 +12,16 @@
     return `${ctx.owner}/${ctx.repo}@${ctx.oid}#${ctx.path}`;
   }
 
-  function openTreemap() {
-    if (current && current.state && current.state.index) {
-      GHL.treemap.open(current.state);
-    }
-  }
+  const handlers = {
+    onTreemap() {
+      if (current && current.state && current.state.index) {
+        GHL.treemap.open(current.state);
+      }
+    },
+    onFetchExact() {
+      if (current && current.handle) current.handle.fetchExact();
+    },
+  };
 
   function teardown() {
     if (current && current.handle) current.handle.cancel();
@@ -31,7 +36,7 @@
   function guardedRender(state) {
     if (observer) observer.disconnect();
     try {
-      GHL.inline.render(state, openTreemap);
+      GHL.inline.render(state, handlers);
       GHL.treemap.update(state);
     } finally {
       requestAnimationFrame(() => {

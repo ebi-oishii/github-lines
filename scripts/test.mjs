@@ -411,6 +411,21 @@ check('settings: a dangling defaultTokenId falls back to the first token', () =>
   assertEqual(s.defaultTokenId, 'a');
 });
 
+check('settings: the exact-lines boolean migrates to a mode', () => {
+  assertEqual(settings.normalise({ fetchExactLines: false }).exactLinesMode, 'off');
+  assertEqual(settings.normalise({ fetchExactLines: true }).exactLinesMode, 'auto');
+  assertEqual(settings.normalise({}).exactLinesMode, 'auto', 'never configured');
+  assertEqual(settings.normalise({ fetchExactLines: false }).fetchExactLines, undefined,
+    'the old field is dropped');
+});
+
+check('settings: an unknown exact-lines mode falls back to auto', () => {
+  assertEqual(settings.normalise({ exactLinesMode: 'nonsense' }).exactLinesMode, 'auto');
+  for (const mode of ['auto', 'manual', 'off']) {
+    assertEqual(settings.normalise({ exactLinesMode: mode }).exactLinesMode, mode);
+  }
+});
+
 function twoAccounts() {
   return settings.normalise({
     tokens: [
@@ -636,7 +651,7 @@ domCheck('render injects an aligned bar into every name cell', () => {
     index,
     progress: { done: 0, total: 0 },
   };
-  inline.render(state, () => {});
+  inline.render(state, {});
 
   for (const row of page.findRows(ctx)) {
     const cells = row.el.querySelectorAll('.ghl-cell');
@@ -679,7 +694,7 @@ domCheck('render is idempotent — repeated passes do not duplicate bars', () =>
   store.rollup(root);
 
   const state = { ctx, settings: settings.DEFAULTS, status: 'ready', root, index, progress: { done: 0, total: 0 } };
-  for (let i = 0; i < 3; i++) inline.render(state, () => {});
+  for (let i = 0; i < 3; i++) inline.render(state, {});
 
   assertEqual(
     document.querySelectorAll('.ghl-cell').length, rows.length * 2,
@@ -698,7 +713,7 @@ domCheck('clearRows and removeSummary leave the page clean', () => {
   for (const node of index.values()) if (node.type === 'file') node.lines = 60;
   store.rollup(root);
 
-  inline.render({ ctx, settings: settings.DEFAULTS, status: 'ready', root, index, progress: { done: 0, total: 0 } }, () => {});
+  inline.render({ ctx, settings: settings.DEFAULTS, status: 'ready', root, index, progress: { done: 0, total: 0 } }, {});
   assert(document.querySelectorAll('.ghl-cell').length > 0, 'cells were injected');
 
   inline.clearRows();
@@ -895,6 +910,70 @@ await domCheckAsync('navigating back up rebuilds the parent view', async () => {
   const paths = renderedPaths();
   assertEqual(paths.length, 5, `all five rows painted, got ${paths}`);
   assert(!paths.some((p) => p.startsWith('source/as-promise/')), 'stale child rows are gone');
+});
+
+await domCheckAsync('manual mode paints estimates and waits for the button', async () => {
+  await settings.set({ exactLinesMode: 'manual' });
+  const before = transportCalls.length;
+
+  navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+  await waitFor(
+    () => renderedPaths().includes('source/core/options.ts'),
+    6000,
+    'bars for the new directory'
+  );
+
+  const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
+  assertEqual(fetched.length, 0, 'no line counts fetched without being asked');
+
+  const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
+  assert(cell.querySelector('.ghl-num').textContent.startsWith('~'), 'shown as an estimate');
+
+  const button = document.querySelector('[data-ghl-action="fetch"]');
+  assert(button && !button.hidden, 'the fetch button is offered');
+  assert(/行数を取得/.test(button.textContent), `button is labelled (${button.textContent})`);
+  assert(/1/.test(button.textContent), `button names the count (${button.textContent})`);
+});
+
+await domCheckAsync('pressing the button fetches, and the estimate becomes exact', async () => {
+  const before = transportCalls.length;
+  document.querySelector('[data-ghl-action="fetch"]').click();
+
+  await waitFor(
+    () => {
+      const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
+      return cell && !cell.querySelector('.ghl-num').textContent.startsWith('~');
+    },
+    6000,
+    'the estimate to be replaced'
+  );
+
+  const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
+  assertEqual(fetched.length, 1, 'exactly the queued file was fetched');
+
+  const button = document.querySelector('[data-ghl-action="fetch"]');
+  assert(button.hidden, 'the button goes away once there is nothing left to fetch');
+});
+
+await domCheckAsync('off mode never fetches and offers no button', async () => {
+  await settings.set({ exactLinesMode: 'off' });
+  const before = transportCalls.length;
+
+  navigateDom(currentDom, 'source/as-promise', [
+    { name: 'index.ts', type: 'file' },
+    { name: 'types.ts', type: 'file' },
+  ]);
+  await waitFor(
+    () => renderedPaths().some((p) => p.startsWith('source/as-promise/')),
+    6000,
+    'bars for the new directory'
+  );
+
+  const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
+  assertEqual(fetched.length, 0, 'nothing fetched');
+  assert(document.querySelector('[data-ghl-action="fetch"]').hidden, 'no button offered');
+
+  await settings.set({ exactLinesMode: 'auto' });
 });
 
 await domCheckAsync('leaving the file list tears the UI down', async () => {

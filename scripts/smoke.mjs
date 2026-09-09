@@ -24,6 +24,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = path.join(ROOT, 'tests', 'screenshots');
 const args = process.argv.slice(2);
 const HEADED = args.includes('--headed');
+const MANUAL = args.includes('--manual'); // exercise the press-a-button mode
 const TARGET_URL = args.find((a) => a.startsWith('http')) ||
   'https://github.com/sindresorhus/got/tree/main/source';
 
@@ -117,6 +118,10 @@ try {
     await page.fill('.token-row:nth-child(2) .token-label', 'bad-default');
     await page.check('.token-row:nth-child(2) .token-default');
 
+    if (MANUAL) {
+      await page.check('input[name="exactLinesMode"][value="manual"]');
+    }
+
     await page.click('#save');
     await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
 
@@ -202,7 +207,46 @@ try {
     skip(`API quota exhausted — the extension reported it correctly: "${status}"`);
   } else {
     assert(!/失敗|エラー/.test(status), `no error in the status line (${status})`);
-    assert(rows.some((r) => !r.lines.startsWith('~')), 'at least one exact line count landed');
+    if (!MANUAL) {
+      assert(rows.some((r) => !r.lines.startsWith('~')), 'at least one exact line count landed');
+    }
+  }
+
+  // --- manual mode: nothing is fetched until the button is pressed --------
+  if (MANUAL && !rateLimited) {
+    const button = await page.$('#ghl-summary [data-ghl-action="fetch"]:visible');
+    assert(!!button, 'the fetch button is offered');
+    assert(
+      rows.every((r) => r.lines.startsWith('~') || r.lines === 'generated' || r.lines === 'binary'),
+      'everything is still an estimate before the button is pressed'
+    );
+
+    const beforeClick = apiRequests.length;
+    const label = button ? (await button.textContent()) : '';
+    await button.click();
+
+    await page.waitForFunction(
+      () => {
+        const s = document.querySelector('.ghl-summary-status');
+        return s && !/取得中/.test(s.textContent);
+      },
+      { timeout: 60000 }
+    );
+
+    const after = await page.$$eval('.ghl-cell[data-ghl-path]', (cells) =>
+      [...cells].filter((c) => c.offsetParent !== null)
+        .map((c) => c.querySelector('.ghl-num').textContent)
+    );
+    const spent = apiRequests.length - beforeClick;
+
+    console.log(`\nmanual fetch: "${label.trim()}" -> ${spent} requests`);
+    assert(spent > 0, `pressing the button fetched (${spent} requests)`);
+    assert(after.some((n) => /^[\d,]+$/.test(n)), 'estimates were replaced with exact counts');
+    assert(
+      await page.$('#ghl-summary [data-ghl-action="fetch"]:visible') === null,
+      'the button goes away once there is nothing left to fetch'
+    );
+    await page.screenshot({ path: path.join(OUT_DIR, 'manual-mode.png') });
   }
 
   // Treemap

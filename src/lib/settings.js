@@ -25,14 +25,16 @@
     respectGitattributes: true,
     excludePatterns: GHL.patterns.DEFAULT_EXCLUDES.slice(),
 
-    // Exact line counting
-    fetchExactLines: true,
+    // Exact line counting: 'auto' fetches as soon as the page opens, 'manual'
+    // waits for a button press, 'off' never fetches and leaves the estimates.
+    exactLinesMode: 'auto',
     maxExactFetch: 300,   // per directory view
     concurrency: 8,
     maxBlobBytes: 2 * 1024 * 1024, // above this, keep the estimate
   };
 
   const KEY = 'settings';
+  const EXACT_MODES = new Set(['auto', 'manual', 'off']);
 
   function newId() {
     if (globalThis.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -63,6 +65,16 @@
       s.tokens.unshift(normaliseToken({ label: '既定', token: legacy }));
     }
     delete s.token;
+
+    // Migration: the mode used to be a boolean. Check what was actually stored
+    // rather than the merged value, which always has the default in place.
+    const storedMode = stored && stored.exactLinesMode;
+    if (EXACT_MODES.has(storedMode)) {
+      s.exactLinesMode = storedMode;
+    } else {
+      s.exactLinesMode = (stored && stored.fetchExactLines) === false ? 'off' : 'auto';
+    }
+    delete s.fetchExactLines;
 
     if (!s.tokens.some((t) => t.id === s.defaultTokenId)) {
       s.defaultTokenId = s.tokens.length ? s.tokens[0].id : '';
@@ -135,7 +147,7 @@
   }
 
   GHL.settings = {
-    DEFAULTS, KEY,
+    DEFAULTS, KEY, EXACT_MODES,
     get, set, reset, onChange,
     normalise, normaliseToken, tokenForOwner, newId,
   };
