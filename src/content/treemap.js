@@ -118,12 +118,11 @@
     tile.style.height = Math.max(0, rect.h - 1) + 'px';
 
     const isDir = node.type === 'dir';
-    const approx = node.allExact ? '' : '~';
     const share = opts.rootTotal > 0 ? (node.total / opts.rootTotal) * 100 : 0;
 
     tile.title =
       `${node.path || node.name}\n` +
-      `${approx}${fmt(node.total)} 行 (${share.toFixed(1)}%)` +
+      `${fmt(node.total)} 行 (${share.toFixed(1)}%)` +
       (isDir ? `\n${fmt(node.fileCount)} ファイル` : '') +
       (node.type === 'file' ? `\n${util.fmtBytes(node.size || 0)}` : '');
 
@@ -144,7 +143,7 @@
         tile.appendChild(el('span', { class: 'ghl-tm-label' }, [
           el('span', { class: 'ghl-tm-name', text: node.name + (isDir ? '/' : '') }),
           rect.h > 34 && rect.w > 60
-            ? el('span', { class: 'ghl-tm-value', text: `${approx}${fmtCompact(node.total)}` })
+            ? el('span', { class: 'ghl-tm-value', text: fmtCompact(node.total) })
             : null,
         ]));
       }
@@ -163,7 +162,7 @@
     tile.classList.add('ghl-tm-group');
     const head = el('div', { class: 'ghl-tm-head ghl-tm-clickable' }, [
       el('span', { class: 'ghl-tm-name', text: node.name + '/' }),
-      el('span', { class: 'ghl-tm-value', text: `${approx}${fmtCompact(node.total)}` }),
+      el('span', { class: 'ghl-tm-value', text: fmtCompact(node.total) }),
     ]);
     head.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -236,10 +235,14 @@
     modal.crumbs.textContent = '';
     for (const c of buildBreadcrumb(state.ctx, path, drill)) modal.crumbs.appendChild(c);
 
-    const approx = node.allExact ? '' : '~';
-    modal.stats.textContent =
-      `${approx}${fmt(node.total)} 行 · ${fmt(node.fileCount)} ファイル`;
+    modal.stats.textContent = node.allExact
+      ? `${fmt(node.total)} 行 · ${fmt(node.fileCount)} ファイル` : '';
     modal.status.textContent = statusLine(state);
+
+    if (!node.allExact) {
+      canvas.appendChild(el('div', { class: 'ghl-tm-empty', text: '未取得のファイルがあります' }));
+      return;
+    }
 
     const opts = {
       settings: state.settings,
@@ -268,12 +271,11 @@
 
   function statusLine(state) {
     if (state.status === 'refining') {
-      return `実行数を取得中 ${state.progress.done}/${state.progress.total} — 残りはバイト数からの推定（~ 付き）`;
+      return `行数を取得中 ${state.progress.done}/${state.progress.total}`;
     }
-    if (state.status === 'estimated') return 'バイト数から推定中…';
     if (state.warning) return GHL.inline.errorText(state.warning);
-    if (state.truncated) return '巨大リポジトリのため一部推定';
-    return '面積 = 行数';
+    if (state.truncated) return 'ファイル一覧の取得上限に達しました';
+    return '';
   }
 
   function drill(path) {

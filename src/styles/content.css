@@ -97,10 +97,13 @@ html[data-color-mode='dark'] {
   opacity: 0.72;
 }
 
-.ghl-cell[data-state='excluded'] .ghl-num,
-.ghl-cell[data-state='unknown'] .ghl-num {
+.ghl-cell[data-state='excluded'] .ghl-num {
   min-width: 0;
   font-style: italic;
+  opacity: 0.6;
+}
+
+.ghl-cell[data-state='unknown'] .ghl-num {
   opacity: 0.6;
 }
 
@@ -148,6 +151,9 @@ html[data-color-mode='dark'] {
   margin-bottom: 7px;
 }
 
+.ghl-summary [hidden] { display: none; }
+.ghl-summary[data-complete='false'] .ghl-summary-head { margin-bottom: 0; }
+
 .ghl-summary-title {
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -186,6 +192,7 @@ html[data-color-mode='dark'] {
   text-decoration: none;
 }
 .ghl-btn:hover { background: var(--ghl-surface-alt); }
+.ghl-btn:disabled { opacity: 0.45; cursor: default; }
 .ghl-btn-quiet { background: transparent; }
 
 /* Manual mode's "fetch line counts" button — the one action the strip offers. */

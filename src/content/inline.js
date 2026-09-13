@@ -20,10 +20,6 @@
     return 'ok';
   }
 
-  function approxPrefix(node) {
-    return node.allExact ? '' : '~';
-  }
-
   /* ------------------------------------------------------------ row cells */
 
   function cellIn(host) {
@@ -50,14 +46,17 @@
     const fill = cell.querySelector('.ghl-bar-fill');
     const num = cell.querySelector('.ghl-num');
     const pct = cell.querySelector('.ghl-pct');
+    const bar = cell.querySelector('.ghl-bar');
+    bar.style.visibility = !node || !node.allExact || dirTotal === null ? 'hidden' : '';
+    cell.dataset.severity = 'none';
 
     if (!node) {
       cell.dataset.ghlPath = row.path;
       cell.dataset.state = 'unknown';
       fill.style.width = '0%';
-      num.textContent = '–';
+      num.textContent = '—';
       pct.textContent = '';
-      cell.title = 'GitHub Lines: この項目の情報を取得できませんでした（サブモジュール等）';
+      cell.title = '未取得';
       return;
     }
 
@@ -79,19 +78,30 @@
       return;
     }
 
+    if (!node.allExact) {
+      cell.dataset.state = 'unknown';
+      cell.dataset.severity = 'none';
+      fill.style.width = '0%';
+      num.textContent = '—';
+      pct.textContent = '';
+      cell.title = isFile && node.size > settings.maxBlobBytes
+        ? `取得上限（${util.fmtBytes(settings.maxBlobBytes)}）を超えています`
+        : '未取得';
+      return;
+    }
+
     const share = dirTotal > 0 ? (total / dirTotal) * 100 : 0;
     const width = maxTotal > 0 ? Math.max(total > 0 ? 2 : 0, (total / maxTotal) * 100) : 0;
 
     fill.style.width = width.toFixed(2) + '%';
-    num.textContent = approxPrefix(node) + fmt(total);
+    num.textContent = fmt(total);
     pct.textContent = share >= 0.5 ? Math.round(share) + '%' : '';
 
     const lines = [];
     lines.push(node.path);
-    lines.push(`${approxPrefix(node)}${fmt(total)} 行 — このディレクトリの ${share.toFixed(1)}%`);
+    lines.push(`${fmt(total)} 行` + (dirTotal === null ? '' : ` — このディレクトリの ${share.toFixed(1)}%`));
     if (!isFile) lines.push(`${fmt(node.fileCount)} ファイル`);
     lines.push(util.fmtBytes(node.bytes || node.size || 0));
-    if (!node.allExact) lines.push('（推定値。行数を取得中または取得対象外）');
     if (isFile && total >= settings.dangerLines) {
       lines.push(`⚠ 閾値 ${fmt(settings.dangerLines)} 行を超えています`);
     } else if (isFile && total >= settings.warnLines) {
@@ -171,17 +181,16 @@
     const settings = state.settings;
     const treemapButton = node.querySelector('[data-ghl-action="treemap"]');
     treemapButton.hidden = !settings.showTreemapButton;
-    treemapButton.disabled = !state.index;
+    treemapButton.disabled = !state.index || !dirNode.allExact;
 
     // Manual mode: nothing is fetched until this is pressed.
     const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
-    const offerFetch = state.status === 'pending' && state.pending > 0;
+    const offerFetch = settings.exactLinesMode === 'manual' &&
+      (state.status === 'error' || (state.status === 'pending' && (state.needsMetadata || state.pending > 0)));
     fetchButton.hidden = !offerFetch;
     if (offerFetch) {
-      fetchButton.textContent = `行数を取得（${fmt(state.pending)}）`;
-      fetchButton.title =
-        `${fmt(state.pending)} ファイルの行数を GitHub から取得します\n` +
-        '（同じ数だけ API リクエストを使います。取得済みのファイルは含みません）';
+      fetchButton.textContent = state.needsMetadata || !state.pending
+        ? '行数を取得' : `行数を取得（${fmt(state.pending)}）`;
     }
 
     const stats = node.querySelector('.ghl-summary-stats');
@@ -194,9 +203,11 @@
 
     if (!state.index) {
       // Nothing fetched yet — the status line carries the message instead.
-      stats.textContent = '—';
+      stats.textContent = '';
+    } else if (!dirNode.allExact) {
+      stats.textContent = `取得済み ${fmt(dirNode.exactCount || 0)}/${fmt(dirNode.fileCount)} ファイル`;
     } else {
-      const parts = [`${approxPrefix(dirNode)}${fmt(total)} 行`, `${fmt(dirNode.fileCount)} ファイル`];
+      const parts = [`${fmt(total)} 行`, `${fmt(dirNode.fileCount)} ファイル`];
       if (biggest && total > 0) {
         const share = Math.round((biggest.total / total) * 100);
         parts.push(`最大: ${biggest.name}${biggest.type === 'dir' ? '/' : ''} ${fmtCompact(biggest.total)} 行 (${share}%)`);
@@ -210,6 +221,11 @@
     // Stacked proportion bar
     stack.textContent = '';
     legend.textContent = '';
+    const complete = !!state.index && dirNode.allExact;
+    node.dataset.complete = String(complete);
+    stack.hidden = !complete || total === 0;
+    legend.hidden = !complete || total === 0;
+    if (!complete) return;
     const segments = segmentsFor(dirNode, settings);
     for (const seg of segments) {
       const pct = total > 0 ? (seg.total / total) * 100 : 0;
@@ -253,12 +269,11 @@
     if (state.status === 'error') return errorText(state.error);
     if (state.warning) return errorText(state.warning);
     if (state.status === 'loading') return '読み込み中…';
-    if (state.status === 'estimated') return 'バイト数から推定中…';
-    if (state.status === 'pending') return 'バイト数からの推定値';
     if (state.status === 'refining') {
-      return `実行数を取得中 ${state.progress.done}/${state.progress.total}`;
+      return `行数を取得中 ${state.progress.done}/${state.progress.total}`;
     }
-    if (state.truncated) return '巨大リポジトリのため一部推定';
+    if (state.truncated) return 'ファイル一覧の取得上限に達しました';
+    if (state.status === 'ready' && !state.index) return '未取得';
     return '';
   }
 
@@ -278,9 +293,11 @@
       case 'secondary_rate_limit':
         return `GitHub の二次レート制限により一時停止中${untilText(err.reset)}`;
       case 'throttled':
-        return '短時間に取得しすぎたため待機中 — しばらくすると再開します';
+        return '短時間に取得しすぎました — 時間をおいて再試行してください';
       case 'bad_token':
         return `${err.tokenLabel || 'トークン'} が無効です — 設定を確認してください`;
+      case 'attributes_limit':
+        return '.gitattributes の取得上限に達しました';
       case 'not_found':
         // With several accounts configured, naming the one that was tried is
         // the difference between a useful message and a mystery.
@@ -317,6 +334,11 @@
     if (!dirNode) {
       clearRows();
       renderSummary(state, EMPTY_DIR, handlers);
+      if (settings.showInlineBars) {
+        for (const row of GHL.page.findRows(ctx)) {
+          renderRow(row, null, null, 0, settings);
+        }
+      }
       return;
     }
 
@@ -332,7 +354,7 @@
       .map((r) => ({ row: r, node: state.index.get(r.path) }))
       .filter((x) => x.node);
 
-    const dirTotal = dirNode.total || 0;
+    const dirTotal = dirNode.allExact ? dirNode.total || 0 : null;
     const maxTotal = visible.reduce((m, x) => Math.max(m, x.node.total || 0), 0);
 
     for (const r of rows) {

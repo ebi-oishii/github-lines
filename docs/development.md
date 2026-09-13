@@ -4,7 +4,7 @@
 
 ```bash
 npm install
-npm test             # ロジック + DOM テスト（61 件、ネットワーク不要）
+npm test             # ロジック + DOM テスト（ネットワーク不要）
 npm run smoke        # 実 Chrome に読み込んで github.com で動作確認
 npm run measure      # API リクエスト数を実測
 npm run icons        # icons/*.png を再生成
@@ -16,6 +16,7 @@ npm run fixture      # GitHub の実 HTML からテスト用フィクスチャ�
 ```bash
 GITHUB_TOKEN=$(gh auth token) npm run smoke
 node scripts/smoke.mjs --manual    # 手動モード（ボタンを押して取得）を検証
+node scripts/smoke.mjs --auto      # 自動取得モードを検証
 node scripts/smoke.mjs --headed    # 実際の動きを見る
 ```
 
@@ -26,14 +27,14 @@ manifest.json
 src/
   lib/
     namespace.js      全コンテキスト共通の名前空間
-    patterns.js       除外判定、.gitattributes 解析、バイト数→行数の推定
+    patterns.js       除外判定、.gitattributes 解析
     settings.js       chrome.storage.local の読み書き
   background/
     service-worker.js GitHub API + IndexedDB キャッシュ + レート制御
   content/
     util.js           DOM ヘルパー、並列実行、service worker との通信
     page.js           GitHub のページ解析（リポジトリ / ref / パス / 行）
-    store.js          取得の統括（推定 → 実測への収束）
+    store.js          取得の統括（キャッシュ確認 → 手動 / 自動取得）
     inline.js         一覧のバーとサマリー行
     treemap.js        squarified treemap
     main.js           遷移の追従とライフサイクル
@@ -61,14 +62,16 @@ github.com から `api.github.com` を直接叩けません。加えて、キャ
 
 ## テスト
 
-### `scripts/test.mjs`（61 件、ネットワーク不要）
+### `scripts/test.mjs`（ネットワーク不要）
 
-- 純粋なロジック: glob、`.gitattributes`、行数推定、集計、treemap の配置アルゴリズム
+- 純粋なロジック: glob、`.gitattributes`、集計、treemap の配置アルゴリズム
 - トークンのルーティング: オーナーごとの選択、旧形式からの移行
 - service worker との通信: タイムアウト、リトライ、コンテキスト消失
 - DOM: **GitHub の実 HTML を切り出したフィクスチャ**（`tests/fixtures/tree-page.html`）に対して、
   コンテキスト抽出・行の検出・バーの注入を検証
 - クライアントサイド遷移: `main.js` を実際に動かして、遷移時の再描画とテアダウンを検証
+- キャッシュ専用の worker 経路: 未キャッシュ時も外部通信しないこと、通常取得との同時実行
+- 不完全なデータ: 未取得・サイズ上限・一覧切り詰め時に合計や割合を表示しないこと
 - 行数取得のモード: 自動 / 手動 / 取得しない の挙動と、旧 boolean からの移行
 
 ### `scripts/smoke.mjs`
@@ -113,4 +116,4 @@ node scripts/capture-fixture.mjs ./saved.html
 |---|---|---|
 | `MAX_PER_WINDOW` | 600 / 分 | 900 points/分 |
 | `settings.concurrency` | 8 | 100 |
-| `settings.maxExactFetch` | 300 / 画面 | — |
+| `settings.maxExactFetch` | 300 / 回 | — |

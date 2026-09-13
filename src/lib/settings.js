@@ -25,12 +25,12 @@
     respectGitattributes: true,
     excludePatterns: GHL.patterns.DEFAULT_EXCLUDES.slice(),
 
-    // Exact line counting: 'auto' fetches as soon as the page opens, 'manual'
-    // waits for a button press, 'off' never fetches and leaves the estimates.
-    exactLinesMode: 'auto',
-    maxExactFetch: 300,   // per directory view
+    // Manual waits for a button press before any API request, including trees
+    // and attributes. Off only reads local caches.
+    exactLinesMode: 'manual',
+    maxExactFetch: 300,   // per click, or one automatic pass per directory view
     concurrency: 8,
-    maxBlobBytes: 2 * 1024 * 1024, // above this, keep the estimate
+    maxBlobBytes: 2 * 1024 * 1024, // above this, leave the count unknown
   };
 
   const KEY = 'settings';
@@ -72,7 +72,9 @@
     if (EXACT_MODES.has(storedMode)) {
       s.exactLinesMode = storedMode;
     } else {
-      s.exactLinesMode = (stored && stored.fetchExactLines) === false ? 'off' : 'auto';
+      const legacyMode = stored && stored.fetchExactLines;
+      s.exactLinesMode = legacyMode === false ? 'off'
+        : legacyMode === true ? 'auto' : DEFAULTS.exactLinesMode;
     }
     delete s.fetchExactLines;
 

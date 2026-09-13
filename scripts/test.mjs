@@ -1,7 +1,7 @@
 /* Tests.
 
    Two halves:
-     - pure logic (globs, .gitattributes, estimator, rollups, treemap layout)
+     - pure logic (globs, .gitattributes, rollups, treemap layout)
      - DOM behaviour against a trimmed capture of a real GitHub page, so that
        the day GitHub reshuffles its markup, this fails instead of the bars
        silently vanishing.
@@ -220,26 +220,6 @@ check('gitattributes: comments and attribute-less lines are ignored', () => {
   assertEqual(rules.length, 0, 'no linguist attributes present');
 });
 
-/* ------------------------------------------------------------- estimator */
-
-check('ratio learner falls back to the per-language table', () => {
-  const learner = patterns.createRatioLearner();
-  assertEqual(learner.estimate('src/a.ts', 3300), 100); // ts defaults to 33 b/line
-});
-
-check('ratio learner adapts once it has evidence', () => {
-  const learner = patterns.createRatioLearner();
-  learner.observe('src/a.ts', 1000, 100); // this repo really runs 10 bytes/line
-  assertEqual(learner.estimate('src/b.ts', 1000), 100, 'learned ratio applied');
-  assertEqual(learner.estimate('src/b.py', 3000), 100, 'py still uses the table');
-});
-
-check('ratio learner ignores samples too small to be evidence', () => {
-  const learner = patterns.createRatioLearner();
-  learner.observe('src/a.ts', 1000, 2);
-  assertEqual(learner.estimate('src/b.ts', 3300), 100, 'still the default 33 b/l');
-});
-
 /* -------------------------------------------------------- tree + rollup */
 
 function sampleTree() {
@@ -263,19 +243,19 @@ check('buildTree creates implicit parent directories', () => {
 
 check('rollup sums descendants and excludes binaries', () => {
   const { root, index } = sampleTree();
-  const learner = patterns.createRatioLearner();
   const isExcluded = patterns.compileExcludes(patterns.DEFAULT_EXCLUDES);
 
   for (const node of index.values()) {
     if (node.type !== 'file') continue;
     node.binary = patterns.isBinary(node.path);
     node.excluded = node.binary || isExcluded(node.path);
-    node.lines = node.excluded ? 0 : learner.estimate(node.path, node.size);
+    node.lines = ({ a: 100, b: 50, c: 30, e: 10 })[node.sha] || 0;
+    node.exact = true;
   }
   store.rollup(root);
 
-  assertEqual(index.get('src/api.ts').lines, 100, 'api.ts estimate');
-  assertEqual(index.get('src/util.ts').lines, 50, 'util.ts estimate');
+  assertEqual(index.get('src/api.ts').lines, 100, 'api.ts exact count');
+  assertEqual(index.get('src/util.ts').lines, 50, 'util.ts exact count');
   assertEqual(index.get('src/ui').total, 30, 'nested dir total');
   assertEqual(index.get('src').total, 180, 'src total includes nested dir');
   assertEqual(index.get('logo.png').total, 0, 'binary contributes nothing');
@@ -292,7 +272,7 @@ check('allExact is false until every descendant is exact', () => {
   index.get('src/ui/Button.tsx').exact = false;
   store.rollup(root);
 
-  assertEqual(index.get('src/ui').allExact, false, 'dir holding the estimate');
+  assertEqual(index.get('src/ui').allExact, false, 'dir holding an unknown count');
   assertEqual(index.get('src').allExact, false, 'propagates upward');
   assertEqual(root.allExact, false, 'reaches the root');
 
@@ -414,13 +394,13 @@ check('settings: a dangling defaultTokenId falls back to the first token', () =>
 check('settings: the exact-lines boolean migrates to a mode', () => {
   assertEqual(settings.normalise({ fetchExactLines: false }).exactLinesMode, 'off');
   assertEqual(settings.normalise({ fetchExactLines: true }).exactLinesMode, 'auto');
-  assertEqual(settings.normalise({}).exactLinesMode, 'auto', 'never configured');
+  assertEqual(settings.normalise({}).exactLinesMode, 'manual', 'never configured');
   assertEqual(settings.normalise({ fetchExactLines: false }).fetchExactLines, undefined,
     'the old field is dropped');
 });
 
-check('settings: an unknown exact-lines mode falls back to auto', () => {
-  assertEqual(settings.normalise({ exactLinesMode: 'nonsense' }).exactLinesMode, 'auto');
+check('settings: an unknown exact-lines mode falls back to manual', () => {
+  assertEqual(settings.normalise({ exactLinesMode: 'nonsense' }).exactLinesMode, 'manual');
   for (const mode of ['auto', 'manual', 'off']) {
     assertEqual(settings.normalise({ exactLinesMode: mode }).exactLinesMode, mode);
   }
@@ -639,7 +619,7 @@ domCheck('render injects an aligned bar into every name cell', () => {
   }));
   const { root, index } = store.buildTree(entries);
   for (const node of index.values()) {
-    if (node.type === 'file') node.lines = Math.round(node.size / 32);
+    if (node.type === 'file') { node.lines = Math.round(node.size / 32); node.exact = true; }
   }
   store.rollup(root);
 
@@ -690,7 +670,7 @@ domCheck('render is idempotent — repeated passes do not duplicate bars', () =>
       type: 'file', size: 2000, sha: `sha-${r.name}`,
     }))
   );
-  for (const node of index.values()) if (node.type === 'file') node.lines = 60;
+  for (const node of index.values()) if (node.type === 'file') { node.lines = 60; node.exact = true; }
   store.rollup(root);
 
   const state = { ctx, settings: settings.DEFAULTS, status: 'ready', root, index, progress: { done: 0, total: 0 } };
@@ -710,7 +690,7 @@ domCheck('clearRows and removeSummary leave the page clean', () => {
   const { root, index } = store.buildTree(
     rows.map((r) => ({ path: r.type === 'dir' ? `${r.path}/i.ts` : r.path, type: 'file', size: 2000, sha: r.name }))
   );
-  for (const node of index.values()) if (node.type === 'file') node.lines = 60;
+  for (const node of index.values()) if (node.type === 'file') { node.lines = 60; node.exact = true; }
   store.rollup(root);
 
   inline.render({ ctx, settings: settings.DEFAULTS, status: 'ready', root, index, progress: { done: 0, total: 0 } }, {});
@@ -760,6 +740,7 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
     calls.push(msg);
     switch (msg.type) {
       case 'TREE':
+        if (msg.cacheOnly) return { ok: false, error: 'cache_miss' };
         if (treeDelayMs) await sleep(treeDelayMs);
         return { ok: true, entries: STUB_TREE, truncated: false };
       case 'CACHED_LINES':
@@ -819,12 +800,14 @@ function renderedPaths() {
 }
 
 await domCheckAsync('the strip shows up while the tree is still in flight', async () => {
+  await settings.set({ exactLinesMode: 'auto' });
   installDom(fixtureHtml, FIXTURE_URL);
   stubTransport({ treeDelayMs: 700 });
   load('src/content/main.js');
 
   await waitFor(() => document.getElementById(inline.SUMMARY_ID), 3000, 'summary strip');
-  assertEqual(renderedPaths().length, 0, 'no bars yet — the tree has not arrived');
+  assert([...document.querySelectorAll('.ghl-num')].every((n) => n.textContent === '—'),
+    'unknown counts while the tree is loading');
 
   const status = document.querySelector('.ghl-summary-status').textContent;
   assert(/読み込み中/.test(status), `status should report loading, got "${status}"`);
@@ -835,7 +818,7 @@ await domCheckAsync('the strip shows up while the tree is still in flight', asyn
 });
 
 await domCheckAsync('main paints the directory it lands on', async () => {
-  await waitFor(() => renderedPaths().length > 0, 6000, 'bars on first paint');
+  await waitFor(() => document.querySelector('.ghl-cell[data-state="file"]'), 6000, 'exact counts on first paint');
 
   const paths = renderedPaths();
   assert(paths.includes('source/create.ts'), `expected source/create.ts, got ${paths}`);
@@ -912,7 +895,7 @@ await domCheckAsync('navigating back up rebuilds the parent view', async () => {
   assert(!paths.some((p) => p.startsWith('source/as-promise/')), 'stale child rows are gone');
 });
 
-await domCheckAsync('manual mode paints estimates and waits for the button', async () => {
+await domCheckAsync('manual mode makes no API requests and waits for the button', async () => {
   await settings.set({ exactLinesMode: 'manual' });
   const before = transportCalls.length;
 
@@ -923,33 +906,37 @@ await domCheckAsync('manual mode paints estimates and waits for the button', asy
     'bars for the new directory'
   );
 
-  const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
-  assertEqual(fetched.length, 0, 'no line counts fetched without being asked');
+  const fetched = transportCalls.slice(before).filter((c) => !c.cacheOnly && ['TREE', 'LINES', 'BLOB_TEXT'].includes(c.type));
+  assertEqual(fetched.length, 0, 'no metadata or contents fetched without being asked');
 
   const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
-  assert(cell.querySelector('.ghl-num').textContent.startsWith('~'), 'shown as an estimate');
+  assertEqual(cell.querySelector('.ghl-num').textContent, '—', 'unknown, without an estimate');
+  assertEqual(cell.querySelector('.ghl-pct').textContent, '', 'no invented percentage');
 
   const button = document.querySelector('[data-ghl-action="fetch"]');
   assert(button && !button.hidden, 'the fetch button is offered');
   assert(/行数を取得/.test(button.textContent), `button is labelled (${button.textContent})`);
-  assert(/1/.test(button.textContent), `button names the count (${button.textContent})`);
+  assertEqual(button.textContent, '行数を取得', 'file count is unknown until the tree is fetched');
 });
 
-await domCheckAsync('pressing the button fetches, and the estimate becomes exact', async () => {
+await domCheckAsync('pressing the button fetches metadata and exact counts', async () => {
   const before = transportCalls.length;
   document.querySelector('[data-ghl-action="fetch"]').click();
+  document.dispatchEvent(new currentDom.window.Event('soft-nav:end'));
 
   await waitFor(
     () => {
       const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
-      return cell && !cell.querySelector('.ghl-num').textContent.startsWith('~');
+      return cell && cell.querySelector('.ghl-num').textContent === '4,000';
     },
     6000,
-    'the estimate to be replaced'
+    'the exact count to appear'
   );
 
   const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 1, 'exactly the queued file was fetched');
+  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE' && !c.cacheOnly).length,
+    1, 'the tree is fetched after the click');
 
   const button = document.querySelector('[data-ghl-action="fetch"]');
   assert(button.hidden, 'the button goes away once there is nothing left to fetch');
@@ -969,7 +956,7 @@ await domCheckAsync('off mode never fetches and offers no button', async () => {
     'bars for the new directory'
   );
 
-  const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
+  const fetched = transportCalls.slice(before).filter((c) => !c.cacheOnly && ['TREE', 'LINES', 'BLOB_TEXT'].includes(c.type));
   assertEqual(fetched.length, 0, 'nothing fetched');
   assert(document.querySelector('[data-ghl-action="fetch"]').hidden, 'no button offered');
 
@@ -985,6 +972,252 @@ await domCheckAsync('leaving the file list tears the UI down', async () => {
     document.querySelectorAll(`#${inline.SUMMARY_ID}`).length, 0,
     'summary strip removed too'
   );
+});
+
+/* ---------------------------------------------------- cache-only contract */
+
+function workerHarness() {
+  const records = new Map();
+  const requests = [];
+  const context = vm.createContext({
+    GHL: globalThis.GHL,
+    importScripts() {},
+    chrome: { runtime: { onMessage: { addListener() {} } } },
+    setTimeout,
+    clearTimeout,
+    records,
+    fetch: async (url) => {
+      requests.push(url);
+      return {
+        ok: true,
+        headers: { get: () => null },
+        json: async () => ({ tree: [], truncated: false }),
+        text: async () => '*.ts linguist-generated=true',
+      };
+    },
+  });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/background/service-worker.js'), 'utf8'), context);
+  vm.runInContext(`
+    idbGet = async (store, key) => records.get(store + ':' + key);
+    idbPut = async (store, row) => records.set(store + ':' + (row.key || row.sha), row);
+    pruneTrees = async () => {};
+  `, context);
+  return { context, records, requests };
+}
+
+await checkAsync('worker: cache-only misses never reach fetch, even for a mutable ref', async () => {
+  const w = workerHarness();
+  for (const oid of ['a'.repeat(40), 'feature/new']) {
+    const result = await w.context.getTree({ owner: 'o', repo: 'r', oid, cacheOnly: true });
+    assertEqual(result.error, 'cache_miss');
+  }
+  assertEqual((await w.context.getBlobText({ sha: 'b', cacheOnly: true })).error, 'cache_miss');
+  assertEqual(w.requests.length, 0, 'no HTTP requests of any kind');
+});
+
+await checkAsync('worker: existing tree and attribute caches remain usable', async () => {
+  const w = workerHarness();
+  const oid = 'a'.repeat(40);
+  w.records.set(`trees:o/r@${oid}:r`, { entries: STUB_TREE, truncated: false });
+  w.records.set('texts:b', { text: '*.ts linguist-generated=true' });
+  const tree = await w.context.getTree({ owner: 'o', repo: 'r', oid, cacheOnly: true });
+  assertEqual(tree.entries, STUB_TREE);
+  assertEqual(tree.cached, true);
+  assertEqual((await w.context.getBlobText({ sha: 'b', cacheOnly: true })).cached, true);
+  assertEqual(w.requests.length, 0);
+});
+
+await checkAsync('worker: a cache probe does not join a concurrent network request', async () => {
+  const w = workerHarness();
+  const msg = { owner: 'o', repo: 'r', oid: 'a'.repeat(40) };
+  const network = w.context.getTree(msg);
+  const probe = w.context.getTree({ ...msg, cacheOnly: true });
+  assertEqual((await probe).error, 'cache_miss');
+  assertEqual((await network).ok, true);
+  assertEqual(w.requests.length, 1);
+  const textNetwork = w.context.getBlobText({ ...msg, sha: 'b' });
+  const textProbe = w.context.getBlobText({ ...msg, sha: 'b', cacheOnly: true });
+  assertEqual((await textProbe).error, 'cache_miss');
+  assertEqual((await textNetwork).ok, true);
+  assertEqual(w.requests.length, 2);
+});
+
+function dataTransport({ entries = STUB_TREE, cachedTree = false, lines = {}, texts = {}, truncated = false,
+  failTree = false, failLines = false, delayMs = 0 } = {}) {
+  const calls = [];
+  const network = [];
+  const control = { failTree, failLines };
+  globalThis.GHL.util.send = async (msg) => {
+    calls.push(msg);
+    if (!msg.cacheOnly && ['TREE', 'LINES', 'BLOB_TEXT'].includes(msg.type)) network.push(msg);
+    if (delayMs) await sleep(delayMs);
+    if (msg.type === 'TREE') {
+      if (msg.cacheOnly && !cachedTree) return { ok: false, error: 'cache_miss' };
+      if (!msg.cacheOnly && control.failTree) return { ok: false, error: 'rate_limit' };
+      return { ok: true, entries, truncated };
+    }
+    if (msg.type === 'BLOB_TEXT') {
+      if (msg.cacheOnly && texts[msg.sha] === undefined) return { ok: false, error: 'cache_miss' };
+      return { ok: true, text: texts[msg.sha] || '' };
+    }
+    if (msg.type === 'CACHED_LINES') return { ok: true, lines };
+    if (msg.type === 'LINES') {
+      if (control.failLines) return { ok: false, error: 'rate_limit' };
+      return { ok: true, lines: 10 };
+    }
+    return { ok: false, error: 'unexpected_message' };
+  };
+  return { calls, network, control };
+}
+
+async function loadedStore(mode = 'manual', patch = {}) {
+  await settings.set({ exactLinesMode: mode, maxExactFetch: 300, concurrency: 1, respectGitattributes: true, ...patch });
+  let state;
+  const handle = store.load({ owner: 'o', repo: 'r', oid: 'a'.repeat(40), path: 'source' }, (s) => { state = s; });
+  await waitFor(() => state && state.status !== 'loading', 3000, 'store initialization');
+  return { get state() { return state; }, handle };
+}
+
+await checkAsync('manual: a fully cached directory displays exact counts without a fetch', async () => {
+  const lines = Object.fromEntries(STUB_TREE.filter((e) => e.sha).map((e) => [e.sha, 10]));
+  const t = dataTransport({ cachedTree: true, lines });
+  const loaded = await loadedStore();
+  assertEqual(loaded.state.index.get('source').total, 60);
+  assertEqual(loaded.state.index.get('source').allExact, true);
+  assertEqual(loaded.state.status, 'ready');
+  assertEqual(t.network.length, 0);
+  loaded.handle.cancel();
+});
+
+await domCheckAsync('partial cached data never displays a directory total, percentage or treemap', async () => {
+  installDom(fixtureHtml, FIXTURE_URL);
+  const t = dataTransport({ cachedTree: true, lines: { 'sha-create': 25 } });
+  const loaded = await loadedStore();
+  loaded.state.ctx = page.getContext();
+  inline.render(loaded.state, {});
+  const file = document.querySelector('.ghl-cell[data-ghl-path="source/create.ts"]');
+  assertEqual(file.querySelector('.ghl-num').textContent, '25');
+  assertEqual(file.querySelector('.ghl-pct').textContent, '');
+  assertEqual(file.querySelector('.ghl-bar').style.visibility, 'hidden');
+  assertEqual(document.querySelector('.ghl-cell[data-ghl-path="source/core"] .ghl-num').textContent, '—');
+  assertEqual(document.querySelector('.ghl-summary-stats').textContent, '取得済み 1/6 ファイル');
+  assert(document.querySelector('.ghl-stack').hidden);
+  assert(document.querySelector('[data-ghl-action="treemap"]').disabled);
+  assertEqual(t.network.length, 0);
+  loaded.handle.cancel();
+});
+
+await checkAsync('manual: missing attributes wait for a click and then apply exclusions', async () => {
+  const entries = [...STUB_TREE, { path: '.gitattributes', type: 'file', size: 20, sha: 'attrs' }];
+  const texts = {};
+  const t = dataTransport({ entries, cachedTree: true, texts, lines: { 'sha-create': 25 } });
+  const loaded = await loadedStore();
+  assertEqual(loaded.state.needsMetadata, true);
+  assertEqual(loaded.state.index.get('source/create.ts').allExact, false);
+  assertEqual(t.network.length, 0);
+  texts.attrs = 'source/create.ts linguist-generated=true';
+  await loaded.handle.fetchExact();
+  assertEqual(loaded.state.index.get('source/create.ts').excluded, true);
+  assert(t.network.some((c) => c.type === 'BLOB_TEXT'));
+  assert(!t.network.some((c) => c.type === 'LINES' && c.sha === 'sha-create'));
+  loaded.handle.cancel();
+});
+
+await checkAsync('manual: cold-cache double clicks perform one metadata/count pass', async () => {
+  const t = dataTransport({ delayMs: 5 });
+  const loaded = await loadedStore();
+  const first = loaded.handle.fetchExact();
+  const second = loaded.handle.fetchExact();
+  assertEqual(first, second);
+  await first;
+  assertEqual(t.network.filter((c) => c.type === 'TREE').length, 1);
+  assertEqual(t.network.filter((c) => c.type === 'LINES').length, 6);
+  assertEqual(loaded.state.index.get('source').allExact, true);
+  loaded.handle.cancel();
+});
+
+await checkAsync('manual: a failed tree fetch stays retryable without automatic retries', async () => {
+  const t = dataTransport({ failTree: true });
+  const loaded = await loadedStore();
+  await loaded.handle.fetchExact();
+  assertEqual(loaded.state.status, 'error');
+  assertEqual(t.network.length, 1);
+  t.control.failTree = false;
+  await loaded.handle.fetchExact();
+  assertEqual(loaded.state.index.get('source').allExact, true);
+  loaded.handle.cancel();
+});
+
+await checkAsync('manual: rate limits preserve unknown counts and allow an explicit retry', async () => {
+  const t = dataTransport({ cachedTree: true, failLines: true });
+  const loaded = await loadedStore();
+  await loaded.handle.fetchExact();
+  assertEqual(loaded.state.status, 'pending');
+  assertEqual(loaded.state.warning.error, 'rate_limit');
+  assertEqual(t.network.filter((c) => c.type === 'LINES').length, 1);
+  assertEqual(loaded.state.index.get('source').total, 0);
+  assertEqual(loaded.state.index.get('source').allExact, false);
+  t.control.failLines = false;
+  await loaded.handle.fetchExact();
+  assertEqual(loaded.state.index.get('source').allExact, true);
+  loaded.handle.cancel();
+});
+
+await checkAsync('manual: each click respects the file limit and offers the next batch', async () => {
+  const t = dataTransport({ cachedTree: true });
+  const loaded = await loadedStore('manual', { maxExactFetch: 2 });
+  await loaded.handle.fetchExact();
+  assertEqual(t.network.length, 2);
+  assertEqual(loaded.state.pending, 2);
+  assertEqual(loaded.state.status, 'pending');
+  await loaded.handle.fetchExact();
+  assertEqual(t.network.length, 4);
+  await loaded.handle.fetchExact();
+  assertEqual(t.network.length, 6);
+  assertEqual(loaded.state.status, 'ready');
+  loaded.handle.cancel();
+});
+
+await checkAsync('off: missing attributes never cause network access', async () => {
+  const entries = [...STUB_TREE, { path: '.gitattributes', type: 'file', size: 20, sha: 'attrs' }];
+  const t = dataTransport({ entries, cachedTree: true });
+  const loaded = await loadedStore('off');
+  await loaded.handle.fetchExact();
+  assertEqual(t.network.length, 0);
+  assertEqual(loaded.state.status, 'ready');
+  loaded.handle.cancel();
+});
+
+await checkAsync('truncated trees and oversized files cannot produce complete totals', async () => {
+  dataTransport({ cachedTree: true, truncated: true, lines: Object.fromEntries(STUB_TREE.filter((e) => e.sha).map((e) => [e.sha, 10])) });
+  const truncated = await loadedStore();
+  assertEqual(truncated.state.index.get('source').allExact, false);
+  truncated.handle.cancel();
+
+  const entries = [
+    { path: 'source/empty.ts', type: 'file', size: 0, sha: 'empty' },
+    { path: 'source/large.ts', type: 'file', size: 3 * 1024 * 1024, sha: 'large' },
+    { path: 'source/submodule', type: 'file', size: null, sha: 'submodule' },
+  ];
+  const t = dataTransport({ entries });
+  const loaded = await loadedStore();
+  await loaded.handle.fetchExact();
+  assertEqual(loaded.state.index.get('source/empty.ts').allExact, true);
+  assertEqual(loaded.state.index.get('source/empty.ts').total, 0);
+  assertEqual(loaded.state.index.get('source/large.ts').allExact, false);
+  assertEqual(loaded.state.index.get('source/submodule').allExact, false);
+  assertEqual(loaded.state.index.get('source').allExact, false);
+  assertEqual(t.network.filter((c) => c.type === 'LINES').length, 0);
+  loaded.handle.cancel();
+});
+
+await checkAsync('navigation cancellation prevents further metadata or line requests', async () => {
+  const t = dataTransport({ delayMs: 30 });
+  const loaded = await loadedStore();
+  const fetching = loaded.handle.fetchExact();
+  loaded.handle.cancel();
+  await fetching;
+  assertEqual(t.network.length, 1, 'only the already-started tree request');
 });
 
 /* ---------------------------------------------------------------- report */
