@@ -1,14 +1,6 @@
-/* Data orchestration.
-
-   The hybrid strategy, in order:
-     1. One recursive tree request gives every file's byte size  -> estimate
-        lines per file and paint immediately.
-     2. Read the repo's .gitattributes and drop linguist-generated/vendored
-        files, then repaint.
-     3. Probe the cache in bulk for exact counts we already know, repaint.
-     4. Fetch the remaining blobs (bounded, largest-first) and replace estimates
-        with real counts as they land, learning the repo's real bytes-per-line
-        ratio so that the still-estimated files converge too. */
+/* Data orchestration. Manual/off initially read local caches only. A manual
+   click or auto mode loads the tree, attributes and then file contents.
+   Unknown counts never contribute to displayed totals or proportions. */
 (function (GHL) {
   'use strict';
 
@@ -53,10 +45,10 @@
         name: e.path.slice(slash + 1),
         path: e.path,
         type: 'file',
-        size: e.size || 0,
+        size: e.size ?? null,
         sha: e.sha,
         lines: 0,
-        exact: false,
+        exact: e.size === 0,
         excluded: false,
         binary: false,
       };
@@ -75,36 +67,33 @@
     }
   }
 
-  function applyEstimates(index, learner) {
-    for (const node of index.values()) {
-      if (node.type !== 'file' || node.exact) continue;
-      node.lines = node.excluded ? 0 : learner.estimate(node.path, node.size);
-    }
-  }
-
-  /* Depth-first sum. `allExact` lets the UI mark a number as approximate. */
+  /* Only exact counts contribute. allExact also requires complete metadata. */
   function rollup(node) {
     if (node.type === 'file') {
-      node.total = node.excluded ? 0 : node.lines;
+      node.total = node.excluded || !node.exact ? 0 : node.lines;
       node.bytes = node.excluded ? 0 : node.size;
       node.fileCount = node.excluded ? 0 : 1;
-      node.allExact = node.excluded || node.exact;
+      node.allExact = node.excluded || (node.exact && !node.incomplete);
+      node.exactCount = !node.excluded && node.allExact ? 1 : 0;
       return;
     }
     let total = 0;
     let bytes = 0;
     let fileCount = 0;
-    let allExact = true;
+    let exactCount = 0;
+    let allExact = !node.incomplete;
     for (const child of node.children.values()) {
       rollup(child);
       total += child.total;
       bytes += child.bytes;
       fileCount += child.fileCount;
+      exactCount += child.exactCount;
       if (!child.allExact) allExact = false;
     }
     node.total = total;
     node.bytes = bytes;
     node.fileCount = fileCount;
+    node.exactCount = exactCount;
     node.allExact = allExact;
   }
 
@@ -120,29 +109,37 @@
     return !node.excluded && !node.exact && node.size > 0 && node.size <= maxBytes;
   }
 
-  async function loadGitattributes(ctx, index, settings) {
-    if (!settings.respectGitattributes) return [];
+  async function loadGitattributes(ctx, index, settings, cacheOnly, isCancelled) {
+    if (!settings.respectGitattributes) return { rules: [], complete: true };
 
     const files = [];
     for (const node of index.values()) {
       if (node.type === 'file' && node.name === '.gitattributes') files.push(node);
     }
-    if (!files.length) return [];
+    if (!files.length) return { rules: [], complete: true };
 
     // Root first, so deeper files' rules take precedence.
     files.sort((a, b) => a.path.split('/').length - b.path.split('/').length);
 
     const rules = [];
+    let complete = files.length <= 20;
+    let error = files.length > 20 ? { error: 'attributes_limit' } : null;
     for (const node of files.slice(0, 20)) {
+      if (isCancelled()) return { rules, complete: false };
       const res = await util.send({
-        type: 'BLOB_TEXT', owner: ctx.owner, repo: ctx.repo, sha: node.sha,
+        type: 'BLOB_TEXT', owner: ctx.owner, repo: ctx.repo, sha: node.sha, cacheOnly,
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        complete = false;
+        if (res.error !== 'cache_miss') error = res;
+        if (FATAL_ERRORS.has(res.error)) break;
+        continue;
+      }
       const slash = node.path.lastIndexOf('/');
       const baseDir = slash === -1 ? '' : node.path.slice(0, slash);
       rules.push(...patterns.parseGitattributes(res.text, baseDir));
     }
-    return rules;
+    return { rules, complete, error };
   }
 
   /* Returns a handle: { cancel() }. `onUpdate(state)` fires repeatedly as the
@@ -152,17 +149,16 @@
 
     const state = {
       ctx,
-      // loading | estimated | pending | refining | ready | error
-      //   pending = manual mode, waiting for the user to ask for exact counts
+      // loading | pending | refining | ready | error
       status: 'loading',
       error: null,
       warning: null,
       truncated: false,
       root: null,
       index: null,
-      learner: patterns.createRatioLearner(),
       progress: { done: 0, total: 0 },
       pending: 0,          // files a manual fetch would request
+      needsMetadata: true,
       settings: null,
     };
 
@@ -173,7 +169,6 @@
     let running = null;    // in-flight exact pass, so a double click is harmless
 
     function refresh() {
-      applyEstimates(state.index, state.learner);
       rollup(state.root);
     }
 
@@ -192,7 +187,6 @@
         if (lines === undefined) continue;
         node.lines = lines;
         node.exact = true;
-        state.learner.observe(node.path, node.size, lines);
         hits++;
       }
       if (hits) {
@@ -203,7 +197,7 @@
 
     async function runExactPass() {
       const settings = state.settings;
-      const todo = queue.filter((n) => !n.exact);
+      const todo = queue.filter((n) => !n.exact).slice(0, settings.maxExactFetch);
       if (!todo.length) {
         state.pending = 0;
         state.status = 'ready';
@@ -233,7 +227,6 @@
         }
         node.lines = r.lines;
         node.exact = true;
-        state.learner.observe(node.path, node.size, r.lines);
         return r;
       });
 
@@ -247,44 +240,45 @@
       if (cancelled) return;
 
       const remaining = queue.filter((n) => !n.exact).length;
-      state.pending = remaining;
+      state.pending = Math.min(remaining, settings.maxExactFetch);
       // In manual mode, leaving the button up lets the user retry whatever the
       // rate limit cut short.
       state.status = settings.exactLinesMode === 'manual' && remaining ? 'pending' : 'ready';
       emitNow();
     }
 
-    (async () => {
-      const settings = await GHL.settings.get();
-      state.settings = settings;
-      if (cancelled) return;
-      // Paint the strip before the network call, so a slow or wedged request is
-      // visible as "loading" rather than as a blank page.
+    async function prepare(cacheOnly) {
+      const settings = state.settings;
+      state.status = 'loading';
+      state.error = null;
+      state.warning = null;
       emitNow();
 
       const res = await util.send(
-        { type: 'TREE', owner: ctx.owner, repo: ctx.repo, oid: ctx.oid },
+        { type: 'TREE', owner: ctx.owner, repo: ctx.repo, oid: ctx.oid, cacheOnly },
         { timeoutMs: 45000 } // a monorepo's recursive tree can be several MB
       );
       if (cancelled) return;
 
       if (!res.ok) {
-        state.status = 'error';
-        state.error = res;
+        state.status = res.error === 'cache_miss'
+          ? (settings.exactLinesMode === 'manual' ? 'pending' : 'ready') : 'error';
+        state.error = res.error === 'cache_miss' ? null : res;
         emitNow();
-        return;
+        return false;
       }
 
       let entries = res.entries;
+      let missingDirectory = false;
       state.truncated = res.truncated;
 
       // Very large repos come back truncated. Top up with a non-recursive
       // listing of the directory actually on screen so at least those rows are
-      // real; nested directory totals stay incomplete and are flagged as such.
+      // real; directory totals remain unknown because descendants are missing.
       if (res.truncated) {
         const dirRes = await util.send({
           type: 'TREE', owner: ctx.owner, repo: ctx.repo, oid: ctx.oid,
-          recursive: false, path: ctx.path,
+          recursive: false, path: ctx.path, cacheOnly,
         });
         if (cancelled) return;
         if (dirRes.ok) {
@@ -294,6 +288,8 @@
             const full = prefix + e.path;
             if (!known.has(full)) entries = entries.concat([{ ...e, path: full }]);
           }
+        } else {
+          missingDirectory = true;
         }
       }
 
@@ -305,18 +301,21 @@
         ? patterns.compileExcludes(settings.excludePatterns)
         : () => false;
 
-      classify(state.index, isExcluded, () => false);
-      refresh();
-      state.status = 'estimated';
-      emitNow();
-
       // --- linguist attributes -----------------------------------------
-      const rules = await loadGitattributes(ctx, state.index, settings);
+      const attributes = await loadGitattributes(ctx, state.index, settings, cacheOnly, () => cancelled);
       if (cancelled) return;
-      if (rules.length) {
-        classify(state.index, isExcluded, patterns.makeLinguistMatcher(rules));
-        refresh();
+      classify(state.index, isExcluded, patterns.makeLinguistMatcher(attributes.rules));
+      // A partial tree cannot establish every descendant or attribute rule.
+      for (const node of state.index.values()) {
+        node.incomplete = !attributes.complete || (node.type === 'dir' && state.truncated);
+      }
+      state.needsMetadata = !attributes.complete || missingDirectory;
+      refresh();
+      if (!attributes.complete) {
+        state.warning = attributes.error;
+        state.status = settings.exactLinesMode === 'manual' ? 'pending' : 'ready';
         emitNow();
+        return false;
       }
 
       // --- exact counts ---------------------------------------------------
@@ -338,42 +337,50 @@
           const ad = directChildren.has(a.path) ? 0 : 1;
           const bd = directChildren.has(b.path) ? 0 : 1;
           return ad - bd || b.size - a.size;
-        })
-        .slice(0, settings.maxExactFetch);
+        });
 
-      state.pending = queue.length;
+      state.pending = Math.min(queue.length, settings.maxExactFetch);
 
-      if (settings.exactLinesMode === 'off' || !queue.length) {
+      if (settings.exactLinesMode === 'off' || (!queue.length && !state.needsMetadata)) {
         state.pending = 0;
         state.status = 'ready';
         emitNow();
-        return;
+        return true;
       }
 
-      if (settings.exactLinesMode === 'manual') {
+      if (cacheOnly) {
         state.status = 'pending';
         emitNow();
-        return;
+        return true;
       }
 
-      await runExactPass();
-    })().catch((err) => {
+      return true;
+    }
+
+    function reportError(err) {
       if (cancelled) return;
       state.status = 'error';
       state.error = { error: 'exception', message: String(err && err.message || err) };
       emitNow();
-    });
+    }
+
+    running = (async () => {
+      state.settings = await GHL.settings.get();
+      if (cancelled) return;
+      const auto = state.settings.exactLinesMode === 'auto';
+      if (await prepare(!auto) && auto && !cancelled) await runExactPass();
+    })().catch(reportError).finally(() => { running = null; });
 
     return {
       cancel() { cancelled = true; },
-      /* Manual mode: run the exact pass now. Safe to call repeatedly. */
+      /* The click authorizes metadata as well as one batch of file contents. */
       fetchExact() {
-        if (cancelled || !state.index || running) return running;
-        running = runExactPass()
-          .catch((err) => {
-            state.warning = { error: 'exception', message: String(err && err.message || err) };
-            emitNow();
-          })
+        if (cancelled || running || state.settings.exactLinesMode !== 'manual') return running;
+        running = (async () => {
+          if (state.needsMetadata && !(await prepare(false))) return;
+          if (!cancelled) await runExactPass();
+        })()
+          .catch(reportError)
           .finally(() => { running = null; });
         return running;
       },

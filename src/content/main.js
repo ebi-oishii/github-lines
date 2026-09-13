@@ -81,7 +81,10 @@
 
     util.onNavigate(() => {
       // The new file list is not in the DOM yet at navigation time.
-      teardown();
+      // GitHub events and the URL observer can report the same navigation.
+      // Keep a manual fetch alive when the context has already been updated.
+      const ctx = GHL.page.getContext();
+      if (current && (!ctx || current.key !== contextKey(ctx))) teardown();
       setTimeout(tick, 60);
       setTimeout(tick, 400);
     });

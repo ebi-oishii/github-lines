@@ -65,18 +65,20 @@ try {
     console.log('no GITHUB_TOKEN — measuring unauthenticated (60/hr)\n');
   }
 
-  async function visit(label, url) {
+  async function visit(label, url, fetchCounts = false) {
     counter = { total: 0, byKind: {}, notable: [] };
     const t0 = Date.now();
 
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    if (page.url() !== url) await page.goto(url, { waitUntil: 'domcontentloaded' });
+    else if (!fetchCounts) await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#ghl-summary', { state: 'attached', timeout: 60000 });
+    if (fetchCounts) await page.click('[data-ghl-action="fetch"]');
     await page.waitForFunction(
       () => {
         const s = document.querySelector('.ghl-summary-status');
-        return s && !/取得中|推定中|読み込み中/.test(s.textContent);
+        return s && !/取得中|読み込み中/.test(s.textContent);
       },
-      { timeout: 180000 }
+      null, { timeout: 180000 }
     );
     // Let any trailing requests land before we stop counting.
     await page.waitForTimeout(1500);
@@ -98,7 +100,8 @@ try {
     console.log('');
   }
 
-  await visit(`${REPO} 直下 — 初回`, `https://github.com/${REPO}`);
+  await visit(`${REPO} 直下 — 取得前`, `https://github.com/${REPO}`);
+  await visit(`${REPO} 直下 — ボタンを押して取得`, `https://github.com/${REPO}`, true);
   await visit(`${REPO} 直下 — 2回目（同一プロファイル、キャッシュあり）`, `https://github.com/${REPO}`);
 
   // A directory whose files were not covered by the root view's fetch budget.

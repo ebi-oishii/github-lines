@@ -321,7 +321,7 @@ async function fetchTree(owner, repo, target, recursive) {
     entries: (json.tree || []).map((e) => ({
       path: e.path,
       type: e.type === 'tree' ? 'dir' : 'file',
-      size: e.size || 0,
+      size: e.size ?? null,
       sha: e.sha,
     })),
     truncated: !!json.truncated,
@@ -330,10 +330,10 @@ async function fetchTree(owner, repo, target, recursive) {
 
 function getTree(msg) {
   const { owner, repo, oid, recursive = true, path = '' } = msg;
-  return dedupe(`tree:${owner}/${repo}@${oid}:${recursive ? 'r' : path}`, () => loadTree(msg));
+  return dedupe(`tree:${owner}/${repo}@${oid}:${recursive ? 'r' : path}:${!!msg.cacheOnly}`, () => loadTree(msg));
 }
 
-async function loadTree({ owner, repo, oid, recursive = true, path = '' }) {
+async function loadTree({ owner, repo, oid, recursive = true, path = '', cacheOnly = false }) {
   let sha = oid;
   let immutable = SHA_RE.test(sha);
   const keyFor = (s) => `${owner}/${repo}@${s}${recursive ? ':r' : ':' + path}`;
@@ -344,6 +344,7 @@ async function loadTree({ owner, repo, oid, recursive = true, path = '' }) {
     const hit = await idbGet('trees', keyFor(sha));
     if (hit) return { ok: true, entries: hit.entries, truncated: hit.truncated, cached: true };
   }
+  if (cacheOnly) return { ok: false, error: 'cache_miss' };
 
   // Slashes must survive; only the individual segments get escaped.
   const suffix = recursive || !path
@@ -399,9 +400,10 @@ async function fetchBlobText({ owner, repo, sha }) {
 /* Used for .gitattributes, which is read on every directory view. Cached by
    SHA like everything else, so it costs one request per repository, ever. */
 function getBlobText(msg) {
-  return dedupe(`text:${msg.sha}`, async () => {
+  return dedupe(`text:${msg.sha}:${!!msg.cacheOnly}`, async () => {
     const hit = await idbGet('texts', msg.sha);
     if (hit) return { ok: true, text: hit.text, cached: true };
+    if (msg.cacheOnly) return { ok: false, error: 'cache_miss' };
 
     const text = await fetchBlobText(msg);
     if (text.length <= MAX_CACHED_TEXT) {

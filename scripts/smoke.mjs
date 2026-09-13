@@ -24,7 +24,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = path.join(ROOT, 'tests', 'screenshots');
 const args = process.argv.slice(2);
 const HEADED = args.includes('--headed');
-const MANUAL = args.includes('--manual'); // exercise the press-a-button mode
+const MANUAL = !args.includes('--auto'); // the default; --manual remains accepted
 const TARGET_URL = args.find((a) => a.startsWith('http')) ||
   'https://github.com/sindresorhus/got/tree/main/source';
 
@@ -118,9 +118,7 @@ try {
     await page.fill('.token-row:nth-child(2) .token-label', 'bad-default');
     await page.check('.token-row:nth-child(2) .token-default');
 
-    if (MANUAL) {
-      await page.check('input[name="exactLinesMode"][value="manual"]');
-    }
+    await page.check(`input[name="exactLinesMode"][value="${MANUAL ? 'manual' : 'auto'}"]`);
 
     await page.click('#save');
     await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
@@ -132,6 +130,14 @@ try {
       'the options page renders both tokens after reload'
     );
     console.log(`configured 2 tokens — real one scoped to "${owner}", invalid one as default\n`);
+  }
+
+  if (!process.env.GITHUB_TOKEN && !MANUAL) {
+    const worker = context.serviceWorkers()[0] || (await context.waitForEvent('serviceworker'));
+    await page.goto(`chrome-extension://${new URL(worker.url()).host}/src/options/options.html`);
+    await page.check('input[name="exactLinesMode"][value="auto"]');
+    await page.click('#save');
+    await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
   }
 
   const consoleErrors = [];
@@ -158,13 +164,24 @@ try {
   await page.waitForSelector('.ghl-cell', { state: 'attached', timeout: 30000 });
   await page.waitForSelector('#ghl-summary', { state: 'attached', timeout: 10000 });
 
-  // Give the exact-line pass a moment to replace the estimates.
+  if (MANUAL) {
+    const button = page.locator('#ghl-summary [data-ghl-action="fetch"]');
+    await button.waitFor({ state: 'visible', timeout: 10000 });
+    assert(apiRequests.length === 0, 'opening a directory makes no API requests');
+    const before = await page.$$eval('.ghl-num', (nodes) => nodes.map((n) => n.textContent));
+    assert(before.every((n) => n === '—'), 'no estimated counts before fetching');
+    assert(await page.locator('[data-ghl-action="treemap"]').isDisabled(), 'no treemap without counts');
+    await page.screenshot({ path: path.join(OUT_DIR, 'manual-before-fetch.png') });
+    await button.click();
+  }
+
+  // Wait for metadata and the exact-count pass to finish.
   await page.waitForFunction(
     () => {
       const s = document.querySelector('.ghl-summary-status');
-      return s && !/取得中|推定中|読み込み中/.test(s.textContent);
+      return s && !/取得中|読み込み中/.test(s.textContent);
     },
-    { timeout: 45000 }
+    null, { timeout: 45000 }
   ).catch(() => console.log('note: exact-line pass still running, continuing'));
 
   const summary = await page.$eval('#ghl-summary .ghl-summary-stats', (n) => n.textContent.trim());
@@ -198,72 +215,39 @@ try {
 
   assert(rows.length > 0, 'bars rendered in the file list');
   assert(rows.every((r) => r.visible), 'the visible name cell got the bar, not just the hidden one');
-  assert(rows.some((r) => /\d/.test(r.lines)), 'rows show a line count');
-  assert(rows.some((r) => parseFloat(r.width) > 90), 'the largest row fills its bar');
-  assert(/行/.test(summary), 'summary strip shows a total');
+  assert(rows.every((r) => !r.lines.startsWith('~')), 'estimates are never displayed');
 
   const rateLimited = RATE_LIMITED.test(status);
   if (rateLimited) {
     skip(`API quota exhausted — the extension reported it correctly: "${status}"`);
   } else {
     assert(!/失敗|エラー/.test(status), `no error in the status line (${status})`);
-    if (!MANUAL) {
-      assert(rows.some((r) => !r.lines.startsWith('~')), 'at least one exact line count landed');
-    }
+    assert(rows.some((r) => /^[\d,]+$/.test(r.lines)), 'exact counts landed');
+    assert(apiRequests.length > 0, 'fetching used the API');
   }
 
-  // --- manual mode: nothing is fetched until the button is pressed --------
-  if (MANUAL && !rateLimited) {
-    const button = await page.$('#ghl-summary [data-ghl-action="fetch"]:visible');
-    assert(!!button, 'the fetch button is offered');
-    assert(
-      rows.every((r) => r.lines.startsWith('~') || r.lines === 'generated' || r.lines === 'binary'),
-      'everything is still an estimate before the button is pressed'
+  // A treemap requires every count in this directory.
+  if (await page.locator('[data-ghl-action="treemap"]').isEnabled()) {
+    assert(/行/.test(summary), 'complete directory shows its total');
+    assert(rows.some((r) => parseFloat(r.width) > 90), 'the largest row fills its bar');
+    await page.click('#ghl-summary [data-ghl-action="treemap"]');
+    await page.waitForSelector('.ghl-overlay .ghl-tm-tile', { timeout: 10000 });
+    const tiles = await page.$$eval('.ghl-tm-tile', (ts) =>
+      ts.map((t) => ({ w: parseFloat(t.style.width), h: parseFloat(t.style.height) }))
     );
+    await page.screenshot({ path: path.join(OUT_DIR, 'treemap.png') });
 
-    const beforeClick = apiRequests.length;
-    const label = button ? (await button.textContent()) : '';
-    await button.click();
+    assert(tiles.length > 0, `treemap drew tiles (${tiles.length})`);
+    assert(tiles.every((t) => t.w >= 0 && t.h >= 0), 'every tile has a valid size');
+    assert(tiles.some((t) => t.w > 40 && t.h > 40), 'at least one tile is big enough to read');
 
-    await page.waitForFunction(
-      () => {
-        const s = document.querySelector('.ghl-summary-status');
-        return s && !/取得中/.test(s.textContent);
-      },
-      { timeout: 60000 }
-    );
-
-    const after = await page.$$eval('.ghl-cell[data-ghl-path]', (cells) =>
-      [...cells].filter((c) => c.offsetParent !== null)
-        .map((c) => c.querySelector('.ghl-num').textContent)
-    );
-    const spent = apiRequests.length - beforeClick;
-
-    console.log(`\nmanual fetch: "${label.trim()}" -> ${spent} requests`);
-    assert(spent > 0, `pressing the button fetched (${spent} requests)`);
-    assert(after.some((n) => /^[\d,]+$/.test(n)), 'estimates were replaced with exact counts');
-    assert(
-      await page.$('#ghl-summary [data-ghl-action="fetch"]:visible') === null,
-      'the button goes away once there is nothing left to fetch'
-    );
-    await page.screenshot({ path: path.join(OUT_DIR, 'manual-mode.png') });
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.ghl-overlay', { state: 'detached', timeout: 5000 });
+    assert(true, 'Escape closes the treemap');
+  } else {
+    assert(rows.every((r) => !r.pct), 'incomplete directory shows no percentages');
+    skip('treemap — some counts are unavailable');
   }
-
-  // Treemap
-  await page.click('#ghl-summary [data-ghl-action="treemap"]');
-  await page.waitForSelector('.ghl-overlay .ghl-tm-tile', { timeout: 10000 });
-  const tiles = await page.$$eval('.ghl-tm-tile', (ts) =>
-    ts.map((t) => ({ w: parseFloat(t.style.width), h: parseFloat(t.style.height) }))
-  );
-  await page.screenshot({ path: path.join(OUT_DIR, 'treemap.png') });
-
-  assert(tiles.length > 0, `treemap drew tiles (${tiles.length})`);
-  assert(tiles.every((t) => t.w >= 0 && t.h >= 0), 'every tile has a valid size');
-  assert(tiles.some((t) => t.w > 40 && t.h > 40), 'at least one tile is big enough to read');
-
-  await page.keyboard.press('Escape');
-  await page.waitForSelector('.ghl-overlay', { state: 'detached', timeout: 5000 });
-  assert(true, 'Escape closes the treemap');
 
   // Navigating into a subdirectory must re-run the whole thing. Scoped to the
   // file table so we do not click the sidebar tree; `[title]` skips the
