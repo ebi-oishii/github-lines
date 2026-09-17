@@ -913,12 +913,17 @@ await domCheckAsync('navigating back up rebuilds the parent view', async () => {
 });
 
 const fetchButton = () => document.querySelector('[data-ghl-action="fetch"]');
-const sizesButton = () => document.querySelector('[data-ghl-action="sizes"]');
 const metricButton = (key) => document.querySelector(`[data-ghl-metric="${key}"]`);
 
-async function pressSizes() {
-  await waitFor(() => { const b = sizesButton(); return b && !b.hidden; }, 6000, 'the sizes button');
-  sizesButton().click();
+/* Manual mode from idle: fetch the tree via the サイズ reading of the button,
+   then flip the toggle to 行数 so the count button is on offer. */
+async function loadTreeViaSizes() {
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+  metricButton('bytes').click();
+  await waitFor(() => /サイズを取得/.test(fetchButton().textContent), 3000, 'the button to read サイズを取得');
+  fetchButton().click();
+  await waitFor(() => renderedPaths().length > 0, 6000, 'the tree');
+  metricButton('lines').click();
 }
 
 const rowPick = (path) => document.querySelector(`.ghl-row-pick[data-ghl-path="${path}"]`);
@@ -942,7 +947,7 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   table.parentElement.insertBefore(box, table);
 
   navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
-  await waitFor(() => { const b = sizesButton(); return b && !b.hidden; }, 6000, 'the sizes button');
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
 
   assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 0, 'no tree request on open');
   assertEqual(renderedPaths().length, 0, 'no bars yet');
@@ -958,18 +963,22 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   const headAll = head.querySelector('[data-ghl-action="pick-all"]');
   assert(headAll && headAll.checked && !headAll.indeterminate, 'with the all-rows checkbox under it, ticked');
   assert(document.querySelector('.ghl-pick-all').hidden, "the strip's fallback all-rows toggle stays hidden while the head has one");
-  assert(/サイズを取得/.test(sizesButton().textContent), `the plain button is labelled (${sizesButton().textContent})`);
-  assert(!fetchButton().hidden && !fetchButton().disabled, 'the exact-count button sits next to it');
+  assert(!document.querySelector('.ghl-metric').hidden, 'the 行数 | サイズ toggle is up, saying what the button fetches');
+  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'it opens on 行数');
+  assert(/行数を取得/.test(fetchButton().textContent), `the button reads the toggle (${fetchButton().textContent})`);
+  assert(fetchButton().classList.contains('ghl-btn-primary') && !fetchButton().disabled, 'primary for lines');
   assert(!/\d/.test(fetchButton().textContent), `no count before the tree is known (${fetchButton().textContent})`);
-  assert(!sizesButton().classList.contains('ghl-btn-primary'), 'the sizes button is the plain one');
-  assert(document.querySelector('.ghl-metric').hidden, 'no metric toggle before there is data');
+
+  metricButton('bytes').click();
+  await waitFor(() => /サイズを取得/.test(fetchButton().textContent), 3000, 'the button to follow the toggle');
+  assert(!fetchButton().classList.contains('ghl-btn-primary'), 'plain for sizes');
   const status = document.querySelector('.ghl-summary-status').textContent;
   assert(/未取得/.test(status), `status says nothing has been fetched (${status})`);
 });
 
-await domCheckAsync('pressing サイズを取得 fetches the tree and shows sizes, with the lines step still on offer', async () => {
+await domCheckAsync('pressing サイズを取得 fetches the tree and shows sizes', async () => {
   const before = transportCalls.length;
-  sizesButton().click();
+  fetchButton().click();
   await waitFor(
     () => renderedPaths().includes('source/core/options.ts'),
     6000,
@@ -979,7 +988,7 @@ await domCheckAsync('pressing サイズを取得 fetches the tree and shows size
   assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 1, 'exactly one tree request');
   const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 0, 'no line counts fetched without being asked');
-  assert(sizesButton().hidden, 'the sizes button goes away once the tree is in');
+  assert(fetchButton().hidden, 'nothing left to fetch for sizes, so no button');
 
   const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
   assertEqual(cell.querySelector('.ghl-num').textContent, '117.2 KB', 'the row shows its size');
@@ -987,14 +996,9 @@ await domCheckAsync('pressing サイズを取得 fetches the tree and shows size
   assertEqual(metricButton('bytes').getAttribute('aria-pressed'), 'true', 'the toggle says サイズ');
   const stats = document.querySelector('.ghl-summary-stats').textContent;
   assert(/117\.2 KB/.test(stats), `the strip totals in bytes too (${stats})`);
-
-  const button = fetchButton();
-  assert(button && !button.hidden, 'the fetch button is offered');
-  assert(/行数を取得/.test(button.textContent), `button is labelled (${button.textContent})`);
-  assert(/1/.test(button.textContent), `button names the count (${button.textContent})`);
 });
 
-await domCheckAsync('the toggle switches the same rows to estimated lines without fetching', async () => {
+await domCheckAsync('flipping the toggle to 行数 shows estimates and offers the count button, fetching nothing', async () => {
   const before = transportCalls.length;
   metricButton('lines').click();
   await waitFor(
@@ -1007,6 +1011,11 @@ await domCheckAsync('the toggle switches the same rows to estimated lines withou
   );
   assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'the toggle says 行数');
   assertEqual(transportCalls.length, before, 'switching the view fetches nothing');
+
+  const button = fetchButton();
+  assert(button && !button.hidden, 'the fetch button is offered');
+  assert(/行数を取得/.test(button.textContent), `button is labelled (${button.textContent})`);
+  assert(/1/.test(button.textContent), `button names the count (${button.textContent})`);
 });
 
 await domCheckAsync('pressing the button fetches, and the estimate becomes exact', async () => {
@@ -1035,8 +1044,9 @@ await domCheckAsync('rows unticked before anything is fetched are left out of a 
     { name: 'index.ts', type: 'file' },
     { name: 'types.ts', type: 'file' },
   ]);
-  await waitFor(() => { const b = fetchButton(); return b && !b.hidden && !sizesButton().hidden; }, 6000, 'both buttons');
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
   await waitFor(() => rowPick('source/as-promise/types.ts'), 3000, 'idle checkboxes');
+  assert(/行数を取得/.test(fetchButton().textContent), `a fresh view opens on 行数 (${fetchButton().textContent})`);
 
   tick('source/as-promise/types.ts', false);
   await waitFor(() => document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]').indeterminate, 3000, 'the all-rows box to go indeterminate');
@@ -1057,7 +1067,6 @@ await domCheckAsync('rows unticked before anything is fetched are left out of a 
     'sha-ap-index',
     'only the ticked file was fetched'
   );
-  assert(sizesButton().hidden, 'the sizes button is gone once the tree is in');
   assert(!fetchButton().hidden && fetchButton().disabled, 'the unticked leftover keeps the button up, disabled');
   assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'asking for counts shows counts');
   assert(document.querySelector('.ghl-col-head'), 'the column head stays while checkboxes are offered');
@@ -1071,7 +1080,7 @@ await domCheckAsync('manual mode puts a ticked checkbox on every row with someth
     { name: 'index.ts', type: 'file' },
     { name: 'types.ts', type: 'file' },
   ]);
-  await pressSizes();
+  await loadTreeViaSizes();
   await waitFor(
     () => fetchButton() && !fetchButton().hidden && renderedPaths().includes('source/create.ts'),
     6000,

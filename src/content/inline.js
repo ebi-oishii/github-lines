@@ -275,11 +275,6 @@
     return el('div', { id: SUMMARY_ID, class: 'ghl-summary' }, [
       el('div', { class: 'ghl-summary-head' }, [
         el('span', { class: 'ghl-summary-title' }, [icon(), 'GitHub Lines']),
-        // What the bars measure. Sizes are known as soon as the tree is in.
-        el('span', { class: 'ghl-metric', role: 'group', 'aria-label': '表示する量' }, [
-          el('button', { type: 'button', 'data-ghl-metric': 'lines', title: 'バーと割合を行数で表示' }, ['行数']),
-          el('button', { type: 'button', 'data-ghl-metric': 'bytes', title: 'バーと割合をファイルサイズで表示' }, ['サイズ']),
-        ]),
         el('span', { class: 'ghl-summary-stats' }),
         el('span', { class: 'ghl-spacer' }),
         el('span', { class: 'ghl-summary-status' }),
@@ -290,11 +285,13 @@
           icon(),
           'すべて',
         ]),
-        el('button', {
-          class: 'ghl-btn', type: 'button', 'data-ghl-action': 'sizes',
-          title: 'ファイル一覧を 1 リクエストで取得し、各ファイルのサイズを表示します',
-        }, ['サイズを取得']),
-        el('button', { class: 'ghl-btn ghl-btn-primary', type: 'button', 'data-ghl-action': 'fetch' }),
+        // What the bars measure — and, in manual mode, what the button beside
+        // it fetches.
+        el('span', { class: 'ghl-metric', role: 'group', 'aria-label': '表示する量' }, [
+          el('button', { type: 'button', 'data-ghl-metric': 'lines', title: 'バーと割合を行数で表示' }, ['行数']),
+          el('button', { type: 'button', 'data-ghl-metric': 'bytes', title: 'バーと割合をファイルサイズで表示' }, ['サイズ']),
+        ]),
+        el('button', { class: 'ghl-btn ghl-btn-fetch', type: 'button', 'data-ghl-action': 'fetch' }),
         el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [
           'ツリーマップ',
         ]),
@@ -316,13 +313,11 @@
       node = buildSummary();
       node.querySelector('[data-ghl-action="treemap"]')
         .addEventListener('click', () => handlers.onTreemap && handlers.onTreemap());
-      node.querySelector('[data-ghl-action="sizes"]')
-        .addEventListener('click', () => handlers.onFetchSizes && handlers.onFetchSizes());
       for (const b of node.querySelectorAll('[data-ghl-metric]')) {
         b.addEventListener('click', () => handlers.onMetric && handlers.onMetric(b.dataset.ghlMetric));
       }
       node.querySelector('[data-ghl-action="fetch"]')
-        .addEventListener('click', () => handlers.onFetchExact && handlers.onFetchExact());
+        .addEventListener('click', () => handlers.onFetch && handlers.onFetch());
       node.querySelector('.ghl-pick-all').insertBefore(allRowsBox(handlers), node.querySelector('.ghl-pick-all').lastChild);
     }
     if (node.previousElementSibling !== anchor && node.parentElement !== anchor.parentElement) {
@@ -337,34 +332,39 @@
     treemapButton.disabled = !state.index;
 
     const m = metricOf(state);
+    const idle = state.status === 'idle';
 
-    // The metric toggle needs a tree to mean anything.
+    // 行数 | サイズ. With a tree in, it says what the bars measure; before one
+    // — manual mode's idle — it also says what the button fetches.
     const toggle = node.querySelector('.ghl-metric');
-    toggle.hidden = !state.index;
+    toggle.hidden = !state.index && !idle;
     for (const b of toggle.querySelectorAll('[data-ghl-metric]')) {
       b.setAttribute('aria-pressed', String(b.dataset.ghlMetric === m.key));
     }
 
-    // Manual mode offers both buttons side by side while nothing has been
-    // fetched. The plain one costs a single request and shows sizes; the
-    // primary one goes on to fetch every file's count, so it carries the colour.
-    const idle = state.status === 'idle';
-    node.querySelector('[data-ghl-action="sizes"]').hidden = !idle;
-
-    // Once the tree is in, the exact-count button names its price. With every
-    // row unticked it stays visible but disabled, so the zero is explained.
+    // Manual mode's one button fetches whichever the toggle says. Sizes cost a
+    // single request, so that reading is plain; lines cost one per file and
+    // carry the colour. Once the tree is in the sizes are known, so the button
+    // stays only for lines and names its price. With every row unticked it
+    // stays visible but disabled, so the zero is explained.
     const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
-    fetchButton.hidden = !(idle || state.status === 'pending');
-    if (idle) {
-      const none = pickKeys.length > 0 &&
-        pickKeys.every((k) => state.deselected && state.deselected.has(k));
+    const wantsLines = m.key === 'lines';
+    const none = pickKeys.length > 0 &&
+      pickKeys.every((k) => state.deselected && state.deselected.has(k));
+    fetchButton.classList.toggle('ghl-btn-primary', wantsLines);
+    fetchButton.hidden = !(idle || (state.status === 'pending' && wantsLines));
+    if (idle && !wantsLines) {
+      fetchButton.disabled = false;
+      fetchButton.textContent = 'サイズを取得';
+      fetchButton.title = 'ファイル一覧を 1 リクエストで取得し、各ファイルのサイズを表示します';
+    } else if (idle) {
       fetchButton.disabled = none;
       fetchButton.textContent = '行数を取得';
       fetchButton.title = none
         ? '取得する行にチェックを入れてください'
         : 'ファイル一覧を取得し、続けてチェックした行の各ファイルの行数を GitHub から取得します\n' +
           '（ファイル数と同じだけ API リクエストを使います）';
-    } else if (state.status === 'pending') {
+    } else if (!fetchButton.hidden) {
       fetchButton.disabled = state.pending === 0;
       fetchButton.textContent = `行数を取得（${fmt(state.pending)}）`;
       fetchButton.title = state.pending

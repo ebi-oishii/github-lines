@@ -313,6 +313,14 @@ html[data-color-mode='dark'] {
 .ghl-btn-primary:hover { filter: brightness(1.1); background: var(--ghl-ok); }
 .ghl-btn-primary:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
 
+/* The fetch button's label changes with the toggle and gains a count; a
+   fixed footprint keeps the strip from reflowing on every flip. Wide enough
+   for 行数を取得（999）. */
+.ghl-btn-fetch {
+  min-width: 124px;
+  text-align: center;
+}
+
 .ghl-stack {
   display: flex;
   width: 100%;

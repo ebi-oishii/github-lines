@@ -18,14 +18,15 @@
         GHL.treemap.open(current.state);
       }
     },
-    onFetchSizes() {
-      if (current && current.handle) current.handle.fetchSizes();
+    /* The one fetch button does whatever the 行数 | サイズ toggle says. */
+    onFetch() {
+      if (!current || !current.handle) return;
+      const s = current.state;
+      if (s && s.status === 'idle' && s.metric === 'bytes') current.handle.fetchSizes();
+      else current.handle.fetchExact();
     },
     onMetric(metric) {
       if (current && current.handle) current.handle.setMetric(metric);
-    },
-    onFetchExact() {
-      if (current && current.handle) current.handle.fetchExact();
     },
     onPick(path, checked) {
       if (current && current.handle) current.handle.setSelected(path, checked);

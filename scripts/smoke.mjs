@@ -153,11 +153,17 @@ try {
   console.log(`opening ${TARGET_URL}`);
   await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
 
-  // Manual mode fetches nothing until asked. Press the plain button, check the
-  // sizes it shows, then switch the view to lines for the checks below.
+  // Manual mode fetches nothing until asked. Flip the toggle to サイズ, press
+  // the button, check the sizes it shows, then flip back to 行数 for the
+  // checks below.
   if (MANUAL) {
-    await page.waitForSelector('#ghl-summary [data-ghl-action="sizes"]:visible', { timeout: 30000 });
-    assert(apiRequests.length === 0, `nothing is requested before サイズを取得 is pressed (${apiRequests.length})`);
+    await page.waitForSelector('#ghl-summary [data-ghl-action="fetch"]:visible', { timeout: 30000 });
+    assert(apiRequests.length === 0, `nothing is requested before the button is pressed (${apiRequests.length})`);
+    const opening = await page.$eval('#ghl-summary [data-ghl-action="fetch"]', (b) => b.textContent);
+    assert(/行数を取得/.test(opening), `the toggle opens on 行数 (${opening})`);
+    await page.click('#ghl-summary [data-ghl-metric="bytes"]');
+    const label = await page.$eval('#ghl-summary [data-ghl-action="fetch"]', (b) => b.textContent);
+    assert(/サイズを取得/.test(label), `the button follows the toggle (${label})`);
     const idlePicks = await page.$$eval('.ghl-row-pick[data-pick="on"]', (ps) =>
       ps.filter((p) => p.offsetParent !== null).length
     );
@@ -168,7 +174,7 @@ try {
     assert(!!head, 'the icon heads the checkbox column from the latest-commit box');
     assert(!!(await page.$('.ghl-col-head [data-ghl-action="pick-all"]:visible')), 'with the all-rows checkbox under it');
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-idle.png'), fullPage: false });
-    await page.click('#ghl-summary [data-ghl-action="sizes"]');
+    await page.click('#ghl-summary [data-ghl-action="fetch"]');
     await page.waitForSelector('.ghl-cell', { state: 'attached', timeout: 30000 });
     const sizes = await page.$$eval('.ghl-cell[data-ghl-path] .ghl-num', (ns) =>
       ns.filter((n) => n.offsetParent !== null).map((n) => n.textContent)
@@ -336,8 +342,9 @@ try {
     await subdir.click();
     await page.waitForFunction((h) => location.pathname === h, href, { timeout: 15000 });
     if (MANUAL) {
-      await page.waitForSelector('#ghl-summary [data-ghl-action="sizes"]:visible', { timeout: 15000 });
-      await page.click('#ghl-summary [data-ghl-action="sizes"]');
+      await page.waitForSelector('#ghl-summary [data-ghl-action="fetch"]:visible', { timeout: 15000 });
+      await page.click('#ghl-summary [data-ghl-metric="bytes"]');
+      await page.click('#ghl-summary [data-ghl-action="fetch"]');
     }
 
     // Wait for the swap to complete rather than sampling mid-flight: the old
