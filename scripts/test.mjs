@@ -955,7 +955,9 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   assert(head && head.parentElement.dataset.testid === 'latest-commit' && head.parentElement.firstChild === head,
     'the icon heads the column from the latest-commit box');
   assert(head.querySelector('.ghl-icon svg'), 'and it is the extension icon');
-  assert(!document.querySelector('.ghl-pick-all').hidden, 'the all-rows toggle is up too');
+  const headAll = head.querySelector('[data-ghl-action="pick-all"]');
+  assert(headAll && headAll.checked && !headAll.indeterminate, 'with the all-rows checkbox under it, ticked');
+  assert(document.querySelector('.ghl-pick-all').hidden, "the strip's fallback all-rows toggle stays hidden while the head has one");
   assert(/サイズを取得/.test(sizesButton().textContent), `the plain button is labelled (${sizesButton().textContent})`);
   assert(!fetchButton().hidden && !fetchButton().disabled, 'the exact-count button sits next to it');
   assert(!/\d/.test(fetchButton().textContent), `no count before the tree is known (${fetchButton().textContent})`);
@@ -1037,7 +1039,7 @@ await domCheckAsync('rows unticked before anything is fetched are left out of a 
   await waitFor(() => rowPick('source/as-promise/types.ts'), 3000, 'idle checkboxes');
 
   tick('source/as-promise/types.ts', false);
-  await waitFor(() => document.querySelector('[data-ghl-action="pick-all"]').indeterminate, 3000, 'the all-rows box to go indeterminate');
+  await waitFor(() => document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]').indeterminate, 3000, 'the all-rows box to go indeterminate');
   fetchButton().click();
 
   await waitFor(
@@ -1120,9 +1122,9 @@ await domCheckAsync('pressing the button fetches only the ticked rows', async ()
   assert(/1/.test(fetchButton().textContent), `re-ticking brings its file back (${fetchButton().textContent})`);
 });
 
-await domCheckAsync("the strip's checkbox ticks or unticks every row at once", async () => {
-  const all = document.querySelector('#ghl-summary [data-ghl-action="pick-all"]');
-  assert(all && !all.closest('.ghl-pick-all').hidden, 'the all-rows checkbox is offered');
+await domCheckAsync("the column head's checkbox ticks or unticks every row at once", async () => {
+  const all = document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]');
+  assert(all, 'the all-rows checkbox is offered');
   assert(all.indeterminate && !all.checked, 'a mixed selection shows as indeterminate');
 
   all.click();
@@ -1139,6 +1141,18 @@ await domCheckAsync("the strip's checkbox ticks or unticks every row at once", a
 
   all.click();
   await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'back to all ticked');
+});
+
+await domCheckAsync('without a latest-commit box the all-rows checkbox falls back to the strip', async () => {
+  document.querySelector('[data-testid="latest-commit"]').remove();
+  tick('source/core', false);
+  await waitFor(() => !document.querySelector('.ghl-col-head'), 3000, 'the head to go');
+  const strip = document.querySelector('#ghl-summary .ghl-pick-all');
+  assert(!strip.hidden, "the strip's copy shows");
+  const box = strip.querySelector('[data-ghl-action="pick-all"]');
+  assert(box.indeterminate, 'and mirrors the rows');
+  box.click();
+  await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'it drives the rows too');
 });
 
 await domCheckAsync('off mode never fetches and offers no button', async () => {

@@ -138,20 +138,24 @@ html[data-color-mode='dark'] {
   pointer-events: none;
 }
 
-/* The column's head: our icon in the latest-commit box, sitting over the
-   checkboxes (the box is inset 4px from the table cells), with the same rule
-   running the box's full height. It pushes the avatar to where the file icons
-   start. */
+/* The column's head in the latest-commit box: the icon stacked over the
+   all-rows checkbox, which sits exactly over the rows' checkboxes (the box is
+   inset 4px from the table cells), with the same rule running the box's full
+   height. It pushes the avatar to where the file icons start. */
 .ghl-col-head {
   position: relative;
   display: inline-flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
   flex: 0 0 auto;
   box-sizing: border-box;
   width: 49px;
   padding-left: 4px;
 }
-.ghl-col-head .ghl-icon { width: 13px; height: 13px; }
+.ghl-col-head .ghl-icon { width: 14px; height: 14px; }
+.ghl-col-head .ghl-pick { margin: 0; }
 .ghl-col-head::after {
   content: '';
   position: absolute;

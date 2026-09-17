@@ -166,6 +166,7 @@ try {
     // follows it in on the next render.
     const head = await page.waitForSelector('[data-testid="latest-commit"] > .ghl-col-head', { timeout: 15000 }).catch(() => null);
     assert(!!head, 'the icon heads the checkbox column from the latest-commit box');
+    assert(!!(await page.$('.ghl-col-head [data-ghl-action="pick-all"]:visible')), 'with the all-rows checkbox under it');
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-idle.png'), fullPage: false });
     await page.click('#ghl-summary [data-ghl-action="sizes"]');
     await page.waitForSelector('.ghl-cell', { state: 'attached', timeout: 30000 });
@@ -269,7 +270,7 @@ try {
       ps.filter((p) => p.offsetParent !== null).length
     );
     assert(picks > 0, `each row offers a checkbox for the fetch (${picks} visible)`);
-    assert(!!(await page.$('#ghl-summary .ghl-pick-all:visible')), 'the all-rows toggle is offered');
+    assert(await page.$('#ghl-summary .ghl-pick-all:visible') === null, "the strip's fallback all-rows toggle stays hidden");
     assert(
       rows.every((r) => r.lines.startsWith('~') || r.lines === 'generated' || r.lines === 'binary'),
       'everything is still an estimate before the button is pressed'

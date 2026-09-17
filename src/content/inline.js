@@ -179,20 +179,48 @@
     for (const n of document.querySelectorAll(`.${CELL_CLASS}, .${PICK_CLASS}, .${COL_HEAD_CLASS}`)) n.remove();
   }
 
-  /* The icon at the head of the checkbox column, in GitHub's latest-commit
-     box just above the table, so the column reads as ours. The vertical rule
-     between the checkboxes and GitHub's file icons is CSS on the rows. */
+  /* Row paths whose checkbox is currently on screen and live. */
+  function pickedKeysOnScreen() {
+    return [...new Set(
+      [...document.querySelectorAll(`.${PICK_CLASS}[data-pick="on"]`)].map((p) => p.dataset.ghlPath)
+    )];
+  }
+
+  function allRowsBox(handlers) {
+    const box = el('input', {
+      class: 'ghl-pick', type: 'checkbox', 'data-ghl-action': 'pick-all',
+      title: 'GitHub Lines: すべての行を取得対象にする／外す',
+    });
+    box.addEventListener('click', (e) => e.stopPropagation());
+    box.addEventListener('change', () => {
+      if (handlers.onPickAll) handlers.onPickAll(box.checked, pickedKeysOnScreen());
+    });
+    return box;
+  }
+
+  /* The all-rows checkbox mirrors the rows: ticked when every row is,
+     indeterminate when only some are. Clicking it takes all rows with it. */
+  function syncAllRowsBox(box, pickKeys, state) {
+    const selected = pickKeys.filter((k) => !(state.deselected && state.deselected.has(k))).length;
+    box.checked = pickKeys.length > 0 && selected === pickKeys.length;
+    box.indeterminate = selected > 0 && selected < pickKeys.length;
+  }
+
+  /* The head of the checkbox column, in GitHub's latest-commit box just above
+     the table: the icon, with the all-rows checkbox under it, over the rows'
+     checkboxes — so the column reads as ours and is driven from its top. The
+     vertical rule between the checkboxes and GitHub's file icons is CSS on the
+     rows. Returns whether the head found a home. */
   const COL_HEAD_CLASS = 'ghl-col-head';
 
-  function renderColumnHead(show) {
+  function renderColumnHead(state, handlers, pickKeys, show) {
     let head = document.querySelector(`.${COL_HEAD_CLASS}`);
-    if (!show) { if (head) head.remove(); return; }
-    const box = GHL.page.findCommitBox();
-    if (!box) return;
-    if (!head) {
-      head = el('span', { class: COL_HEAD_CLASS, title: 'GitHub Lines: 「行数を取得」の対象' }, [icon()]);
-    }
+    const box = show && GHL.page.findCommitBox();
+    if (!box) { if (head) head.remove(); return false; }
+    if (!head) head = el('span', { class: COL_HEAD_CLASS }, [icon(), allRowsBox(handlers)]);
     if (box.firstChild !== head) box.insertBefore(head, box.firstChild);
+    syncAllRowsBox(head.querySelector('input'), pickKeys, state);
+    return true;
   }
 
   /* ---------------------------------------------------------- summary bar */
@@ -257,9 +285,9 @@
         el('span', { class: 'ghl-summary-status' }),
         // Marked with the icon so the checkboxes in GitHub's table below read
         // as ours, not GitHub's.
+        // Only when the column head has no home (older GitHub layouts).
         el('label', { class: 'ghl-pick-all', title: 'GitHub Lines: すべての行を取得対象にする／外す' }, [
           icon(),
-          el('input', { class: 'ghl-pick', type: 'checkbox', 'data-ghl-action': 'pick-all' }),
           'すべて',
         ]),
         el('button', {
@@ -276,8 +304,10 @@
     ]);
   }
 
-  /* `pickKeys` are the row paths the checkboxes currently stand for. */
-  function renderSummary(state, dirNode, handlers, pickKeys) {
+  /* `pickKeys` are the row paths the checkboxes currently stand for;
+     `headPlaced` says the column head is up, so the strip's copy of the
+     all-rows checkbox is not needed. */
+  function renderSummary(state, dirNode, handlers, pickKeys, headPlaced) {
     const anchor = GHL.page.findSummaryAnchor();
     if (!anchor) return;
 
@@ -293,14 +323,7 @@
       }
       node.querySelector('[data-ghl-action="fetch"]')
         .addEventListener('click', () => handlers.onFetchExact && handlers.onFetchExact());
-      node.querySelector('[data-ghl-action="pick-all"]')
-        .addEventListener('change', (e) => {
-          if (!handlers.onPickAll) return;
-          const keys = [...new Set(
-            [...document.querySelectorAll(`.${PICK_CLASS}[data-pick="on"]`)].map((p) => p.dataset.ghlPath)
-          )];
-          handlers.onPickAll(e.target.checked, keys);
-        });
+      node.querySelector('.ghl-pick-all').insertBefore(allRowsBox(handlers), node.querySelector('.ghl-pick-all').lastChild);
     }
     if (node.previousElementSibling !== anchor && node.parentElement !== anchor.parentElement) {
       anchor.parentElement.insertBefore(node, anchor);
@@ -350,18 +373,12 @@
         : '取得する行にチェックを入れてください';
     }
 
-    // The strip's own checkbox mirrors the rows: ticked when every row is,
-    // indeterminate when only some are. Clicking it takes all rows with it.
+    // The strip's copy of the all-rows checkbox, for pages where the column
+    // head could not be placed.
     const pickAll = node.querySelector('.ghl-pick-all');
-    const picking = state.status === 'pending' || (idle && pickKeys.length > 0);
+    const picking = (state.status === 'pending' || (idle && pickKeys.length > 0)) && !headPlaced;
     pickAll.hidden = !picking;
-    if (picking) {
-      const keys = pickKeys;
-      const selected = keys.filter((k) => !(state.deselected && state.deselected.has(k))).length;
-      const box = pickAll.querySelector('input');
-      box.checked = keys.length > 0 && selected === keys.length;
-      box.indeterminate = selected > 0 && selected < keys.length;
-    }
+    if (picking) syncAllRowsBox(pickAll.querySelector('input'), pickKeys, state);
 
     const stats = node.querySelector('.ghl-summary-stats');
     const status = node.querySelector('.ghl-summary-status');
@@ -494,7 +511,10 @@
     const dirNode = state.index && (state.index.get(ctx.path) || state.root);
     const rows = GHL.page.findRows(ctx);
     const picking = settings.showInlineBars && (state.status === 'idle' || state.status === 'pending');
-    renderColumnHead(picking);
+    const pickKeys = state.status === 'idle'
+      ? rows.map((r) => r.path)
+      : [...(state.pickable ? state.pickable.keys() : [])];
+    const headPlaced = renderColumnHead(state, handlers, pickKeys, picking);
 
     // Manual mode, nothing fetched yet. The rows are already on screen, so the
     // checkboxes go up now: what to fetch is decided before anything is spent.
@@ -502,7 +522,7 @@
       for (const r of rows) {
         for (const host of r.hosts) paintPick(pickIn(host, handlers), r.path, null, state);
       }
-      renderSummary(state, EMPTY_DIR, handlers, rows.map((r) => r.path));
+      renderSummary(state, EMPTY_DIR, handlers, pickKeys, headPlaced);
       return;
     }
 
@@ -511,11 +531,11 @@
     // be indistinguishable from "extension not running".
     if (!dirNode) {
       clearRows();
-      renderSummary(state, EMPTY_DIR, handlers, []);
+      renderSummary(state, EMPTY_DIR, handlers, [], false);
       return;
     }
 
-    renderSummary(state, dirNode, handlers, [...(state.pickable ? state.pickable.keys() : [])]);
+    renderSummary(state, dirNode, handlers, pickKeys, headPlaced);
 
     if (!settings.showInlineBars) {
       clearRows();
