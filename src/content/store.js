@@ -215,13 +215,10 @@
     function reselect(mutate) {
       if (cancelled) return;
       mutate();
-      // Mid-fetch, the counts are settled when the pass finishes.
-      if (state.status === 'pending') {
-        settle();
-        emitNow();
-      } else if (state.status === 'idle') {
-        emitNow();
-      }
+      // Mid-fetch, the counts are settled when the pass finishes; the view
+      // still follows the checkbox at once.
+      if (state.status === 'pending') settle();
+      emitNow();
     }
 
     function refresh() {

@@ -118,12 +118,14 @@ html[data-color-mode='dark'] {
 }
 .ghl-row-pick { margin-right: 32px; }
 .ghl-row-pick[data-pick='none'] { display: none; }
-.ghl-row-pick[data-pick='blank'] { visibility: hidden; }
+
+/* An unticked row in manual mode: out of the picture, footprint kept. */
+.ghl-cell[data-state='off'] { visibility: hidden; }
 
 /* The checkbox column gets a vertical rule between the checkbox and GitHub's
-   file icon (13px box, 16px, rule, 16px, icon — GitHub's own cell padding), drawn on every row that shows
-   a checkbox — including `blank` rows, so the rule stays continuous. It
-   overshoots the cell by a pixel to cover the row border. */
+   file icon (13px box, 16px, rule, 16px, icon — GitHub's own cell padding),
+   drawn on every row that shows a checkbox. It overshoots the cell by a pixel
+   to cover the row border. */
 .react-directory-filename-column:has(> .ghl-row-pick:not([data-pick='none'])) {
   position: relative;
 }

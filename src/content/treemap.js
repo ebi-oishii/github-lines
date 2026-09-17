@@ -225,7 +225,12 @@
   function draw() {
     if (!modal) return;
     const { state, path } = modal;
-    const node = state.index && (state.index.get(path) || state.root);
+    const raw = state.index && (state.index.get(path) || state.root);
+    // Manual mode's checkboxes filter the directory on screen; drilling into a
+    // subdirectory shows all of it.
+    const node = raw && state.settings.exactLinesMode === 'manual' && path === state.ctx.path
+      ? GHL.inline.viewOf(raw, state)
+      : raw;
     const canvas = modal.canvas;
     canvas.textContent = '';
     if (!node) return;

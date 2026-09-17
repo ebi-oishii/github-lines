@@ -287,6 +287,23 @@ try {
       'everything is still an estimate before the button is pressed'
     );
 
+    // Unticking a row takes it out of the picture and out of the count; tick
+    // it back so the full fetch below is what it says.
+    const firstPick = await page.$('.ghl-row-pick[data-pick="on"]:visible');
+    const firstPath = await firstPick.getAttribute('data-ghl-path');
+    const countBefore = (await button.textContent()).match(/\d+/)[0];
+    await firstPick.click();
+    await page.waitForFunction(
+      (p) => document.querySelector(`.ghl-cell[data-ghl-path="${p}"]`)?.dataset.state === 'off', firstPath, { timeout: 5000 }
+    );
+    const countAfter = (await button.textContent()).match(/\d+/)[0];
+    assert(Number(countAfter) < Number(countBefore), `unticking ${firstPath} drops the count (${countBefore} → ${countAfter})`);
+    await page.screenshot({ path: path.join(OUT_DIR, 'manual-unticked.png'), fullPage: false });
+    await firstPick.click();
+    await page.waitForFunction(
+      (p) => document.querySelector(`.ghl-cell[data-ghl-path="${p}"]`)?.dataset.state !== 'off', firstPath, { timeout: 5000 }
+    );
+
     const beforeClick = apiRequests.length;
     const label = button ? (await button.textContent()) : '';
     await button.click();

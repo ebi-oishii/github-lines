@@ -88,38 +88,70 @@
   }
 
   /* A row has one name cell per breakpoint; paint every one of them. */
-  function renderRow(row, node, dirTotal, maxTotal, state, handlers) {
+  function renderRow(row, node, dirTotal, maxTotal, state, handlers, manual, included) {
     for (const host of row.hosts) {
-      paintPick(pickIn(host, handlers), row.path, node, state);
-      paintCell(cellIn(host), row, node, dirTotal, maxTotal, state);
+      paintPick(pickIn(host, handlers), row.path, state, manual);
+      paintCell(cellIn(host), row, node, dirTotal, maxTotal, state, included);
     }
   }
 
-  /* Shown before anything is fetched (every row, no count known yet) and
-     while the fetch button is offered (rows that still have something to
-     fetch). Rows with nothing left keep the space so the column stays aligned;
-     every other state hides it. */
-  function paintPick(pick, path, node, state) {
+  /* Whether manual mode's checkbox for a row is ticked. Rows are always
+     included outside manual mode. */
+  function isIncluded(state, path) {
+    return !(state.deselected && state.deselected.has(path));
+  }
+
+  /* Manual mode's checkbox column is up for the whole view. A ticked row is
+     in: its bar and number show, it counts towards the totals and the
+     percentages, and its files are what "行数を取得" fetches. Untick it and it
+     drops out of all of that. Other modes have no column. */
+  function paintPick(pick, path, state, manual) {
     pick.dataset.ghlPath = path;
-    if (state.status === 'idle') {
-      pick.checked = !(state.deselected && state.deselected.has(path));
-      pick.title = '「行数を取得」の対象にする';
-      pick.dataset.pick = 'on';
-      return;
-    }
-    if (state.status !== 'pending') { pick.dataset.pick = 'none'; return; }
-    const count = (node && state.pickable && state.pickable.get(node.path)) || 0;
-    if (!count) { pick.dataset.pick = 'blank'; return; }
-    pick.checked = !(state.deselected && state.deselected.has(node.path));
-    pick.title = `「行数を取得」の対象にする（${fmt(count)} ファイル）`;
+    if (!manual) { pick.dataset.pick = 'none'; return; }
     pick.dataset.pick = 'on';
+    pick.checked = isIncluded(state, path);
+    const left = (state.pickable && state.pickable.get(path)) || 0;
+    pick.title = 'この行を表示と取得に含める' + (left ? `（未取得 ${fmt(left)} ファイル）` : '');
   }
 
-  function paintCell(cell, row, node, dirTotal, maxTotal, state) {
+  /* Manual mode's view of the directory: the unticked rows dropped, totals
+     recomputed over what is left. Feeds the strip, the percentages and the
+     treemap alike. */
+  function viewOf(dirNode, state) {
+    const children = new Map();
+    let total = 0;
+    let bytes = 0;
+    let fileCount = 0;
+    let allExact = true;
+    for (const [name, child] of dirNode.children) {
+      if (!isIncluded(state, child.path)) continue;
+      children.set(name, child);
+      total += child.total || 0;
+      bytes += child.bytes || 0;
+      fileCount += child.fileCount || 0;
+      if (!child.allExact) allExact = false;
+    }
+    return { ...dirNode, children, total, bytes, fileCount, allExact };
+  }
+
+  function paintCell(cell, row, node, dirTotal, maxTotal, state, included) {
     const settings = state.settings;
     const fill = cell.querySelector('.ghl-bar-fill');
     const num = cell.querySelector('.ghl-num');
     const pct = cell.querySelector('.ghl-pct');
+
+    // Unticked in manual mode: out of the picture, but the cell keeps its
+    // footprint so the column does not reflow.
+    if (!included) {
+      cell.dataset.ghlPath = row.path;
+      cell.dataset.state = 'off';
+      cell.dataset.severity = 'none';
+      fill.style.width = '0%';
+      num.textContent = '';
+      pct.textContent = '';
+      cell.title = '';
+      return;
+    }
 
     if (!node) {
       cell.dataset.ghlPath = row.path;
@@ -179,7 +211,11 @@
     for (const n of document.querySelectorAll(`.${CELL_CLASS}, .${PICK_CLASS}, .${COL_HEAD_CLASS}`)) n.remove();
   }
 
-  /* Row paths whose checkbox is currently on screen and live. */
+  function clearCells() {
+    for (const n of document.querySelectorAll(`.${CELL_CLASS}`)) n.remove();
+  }
+
+  /* Row paths whose checkbox is currently on screen. */
   function pickedKeysOnScreen() {
     return [...new Set(
       [...document.querySelectorAll(`.${PICK_CLASS}[data-pick="on"]`)].map((p) => p.dataset.ghlPath)
@@ -201,7 +237,7 @@
   /* The all-rows checkbox mirrors the rows: ticked when every row is,
      indeterminate when only some are. Clicking it takes all rows with it. */
   function syncAllRowsBox(box, pickKeys, state) {
-    const selected = pickKeys.filter((k) => !(state.deselected && state.deselected.has(k))).length;
+    const selected = pickKeys.filter((k) => isIncluded(state, k)).length;
     box.checked = pickKeys.length > 0 && selected === pickKeys.length;
     box.indeterminate = selected > 0 && selected < pickKeys.length;
   }
@@ -376,9 +412,9 @@
     // The strip's copy of the all-rows checkbox, for pages where the column
     // head could not be placed.
     const pickAll = node.querySelector('.ghl-pick-all');
-    const picking = (state.status === 'pending' || (idle && pickKeys.length > 0)) && !headPlaced;
-    pickAll.hidden = !picking;
-    if (picking) syncAllRowsBox(pickAll.querySelector('input'), pickKeys, state);
+    const manual = settings.showInlineBars && settings.exactLinesMode === 'manual';
+    pickAll.hidden = !manual || headPlaced;
+    if (!pickAll.hidden) syncAllRowsBox(pickAll.querySelector('input'), pickKeys, state);
 
     const stats = node.querySelector('.ghl-summary-stats');
     const status = node.querySelector('.ghl-summary-status');
@@ -510,32 +546,31 @@
     const ctx = state.ctx;
     const dirNode = state.index && (state.index.get(ctx.path) || state.root);
     const rows = GHL.page.findRows(ctx);
-    const picking = settings.showInlineBars && (state.status === 'idle' || state.status === 'pending');
-    const pickKeys = state.status === 'idle'
-      ? rows.map((r) => r.path)
-      : [...(state.pickable ? state.pickable.keys() : [])];
-    const headPlaced = renderColumnHead(state, handlers, pickKeys, picking);
-
-    // Manual mode, nothing fetched yet. The rows are already on screen, so the
-    // checkboxes go up now: what to fetch is decided before anything is spent.
-    if (!dirNode && state.status === 'idle' && settings.showInlineBars) {
+    // Manual mode's checkbox column is up for the whole view, one box per row
+    // on screen.
+    const manual = settings.showInlineBars && settings.exactLinesMode === 'manual';
+    const pickKeys = manual ? rows.map((r) => r.path) : [];
+    const headPlaced = renderColumnHead(state, handlers, pickKeys, manual);
+    if (manual) {
       for (const r of rows) {
-        for (const host of r.hosts) paintPick(pickIn(host, handlers), r.path, null, state);
+        for (const host of r.hosts) paintPick(pickIn(host, handlers), r.path, state, true);
       }
+    }
+
+    // No tree yet — idle, loading, or the request failed outright. Show the
+    // strip regardless: a blank page gives the user nothing to act on, and "no
+    // bars" should never be indistinguishable from "extension not running".
+    if (!dirNode) {
+      clearCells();
+      if (!manual) clearRows();
       renderSummary(state, EMPTY_DIR, handlers, pickKeys, headPlaced);
       return;
     }
 
-    // Still loading, or the request failed outright. Show the strip regardless:
-    // a blank page gives the user nothing to act on, and "no bars" should never
-    // be indistinguishable from "extension not running".
-    if (!dirNode) {
-      clearRows();
-      renderSummary(state, EMPTY_DIR, handlers, [], false);
-      return;
-    }
-
-    renderSummary(state, dirNode, handlers, pickKeys, headPlaced);
+    // What the strip and the percentages are computed over: in manual mode,
+    // the ticked rows only.
+    const view = manual ? viewOf(dirNode, state) : dirNode;
+    renderSummary(state, view, handlers, pickKeys, headPlaced);
 
     if (!settings.showInlineBars) {
       clearRows();
@@ -544,16 +579,17 @@
 
     const visible = rows
       .map((r) => ({ row: r, node: state.index.get(r.path) }))
-      .filter((x) => x.node);
+      .filter((x) => x.node && (!manual || isIncluded(state, x.row.path)));
 
     const m = metricOf(state);
-    const dirTotal = m.value(dirNode);
+    const dirTotal = m.value(view);
     const maxTotal = visible.reduce((acc, x) => Math.max(acc, m.value(x.node)), 0);
 
     for (const r of rows) {
-      renderRow(r, state.index.get(r.path), dirTotal, maxTotal, state, handlers);
+      const included = !manual || isIncluded(state, r.path);
+      renderRow(r, state.index.get(r.path), dirTotal, maxTotal, state, handlers, manual, included);
     }
   }
 
-  GHL.inline = { render, clearRows, removeSummary, severity, errorText, METRICS, metricOf, SUMMARY_ID };
+  GHL.inline = { render, clearRows, removeSummary, severity, errorText, METRICS, metricOf, viewOf, SUMMARY_ID };
 })(globalThis.GHL);

@@ -1036,6 +1036,10 @@ await domCheckAsync('pressing the button fetches, and the estimate becomes exact
 
   const button = document.querySelector('[data-ghl-action="fetch"]');
   assert(button.hidden, 'the button goes away once there is nothing left to fetch');
+  const pick = rowPick('source/core/options.ts');
+  assert(pick && pick.dataset.pick === 'on' && !pick.disabled && pick.checked, 'the checkbox stays, live');
+  const headAll = document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]');
+  assert(headAll && !headAll.disabled && headAll.checked, 'so does the column head');
 });
 
 await domCheckAsync('rows unticked before anything is fetched are left out of a cold-start 行数を取得', async () => {
@@ -1102,9 +1106,14 @@ await domCheckAsync('unticking a row takes its files out of the count', async ()
     [...document.querySelectorAll('.ghl-row-pick[data-ghl-path="source/core"]')].every((p) => !p.checked),
     'both name cells of the row show it unticked'
   );
+  assertEqual(document.querySelector('.ghl-cell[data-ghl-path="source/core"]').dataset.state, 'off',
+    'the unticked row loses its bar and number');
+  assert(/5 ファイル/.test(document.querySelector('.ghl-summary-stats').textContent),
+    `the strip counts only the ticked rows (${document.querySelector('.ghl-summary-stats').textContent})`);
 
   tick('source/create.ts', false);
   await waitFor(() => /4/.test(fetchButton().textContent), 3000, 'the file leaving the count');
+  assert(/4 ファイル/.test(document.querySelector('.ghl-summary-stats').textContent), 'and follows the second untick');
 });
 
 await domCheckAsync('pressing the button fetches only the ticked rows', async () => {
@@ -1124,7 +1133,10 @@ await domCheckAsync('pressing the button fetches only the ticked rows', async ()
   const button = fetchButton();
   assert(!button.hidden && button.disabled && /0/.test(button.textContent),
     `the button stays for the unticked leftovers, disabled with nothing picked (${button.textContent})`);
-  assertEqual(rowPick('source/index.ts').dataset.pick, 'blank', 'a fetched row loses its checkbox but keeps the space');
+  const done = rowPick('source/index.ts');
+  assert(done.dataset.pick === 'on' && !done.disabled && done.checked, 'a fetched row keeps its checkbox, live');
+  const stats = document.querySelector('.ghl-summary-stats').textContent;
+  assert(/^763 行/.test(stats) && /4 ファイル/.test(stats), `the total is over the ticked rows only, and exact (${stats})`);
 
   tick('source/core', true);
   await waitFor(() => !fetchButton().disabled, 3000, 'the button to re-enable');
@@ -1147,6 +1159,7 @@ await domCheckAsync("the column head's checkbox ticks or unticks every row at on
     [...document.querySelectorAll('.ghl-row-pick[data-pick="on"]')].every((p) => !p.checked),
     'every row follows'
   );
+  assertEqual(document.querySelectorAll('.ghl-cell[data-state="off"]').length, 10, 'and every bar is gone (two cells a row)');
 
   all.click();
   await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'back to all ticked');
