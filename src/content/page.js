@@ -237,9 +237,12 @@
     return rows;
   }
 
-  /* The "latest commit" box between the summary strip and the table. */
-  function findCommitBox() {
-    return document.querySelector('[data-testid="latest-commit"]');
+  /* The "Name" header cells of the file table — one per breakpoint, like the
+     rows' name cells. Older layouts have no header row and return none. */
+  function findNameHeaders() {
+    const container = findListContainer();
+    if (!container) return [];
+    return [...container.querySelectorAll('thead th')].filter((th) => th.textContent.trim() === 'Name');
   }
 
   /* The summary strip goes above the file table, inside the same column. */
@@ -257,7 +260,7 @@
     getContext,
     findListContainer,
     findRows,
-    findCommitBox,
+    findNameHeaders,
     findSummaryAnchor,
   };
 })(globalThis.GHL);

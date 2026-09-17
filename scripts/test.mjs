@@ -938,14 +938,6 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   await settings.set({ exactLinesMode: 'manual' });
   const before = transportCalls.length;
 
-  // The fixture predates GitHub's latest-commit box; stand one in so the
-  // column head has somewhere to go.
-  const table = document.querySelector('table[aria-labelledby="folders-and-files"]');
-  const box = document.createElement('div');
-  box.setAttribute('data-testid', 'latest-commit');
-  box.innerHTML = '<div class="avatar">author</div>';
-  table.parentElement.insertBefore(box, table);
-
   navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
   await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
 
@@ -956,9 +948,11 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   assert(idlePicks.every((p) => p.checked), 'ticked by default');
   const host = idlePicks[0].parentElement;
   assert(host.firstElementChild === idlePicks[0], 'the checkbox leads the name cell');
-  const head = document.querySelector('.ghl-col-head');
-  assert(head && head.parentElement.dataset.testid === 'latest-commit' && head.parentElement.firstChild === head,
-    'the icon heads the column from the latest-commit box');
+  const heads = [...document.querySelectorAll('.ghl-col-head')];
+  assertEqual(heads.length, 2, 'one head per "Name" header cell (small and large screen)');
+  const head = heads[0];
+  assert(head.parentElement.tagName === 'TH' && /^Name$/.test(head.parentElement.textContent.trim()) &&
+    head.parentElement.firstChild === head, 'the icon heads the column from the "Name" header cell');
   assert(head.querySelector('.ghl-icon svg'), 'and it is the extension icon');
   const headAll = head.querySelector('[data-ghl-action="pick-all"]');
   assert(headAll && headAll.checked && !headAll.indeterminate, 'with the all-rows checkbox under it, ticked');
@@ -1165,8 +1159,8 @@ await domCheckAsync("the column head's checkbox ticks or unticks every row at on
   await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'back to all ticked');
 });
 
-await domCheckAsync('without a latest-commit box the all-rows checkbox falls back to the strip', async () => {
-  document.querySelector('[data-testid="latest-commit"]').remove();
+await domCheckAsync('without a table header the all-rows checkbox falls back to the strip', async () => {
+  document.querySelector('table[aria-labelledby="folders-and-files"] thead').remove();
   tick('source/core', false);
   await waitFor(() => !document.querySelector('.ghl-col-head'), 3000, 'the head to go');
   const strip = document.querySelector('#ghl-summary .ghl-pick-all');

@@ -242,20 +242,28 @@
     box.indeterminate = selected > 0 && selected < pickKeys.length;
   }
 
-  /* The head of the checkbox column, in GitHub's latest-commit box just above
-     the table: the icon, with the all-rows checkbox under it, over the rows'
-     checkboxes — so the column reads as ours and is driven from its top. The
-     vertical rule between the checkboxes and GitHub's file icons is CSS on the
-     rows. Returns whether the head found a home. */
+  /* The head of the checkbox column, in the table's "Name" header cells (one
+     per breakpoint, like the rows): the icon, with the all-rows checkbox under
+     it, exactly over the rows' checkboxes — so the column reads as ours and is
+     driven from its top. The vertical rule between the checkboxes and GitHub's
+     file icons is CSS on the rows and on the header. Returns whether a head
+     found a home. */
   const COL_HEAD_CLASS = 'ghl-col-head';
 
   function renderColumnHead(state, handlers, pickKeys, show) {
-    let head = document.querySelector(`.${COL_HEAD_CLASS}`);
-    const box = show && GHL.page.findCommitBox();
-    if (!box) { if (head) head.remove(); return false; }
-    if (!head) head = el('span', { class: COL_HEAD_CLASS }, [icon(), allRowsBox(handlers)]);
-    if (box.firstChild !== head) box.insertBefore(head, box.firstChild);
-    syncAllRowsBox(head.querySelector('input'), pickKeys, state);
+    const cells = show ? GHL.page.findNameHeaders() : [];
+    if (!cells.length) {
+      for (const h of document.querySelectorAll(`.${COL_HEAD_CLASS}`)) h.remove();
+      return false;
+    }
+    for (const th of cells) {
+      let head = th.querySelector(`:scope > .${COL_HEAD_CLASS}`);
+      if (!head) {
+        head = el('span', { class: COL_HEAD_CLASS }, [icon(), allRowsBox(handlers)]);
+        th.insertBefore(head, th.firstChild);
+      }
+      syncAllRowsBox(head.querySelector('input'), pickKeys, state);
+    }
     return true;
   }
 
