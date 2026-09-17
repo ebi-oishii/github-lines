@@ -142,23 +142,31 @@ html[data-color-mode='dark'] {
 
 /* The column's head in the table's "Name" header cell: the icon stacked over
    the all-rows checkbox, exactly over the rows' checkboxes (the header cell
-   and the name cells share GitHub's 16px padding), with the rule running the
-   header's full height. Its width pushes "Name" to where the file icons
-   start. */
-th:has(> .ghl-col-head) { position: relative; }
+   and the name cells share GitHub's 16px padding). It is taken out of the
+   cell's flow and centred in it, so the header row keeps its own height and
+   its label never wraps; the cell's padding makes room instead, pushing
+   "Name" to where the file icons start. The rule runs the header's full
+   height. */
+th:has(> .ghl-col-head) {
+  position: relative;
+  /* GitHub sets the cell's padding from its own stylesheet, which can load
+     after ours at equal specificity — hence the !important. */
+  padding-left: 61px !important;
+}
 .ghl-col-head {
-  display: inline-flex;
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
   gap: 1px;
-  vertical-align: middle;
-  box-sizing: border-box;
   width: 45px;
 }
 .ghl-col-head .ghl-icon { width: 14px; height: 14px; }
 .ghl-col-head .ghl-pick { margin: 0; }
-.ghl-col-head::after {
+th:has(> .ghl-col-head)::after {
   content: '';
   position: absolute;
   top: 0;
