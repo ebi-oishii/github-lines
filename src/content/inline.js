@@ -26,10 +26,17 @@
 
   /* ------------------------------------------------------------ row cells */
 
-  function cellIn(host) {
+  function cellIn(host, handlers) {
     let cell = host.querySelector(`:scope > .${CELL_CLASS}`);
     if (!cell) {
+      const pick = el('input', { class: 'ghl-pick', type: 'checkbox' });
+      // The row may navigate on click; keep the toggle to ourselves.
+      pick.addEventListener('click', (e) => e.stopPropagation());
+      pick.addEventListener('change', () => {
+        if (handlers.onPick) handlers.onPick(cell.dataset.ghlPath, pick.checked);
+      });
       cell = el('span', { class: CELL_CLASS }, [
+        pick,
         el('span', { class: 'ghl-bar' }, [el('span', { class: 'ghl-bar-fill' })]),
         el('span', { class: 'ghl-num' }),
         el('span', { class: 'ghl-pct' }),
@@ -40,16 +47,32 @@
   }
 
   /* A row has one name cell per breakpoint; paint every one of them. */
-  function renderRow(row, node, dirTotal, maxTotal, settings) {
+  function renderRow(row, node, dirTotal, maxTotal, state, handlers) {
     for (const host of row.hosts) {
-      paintCell(cellIn(host), row, node, dirTotal, maxTotal, settings);
+      paintCell(cellIn(host, handlers), row, node, dirTotal, maxTotal, state);
     }
   }
 
-  function paintCell(cell, row, node, dirTotal, maxTotal, settings) {
+  /* Manual mode's checkbox: shown while the fetch button is offered, on rows
+     that still have something to fetch. Rows with nothing left keep the space
+     so the bars stay aligned down the column. */
+  function paintPick(cell, node, state) {
+    if (state.status !== 'pending') { cell.dataset.pick = 'none'; return; }
+    const count = (node && state.pickable && state.pickable.get(node.path)) || 0;
+    if (!count) { cell.dataset.pick = 'blank'; return; }
+    const pick = cell.querySelector('.ghl-pick');
+    pick.checked = !(state.deselected && state.deselected.has(node.path));
+    pick.title = `「行数を取得」の対象にする（${fmt(count)} ファイル）`;
+    cell.dataset.pick = 'on';
+  }
+
+  function paintCell(cell, row, node, dirTotal, maxTotal, state) {
+    const settings = state.settings;
     const fill = cell.querySelector('.ghl-bar-fill');
     const num = cell.querySelector('.ghl-num');
     const pct = cell.querySelector('.ghl-pct');
+
+    paintPick(cell, node, state);
 
     if (!node) {
       cell.dataset.ghlPath = row.path;
@@ -140,6 +163,10 @@
         el('span', { class: 'ghl-summary-stats' }),
         el('span', { class: 'ghl-spacer' }),
         el('span', { class: 'ghl-summary-status' }),
+        el('label', { class: 'ghl-pick-all', title: 'すべての行を取得対象にする／外す' }, [
+          el('input', { class: 'ghl-pick', type: 'checkbox', 'data-ghl-action': 'pick-all' }),
+          'すべて',
+        ]),
         el('button', { class: 'ghl-btn ghl-btn-primary', type: 'button', 'data-ghl-action': 'fetch' }),
         el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [
           'ツリーマップ',
@@ -161,6 +188,8 @@
         .addEventListener('click', () => handlers.onTreemap && handlers.onTreemap());
       node.querySelector('[data-ghl-action="fetch"]')
         .addEventListener('click', () => handlers.onFetchExact && handlers.onFetchExact());
+      node.querySelector('[data-ghl-action="pick-all"]')
+        .addEventListener('change', (e) => handlers.onPickAll && handlers.onPickAll(e.target.checked));
     }
     if (node.previousElementSibling !== anchor && node.parentElement !== anchor.parentElement) {
       anchor.parentElement.insertBefore(node, anchor);
@@ -173,15 +202,30 @@
     treemapButton.hidden = !settings.showTreemapButton;
     treemapButton.disabled = !state.index;
 
-    // Manual mode: nothing is fetched until this is pressed.
+    // Manual mode: nothing is fetched until this is pressed. With every row
+    // unticked it stays visible but disabled, so the zero is explained.
     const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
-    const offerFetch = state.status === 'pending' && state.pending > 0;
+    const offerFetch = state.status === 'pending';
     fetchButton.hidden = !offerFetch;
     if (offerFetch) {
+      fetchButton.disabled = state.pending === 0;
       fetchButton.textContent = `行数を取得（${fmt(state.pending)}）`;
-      fetchButton.title =
-        `${fmt(state.pending)} ファイルの行数を GitHub から取得します\n` +
-        '（同じ数だけ API リクエストを使います。取得済みのファイルは含みません）';
+      fetchButton.title = state.pending
+        ? `${fmt(state.pending)} ファイルの行数を GitHub から取得します\n` +
+          '（同じ数だけ API リクエストを使います。取得済みのファイルは含みません）'
+        : '取得する行にチェックを入れてください';
+    }
+
+    // The strip's own checkbox mirrors the rows: ticked when every row is,
+    // indeterminate when only some are. Clicking it takes all rows with it.
+    const pickAll = node.querySelector('.ghl-pick-all');
+    pickAll.hidden = !offerFetch;
+    if (offerFetch) {
+      const keys = [...(state.pickable ? state.pickable.keys() : [])];
+      const selected = keys.filter((k) => !(state.deselected && state.deselected.has(k))).length;
+      const box = pickAll.querySelector('input');
+      box.checked = keys.length > 0 && selected === keys.length;
+      box.indeterminate = selected > 0 && selected < keys.length;
     }
 
     const stats = node.querySelector('.ghl-summary-stats');
@@ -336,7 +380,7 @@
     const maxTotal = visible.reduce((m, x) => Math.max(m, x.node.total || 0), 0);
 
     for (const r of rows) {
-      renderRow(r, state.index.get(r.path), dirTotal, maxTotal, settings);
+      renderRow(r, state.index.get(r.path), dirTotal, maxTotal, state, handlers);
     }
   }
 

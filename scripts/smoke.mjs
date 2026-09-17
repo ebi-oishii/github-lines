@@ -216,6 +216,11 @@ try {
   if (MANUAL && !rateLimited) {
     const button = await page.$('#ghl-summary [data-ghl-action="fetch"]:visible');
     assert(!!button, 'the fetch button is offered');
+    const picks = await page.$$eval('.ghl-cell[data-pick="on"] .ghl-pick', (ps) =>
+      ps.filter((p) => p.offsetParent !== null).length
+    );
+    assert(picks > 0, `each row offers a checkbox for the fetch (${picks} visible)`);
+    assert(!!(await page.$('#ghl-summary .ghl-pick-all:visible')), 'the all-rows toggle is offered');
     assert(
       rows.every((r) => r.lines.startsWith('~') || r.lines === 'generated' || r.lines === 'binary'),
       'everything is still an estimate before the button is pressed'

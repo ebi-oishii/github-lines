@@ -21,6 +21,12 @@
     onFetchExact() {
       if (current && current.handle) current.handle.fetchExact();
     },
+    onPick(path, checked) {
+      if (current && current.handle) current.handle.setSelected(path, checked);
+    },
+    onPickAll(checked) {
+      if (current && current.handle) current.handle.setAllSelected(checked);
+    },
   };
 
   function teardown() {

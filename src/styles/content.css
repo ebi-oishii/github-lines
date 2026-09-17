@@ -104,6 +104,32 @@ html[data-color-mode='dark'] {
   opacity: 0.6;
 }
 
+/* Manual mode's per-row checkbox. `blank` keeps the column aligned on rows
+   with nothing left to fetch; `none` is every other state. */
+.ghl-pick {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  margin: 0 2px 0 0;
+  cursor: pointer;
+  accent-color: var(--ghl-ok);
+}
+.ghl-cell[data-pick='none'] .ghl-pick { display: none; }
+.ghl-cell[data-pick='blank'] .ghl-pick { visibility: hidden; }
+
+/* The strip's all-rows toggle. */
+.ghl-pick-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--ghl-fg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ghl-pick-all[hidden] { display: none; }
+
 .ghl-flash {
   animation: ghl-flash 1.2s ease;
 }
@@ -196,6 +222,7 @@ html[data-color-mode='dark'] {
   font-weight: 600;
 }
 .ghl-btn-primary:hover { filter: brightness(1.1); background: var(--ghl-ok); }
+.ghl-btn-primary:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
 
 .ghl-stack {
   display: flex;

@@ -955,6 +955,96 @@ await domCheckAsync('pressing the button fetches, and the estimate becomes exact
   assert(button.hidden, 'the button goes away once there is nothing left to fetch');
 });
 
+const fetchButton = () => document.querySelector('[data-ghl-action="fetch"]');
+
+function tick(path, on) {
+  const pick = document.querySelector(`.ghl-cell[data-ghl-path="${path}"] .ghl-pick`);
+  pick.checked = on;
+  pick.dispatchEvent(new currentDom.window.Event('change', { bubbles: true }));
+}
+
+await domCheckAsync('manual mode puts a ticked checkbox on every row with something to fetch', async () => {
+  navigateDom(currentDom, 'source', [
+    { name: 'as-promise', type: 'dir' },
+    { name: 'core', type: 'dir' },
+    { name: 'create.ts', type: 'file' },
+    { name: 'index.ts', type: 'file' },
+    { name: 'types.ts', type: 'file' },
+  ]);
+  await waitFor(
+    () => fetchButton() && !fetchButton().hidden && renderedPaths().includes('source/create.ts'),
+    6000,
+    'the fetch button for the parent directory'
+  );
+
+  assert(/6/.test(fetchButton().textContent),
+    `the count covers files in subdirectories too (${fetchButton().textContent})`);
+
+  const picked = [...document.querySelectorAll('.ghl-cell[data-pick="on"]')];
+  assertEqual(new Set(picked.map((c) => c.dataset.ghlPath)).size, 5, 'every row offers a checkbox');
+  assert(picked.every((c) => c.querySelector('.ghl-pick').checked), 'all ticked by default');
+});
+
+await domCheckAsync('unticking a row takes its files out of the count', async () => {
+  tick('source/core', false);
+  await waitFor(() => /5/.test(fetchButton().textContent), 3000, "the directory's file leaving the count");
+  assert(
+    [...document.querySelectorAll('.ghl-cell[data-ghl-path="source/core"] .ghl-pick')].every((p) => !p.checked),
+    'both name cells of the row show it unticked'
+  );
+
+  tick('source/create.ts', false);
+  await waitFor(() => /4/.test(fetchButton().textContent), 3000, 'the file leaving the count');
+});
+
+await domCheckAsync('pressing the button fetches only the ticked rows', async () => {
+  const before = transportCalls.length;
+  fetchButton().click();
+  await waitFor(
+    () => transportCalls.slice(before).filter((c) => c.type === 'LINES').length >= 4 &&
+      !/取得中/.test(document.querySelector('.ghl-summary-status').textContent),
+    6000,
+    'the fetch to finish'
+  );
+
+  const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES').map((c) => c.sha).sort();
+  assertEqual(fetched.join(' '), 'sha-ap-index sha-ap-types sha-index sha-types',
+    'nothing from core/ or create.ts was requested');
+
+  const button = fetchButton();
+  assert(!button.hidden && button.disabled && /0/.test(button.textContent),
+    `the button stays for the unticked leftovers, disabled with nothing picked (${button.textContent})`);
+  assertEqual(
+    document.querySelector('.ghl-cell[data-ghl-path="source/index.ts"]').dataset.pick, 'blank',
+    'a fetched row loses its checkbox but keeps the space'
+  );
+
+  tick('source/core', true);
+  await waitFor(() => !fetchButton().disabled, 3000, 'the button to re-enable');
+  assert(/1/.test(fetchButton().textContent), `re-ticking brings its file back (${fetchButton().textContent})`);
+});
+
+await domCheckAsync("the strip's checkbox ticks or unticks every row at once", async () => {
+  const all = document.querySelector('#ghl-summary [data-ghl-action="pick-all"]');
+  assert(all && !all.closest('.ghl-pick-all').hidden, 'the all-rows checkbox is offered');
+  assert(all.indeterminate && !all.checked, 'a mixed selection shows as indeterminate');
+
+  all.click();
+  await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'every leftover row to be ticked');
+  assert(all.checked && !all.indeterminate, 'fully ticked');
+
+  all.click();
+  await waitFor(() => fetchButton().disabled, 3000, 'the button to disable with nothing ticked');
+  assert(!all.checked && !all.indeterminate, 'fully unticked');
+  assert(
+    [...document.querySelectorAll('.ghl-cell[data-pick="on"] .ghl-pick')].every((p) => !p.checked),
+    'every row follows'
+  );
+
+  all.click();
+  await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'back to all ticked');
+});
+
 await domCheckAsync('off mode never fetches and offers no button', async () => {
   await settings.set({ exactLinesMode: 'off' });
   const before = transportCalls.length;

@@ -163,14 +163,62 @@
       learner: patterns.createRatioLearner(),
       progress: { done: 0, total: 0 },
       pending: 0,          // files a manual fetch would request
+      pickable: new Map(), // row path -> files still to fetch under it (manual mode's checkboxes)
+      deselected: new Set(), // row paths the user has unticked
       settings: null,
     };
 
     const emitNow = () => { if (!cancelled) onUpdate(state); };
     const emit = util.throttle(emitNow, 140);
 
-    let queue = [];        // files still worth fetching
+    let candidates = [];   // fetchable files under the visible directory, largest-first
     let running = null;    // in-flight exact pass, so a double click is harmless
+
+    /* Manual mode's checkboxes sit on the rows on screen, so a file is keyed
+       by the row it appears under: itself if it is a direct child of the
+       visible directory, otherwise the top-level directory containing it. */
+    function rowKey(path) {
+      const rest = ctx.path ? path.slice(ctx.path.length + 1) : path;
+      const slash = rest.indexOf('/');
+      if (slash === -1) return path;
+      return (ctx.path ? `${ctx.path}/` : '') + rest.slice(0, slash);
+    }
+
+    function remaining() {
+      return candidates.filter((n) => !n.exact);
+    }
+
+    /* What pressing the button fetches: the files under ticked rows, within
+       the per-view limit. Unticking a row frees its share of that limit. */
+    function selectedQueue() {
+      return remaining()
+        .filter((n) => !state.deselected.has(rowKey(n.path)))
+        .slice(0, state.settings.maxExactFetch);
+    }
+
+    /* Recomputes the button count and the per-row counts. In manual mode the
+       button stays up while anything is left — whatever a rate limit cut
+       short, the batch beyond the limit, or the unticked rows. */
+    function settle() {
+      const left = remaining();
+      state.pickable = new Map();
+      for (const n of left) {
+        const key = rowKey(n.path);
+        state.pickable.set(key, (state.pickable.get(key) || 0) + 1);
+      }
+      state.pending = selectedQueue().length;
+      state.status = state.settings.exactLinesMode === 'manual' && left.length ? 'pending' : 'ready';
+    }
+
+    function reselect(mutate) {
+      if (cancelled || !state.index) return;
+      mutate();
+      // Mid-fetch, the counts are settled when the pass finishes.
+      if (state.status === 'pending') {
+        settle();
+        emitNow();
+      }
+    }
 
     function refresh() {
       applyEstimates(state.index, state.learner);
@@ -203,10 +251,9 @@
 
     async function runExactPass() {
       const settings = state.settings;
-      const todo = queue.filter((n) => !n.exact);
+      const todo = selectedQueue();
       if (!todo.length) {
-        state.pending = 0;
-        state.status = 'ready';
+        settle();
         emitNow();
         return;
       }
@@ -246,11 +293,7 @@
 
       if (cancelled) return;
 
-      const remaining = queue.filter((n) => !n.exact).length;
-      state.pending = remaining;
-      // In manual mode, leaving the button up lets the user retry whatever the
-      // rate limit cut short.
-      state.status = settings.exactLinesMode === 'manual' && remaining ? 'pending' : 'ready';
+      settle();
       emitNow();
     }
 
@@ -332,18 +375,15 @@
       const directChildren = new Set(
         [...dirNode.children.values()].filter((n) => n.type === 'file').map((n) => n.path)
       );
-      queue = subtree
+      candidates = subtree
         .filter((n) => fetchable(n, settings.maxBlobBytes))
         .sort((a, b) => {
           const ad = directChildren.has(a.path) ? 0 : 1;
           const bd = directChildren.has(b.path) ? 0 : 1;
           return ad - bd || b.size - a.size;
-        })
-        .slice(0, settings.maxExactFetch);
+        });
 
-      state.pending = queue.length;
-
-      if (settings.exactLinesMode === 'off' || !queue.length) {
+      if (settings.exactLinesMode === 'off' || !candidates.length || !settings.maxExactFetch) {
         state.pending = 0;
         state.status = 'ready';
         emitNow();
@@ -351,7 +391,7 @@
       }
 
       if (settings.exactLinesMode === 'manual') {
-        state.status = 'pending';
+        settle();
         emitNow();
         return;
       }
@@ -376,6 +416,20 @@
           })
           .finally(() => { running = null; });
         return running;
+      },
+      /* Manual mode: tick or untick a row. A directory row stands for every
+         file under it. */
+      setSelected(path, on) {
+        reselect(() => {
+          if (on) state.deselected.delete(path); else state.deselected.add(path);
+        });
+      },
+      /* Manual mode: tick or untick every row on screen at once. */
+      setAllSelected(on) {
+        reselect(() => {
+          if (on) state.deselected.clear();
+          else for (const key of state.pickable.keys()) state.deselected.add(key);
+        });
       },
     };
   }
