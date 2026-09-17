@@ -164,6 +164,10 @@ try {
     await page.click('#ghl-summary [data-ghl-metric="bytes"]');
     const label = await page.$eval('#ghl-summary [data-ghl-action="fetch"]', (b) => b.textContent);
     assert(/サイズを取得/.test(label), `the button follows the toggle (${label})`);
+    // The segmented control's thumb slides under サイズ (the right half).
+    await page.waitForTimeout(250);
+    const thumb = await page.$eval('#ghl-summary .ghl-metric', (n) => getComputedStyle(n, '::before').transform);
+    assert(/matrix\(1, 0, 0, 1, \d+, 0\)/.test(thumb) && !/, 0, 0\)$/.test(thumb), `the thumb sits under サイズ (${thumb})`);
     const idlePicks = await page.$$eval('.ghl-row-pick[data-pick="on"]', (ps) =>
       ps.filter((p) => p.offsetParent !== null).length
     );
@@ -185,6 +189,7 @@ try {
     );
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-sizes.png'), fullPage: false });
     await page.click('#ghl-summary [data-ghl-metric="lines"]');
+    await page.waitForTimeout(250); // let the thumb finish sliding before the screenshots below
   }
 
   // Each row carries a small-screen and a large-screen cell and only one is
