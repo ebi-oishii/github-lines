@@ -158,6 +158,10 @@ try {
   if (MANUAL) {
     await page.waitForSelector('#ghl-summary [data-ghl-action="sizes"]:visible', { timeout: 30000 });
     assert(apiRequests.length === 0, `nothing is requested before サイズを取得 is pressed (${apiRequests.length})`);
+    const idlePicks = await page.$$eval('.ghl-row-pick[data-pick="on"]', (ps) =>
+      ps.filter((p) => p.offsetParent !== null).length
+    );
+    assert(idlePicks > 0, `checkboxes are up before anything is fetched (${idlePicks} visible)`);
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-idle.png'), fullPage: false });
     await page.click('#ghl-summary [data-ghl-action="sizes"]');
     await page.waitForSelector('.ghl-cell', { state: 'attached', timeout: 30000 });
@@ -257,7 +261,7 @@ try {
   if (MANUAL && !rateLimited) {
     const button = await page.$('#ghl-summary [data-ghl-action="fetch"]:visible');
     assert(!!button, 'the fetch button is offered');
-    const picks = await page.$$eval('.ghl-cell[data-pick="on"] .ghl-pick', (ps) =>
+    const picks = await page.$$eval('.ghl-row-pick[data-pick="on"]', (ps) =>
       ps.filter((p) => p.offsetParent !== null).length
     );
     assert(picks > 0, `each row offers a checkbox for the fetch (${picks} visible)`);

@@ -30,8 +30,8 @@
     onPick(path, checked) {
       if (current && current.handle) current.handle.setSelected(path, checked);
     },
-    onPickAll(checked) {
-      if (current && current.handle) current.handle.setAllSelected(checked);
+    onPickAll(checked, keys) {
+      if (current && current.handle) current.handle.setAllSelected(checked, keys);
     },
   };
 

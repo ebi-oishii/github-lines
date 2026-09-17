@@ -213,11 +213,13 @@
     }
 
     function reselect(mutate) {
-      if (cancelled || !state.index) return;
+      if (cancelled) return;
       mutate();
       // Mid-fetch, the counts are settled when the pass finishes.
       if (state.status === 'pending') {
         settle();
+        emitNow();
+      } else if (state.status === 'idle') {
         emitNow();
       }
     }
@@ -461,11 +463,12 @@
           if (on) state.deselected.delete(path); else state.deselected.add(path);
         });
       },
-      /* Manual mode: tick or untick every row on screen at once. */
-      setAllSelected(on) {
+      /* Manual mode: tick or untick every row on screen at once. Before the
+         tree the UI says which rows those are. */
+      setAllSelected(on, keys) {
         reselect(() => {
           if (on) state.deselected.clear();
-          else for (const key of state.pickable.keys()) state.deselected.add(key);
+          else for (const key of (keys && keys.length ? keys : state.pickable.keys())) state.deselected.add(key);
         });
       },
     };

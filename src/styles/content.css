@@ -104,9 +104,11 @@ html[data-color-mode='dark'] {
   opacity: 0.6;
 }
 
-/* Manual mode's per-row checkbox. `blank` keeps the column aligned on rows
-   with nothing left to fetch; `none` is every other state. */
-.ghl-pick {
+/* Manual mode's checkboxes: one at the head of each row, one in the strip.
+   `blank` keeps the column aligned on rows with nothing left to fetch; `none`
+   is every other state. */
+.ghl-pick,
+.ghl-row-pick {
   flex: 0 0 auto;
   width: 13px;
   height: 13px;
@@ -114,8 +116,9 @@ html[data-color-mode='dark'] {
   cursor: pointer;
   accent-color: var(--ghl-ok);
 }
-.ghl-cell[data-pick='none'] .ghl-pick { display: none; }
-.ghl-cell[data-pick='blank'] .ghl-pick { visibility: hidden; }
+.ghl-row-pick { margin-right: 8px; }
+.ghl-row-pick[data-pick='none'] { display: none; }
+.ghl-row-pick[data-pick='blank'] { visibility: hidden; }
 
 /* The strip's all-rows toggle. */
 .ghl-pick-all {
@@ -141,7 +144,8 @@ html[data-color-mode='dark'] {
 /* Keep GitHub's filename from eating the whole cell, so our bar can sit at a
    fixed right edge and stay aligned down the column. Scoped with :has() so we
    only touch rows we have actually injected into. */
-.react-directory-filename-column:has(> .ghl-cell) {
+.react-directory-filename-column:has(> .ghl-cell),
+.react-directory-filename-column:has(> .ghl-row-pick) {
   display: flex;
   align-items: center;
 }

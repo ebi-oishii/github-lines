@@ -56,17 +56,12 @@
 
   /* ------------------------------------------------------------ row cells */
 
-  function cellIn(host, handlers) {
+  const PICK_CLASS = 'ghl-row-pick';
+
+  function cellIn(host) {
     let cell = host.querySelector(`:scope > .${CELL_CLASS}`);
     if (!cell) {
-      const pick = el('input', { class: 'ghl-pick', type: 'checkbox' });
-      // The row may navigate on click; keep the toggle to ourselves.
-      pick.addEventListener('click', (e) => e.stopPropagation());
-      pick.addEventListener('change', () => {
-        if (handlers.onPick) handlers.onPick(cell.dataset.ghlPath, pick.checked);
-      });
       cell = el('span', { class: CELL_CLASS }, [
-        pick,
         el('span', { class: 'ghl-bar' }, [el('span', { class: 'ghl-bar-fill' })]),
         el('span', { class: 'ghl-num' }),
         el('span', { class: 'ghl-pct' }),
@@ -76,24 +71,48 @@
     return cell;
   }
 
+  /* Manual mode's checkbox goes at the head of the row, before GitHub's file
+     icon — the bar cell sits at the far end of the name column. */
+  function pickIn(host, handlers) {
+    let pick = host.querySelector(`:scope > .${PICK_CLASS}`);
+    if (!pick) {
+      pick = el('input', { class: PICK_CLASS, type: 'checkbox' });
+      // The row may navigate on click; keep the toggle to ourselves.
+      pick.addEventListener('click', (e) => e.stopPropagation());
+      pick.addEventListener('change', () => {
+        if (handlers.onPick) handlers.onPick(pick.dataset.ghlPath, pick.checked);
+      });
+      host.insertBefore(pick, host.firstChild);
+    }
+    return pick;
+  }
+
   /* A row has one name cell per breakpoint; paint every one of them. */
   function renderRow(row, node, dirTotal, maxTotal, state, handlers) {
     for (const host of row.hosts) {
-      paintCell(cellIn(host, handlers), row, node, dirTotal, maxTotal, state);
+      paintPick(pickIn(host, handlers), row.path, node, state);
+      paintCell(cellIn(host), row, node, dirTotal, maxTotal, state);
     }
   }
 
-  /* Manual mode's checkbox: shown while the fetch button is offered, on rows
-     that still have something to fetch. Rows with nothing left keep the space
-     so the bars stay aligned down the column. */
-  function paintPick(cell, node, state) {
-    if (state.status !== 'pending') { cell.dataset.pick = 'none'; return; }
+  /* Shown before anything is fetched (every row, no count known yet) and
+     while the fetch button is offered (rows that still have something to
+     fetch). Rows with nothing left keep the space so the column stays aligned;
+     every other state hides it. */
+  function paintPick(pick, path, node, state) {
+    pick.dataset.ghlPath = path;
+    if (state.status === 'idle') {
+      pick.checked = !(state.deselected && state.deselected.has(path));
+      pick.title = '「行数を取得」の対象にする';
+      pick.dataset.pick = 'on';
+      return;
+    }
+    if (state.status !== 'pending') { pick.dataset.pick = 'none'; return; }
     const count = (node && state.pickable && state.pickable.get(node.path)) || 0;
-    if (!count) { cell.dataset.pick = 'blank'; return; }
-    const pick = cell.querySelector('.ghl-pick');
+    if (!count) { pick.dataset.pick = 'blank'; return; }
     pick.checked = !(state.deselected && state.deselected.has(node.path));
     pick.title = `「行数を取得」の対象にする（${fmt(count)} ファイル）`;
-    cell.dataset.pick = 'on';
+    pick.dataset.pick = 'on';
   }
 
   function paintCell(cell, row, node, dirTotal, maxTotal, state) {
@@ -101,8 +120,6 @@
     const fill = cell.querySelector('.ghl-bar-fill');
     const num = cell.querySelector('.ghl-num');
     const pct = cell.querySelector('.ghl-pct');
-
-    paintPick(cell, node, state);
 
     if (!node) {
       cell.dataset.ghlPath = row.path;
@@ -159,7 +176,7 @@
   }
 
   function clearRows() {
-    for (const cell of document.querySelectorAll(`.${CELL_CLASS}`)) cell.remove();
+    for (const n of document.querySelectorAll(`.${CELL_CLASS}, .${PICK_CLASS}`)) n.remove();
   }
 
   /* ---------------------------------------------------------- summary bar */
@@ -243,7 +260,8 @@
     ]);
   }
 
-  function renderSummary(state, dirNode, handlers) {
+  /* `pickKeys` are the row paths the checkboxes currently stand for. */
+  function renderSummary(state, dirNode, handlers, pickKeys) {
     const anchor = GHL.page.findSummaryAnchor();
     if (!anchor) return;
 
@@ -260,7 +278,13 @@
       node.querySelector('[data-ghl-action="fetch"]')
         .addEventListener('click', () => handlers.onFetchExact && handlers.onFetchExact());
       node.querySelector('[data-ghl-action="pick-all"]')
-        .addEventListener('change', (e) => handlers.onPickAll && handlers.onPickAll(e.target.checked));
+        .addEventListener('change', (e) => {
+          if (!handlers.onPickAll) return;
+          const keys = [...new Set(
+            [...document.querySelectorAll(`.${PICK_CLASS}[data-pick="on"]`)].map((p) => p.dataset.ghlPath)
+          )];
+          handlers.onPickAll(e.target.checked, keys);
+        });
     }
     if (node.previousElementSibling !== anchor && node.parentElement !== anchor.parentElement) {
       anchor.parentElement.insertBefore(node, anchor);
@@ -293,10 +317,14 @@
     const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
     fetchButton.hidden = !(idle || state.status === 'pending');
     if (idle) {
-      fetchButton.disabled = false;
+      const none = pickKeys.length > 0 &&
+        pickKeys.every((k) => state.deselected && state.deselected.has(k));
+      fetchButton.disabled = none;
       fetchButton.textContent = '行数を取得';
-      fetchButton.title = 'ファイル一覧を取得し、続けて各ファイルの行数を GitHub から取得します\n' +
-        '（ファイル数と同じだけ API リクエストを使います）';
+      fetchButton.title = none
+        ? '取得する行にチェックを入れてください'
+        : 'ファイル一覧を取得し、続けてチェックした行の各ファイルの行数を GitHub から取得します\n' +
+          '（ファイル数と同じだけ API リクエストを使います）';
     } else if (state.status === 'pending') {
       fetchButton.disabled = state.pending === 0;
       fetchButton.textContent = `行数を取得（${fmt(state.pending)}）`;
@@ -309,10 +337,10 @@
     // The strip's own checkbox mirrors the rows: ticked when every row is,
     // indeterminate when only some are. Clicking it takes all rows with it.
     const pickAll = node.querySelector('.ghl-pick-all');
-    const picking = state.status === 'pending';
+    const picking = state.status === 'pending' || (idle && pickKeys.length > 0);
     pickAll.hidden = !picking;
     if (picking) {
-      const keys = [...(state.pickable ? state.pickable.keys() : [])];
+      const keys = pickKeys;
       const selected = keys.filter((k) => !(state.deselected && state.deselected.has(k))).length;
       const box = pickAll.querySelector('input');
       box.checked = keys.length > 0 && selected === keys.length;
@@ -448,24 +476,34 @@
 
     const ctx = state.ctx;
     const dirNode = state.index && (state.index.get(ctx.path) || state.root);
+    const rows = GHL.page.findRows(ctx);
+
+    // Manual mode, nothing fetched yet. The rows are already on screen, so the
+    // checkboxes go up now: what to fetch is decided before anything is spent.
+    if (!dirNode && state.status === 'idle' && settings.showInlineBars) {
+      for (const r of rows) {
+        for (const host of r.hosts) paintPick(pickIn(host, handlers), r.path, null, state);
+      }
+      renderSummary(state, EMPTY_DIR, handlers, rows.map((r) => r.path));
+      return;
+    }
 
     // Still loading, or the request failed outright. Show the strip regardless:
     // a blank page gives the user nothing to act on, and "no bars" should never
     // be indistinguishable from "extension not running".
     if (!dirNode) {
       clearRows();
-      renderSummary(state, EMPTY_DIR, handlers);
+      renderSummary(state, EMPTY_DIR, handlers, []);
       return;
     }
 
-    renderSummary(state, dirNode, handlers);
+    renderSummary(state, dirNode, handlers, [...(state.pickable ? state.pickable.keys() : [])]);
 
     if (!settings.showInlineBars) {
       clearRows();
       return;
     }
 
-    const rows = GHL.page.findRows(ctx);
     const visible = rows
       .map((r) => ({ row: r, node: state.index.get(r.path) }))
       .filter((x) => x.node);

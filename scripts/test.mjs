@@ -921,8 +921,10 @@ async function pressSizes() {
   sizesButton().click();
 }
 
+const rowPick = (path) => document.querySelector(`.ghl-row-pick[data-ghl-path="${path}"]`);
+
 function tick(path, on) {
-  const pick = document.querySelector(`.ghl-cell[data-ghl-path="${path}"] .ghl-pick`);
+  const pick = rowPick(path);
   pick.checked = on;
   pick.dispatchEvent(new currentDom.window.Event('change', { bubbles: true }));
 }
@@ -936,6 +938,12 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
 
   assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 0, 'no tree request on open');
   assertEqual(renderedPaths().length, 0, 'no bars yet');
+  const idlePicks = [...document.querySelectorAll('.ghl-row-pick[data-pick="on"]')];
+  assertEqual(new Set(idlePicks.map((p) => p.dataset.ghlPath)).size, 1, 'the row already has its checkbox');
+  assert(idlePicks.every((p) => p.checked), 'ticked by default');
+  const host = idlePicks[0].parentElement;
+  assert(host.firstElementChild === idlePicks[0], 'the checkbox leads the name cell');
+  assert(!document.querySelector('.ghl-pick-all').hidden, 'the all-rows toggle is up too');
   assert(/サイズを取得/.test(sizesButton().textContent), `the plain button is labelled (${sizesButton().textContent})`);
   assert(!fetchButton().hidden && !fetchButton().disabled, 'the exact-count button sits next to it');
   assert(!/\d/.test(fetchButton().textContent), `no count before the tree is known (${fetchButton().textContent})`);
@@ -1007,27 +1015,36 @@ await domCheckAsync('pressing the button fetches, and the estimate becomes exact
   assert(button.hidden, 'the button goes away once there is nothing left to fetch');
 });
 
-await domCheckAsync('pressing 行数を取得 straight away fetches the tree and the counts in one go', async () => {
+await domCheckAsync('rows unticked before anything is fetched are left out of a cold-start 行数を取得', async () => {
   const before = transportCalls.length;
   navigateDom(currentDom, 'source/as-promise', [
     { name: 'index.ts', type: 'file' },
     { name: 'types.ts', type: 'file' },
   ]);
   await waitFor(() => { const b = fetchButton(); return b && !b.hidden && !sizesButton().hidden; }, 6000, 'both buttons');
+  await waitFor(() => rowPick('source/as-promise/types.ts'), 3000, 'idle checkboxes');
+
+  tick('source/as-promise/types.ts', false);
+  await waitFor(() => document.querySelector('[data-ghl-action="pick-all"]').indeterminate, 3000, 'the all-rows box to go indeterminate');
   fetchButton().click();
 
   await waitFor(
     () => {
-      const cells = [...document.querySelectorAll('.ghl-cell[data-ghl-path^="source/as-promise/"] .ghl-num')];
-      return cells.length > 0 && cells.every((n) => !n.textContent.startsWith('~'));
+      const cell = document.querySelector('.ghl-cell[data-ghl-path="source/as-promise/index.ts"] .ghl-num');
+      return cell && /^\d/.test(cell.textContent);
     },
     6000,
-    'exact counts without a separate estimate step'
+    'an exact count without a separate sizes step'
   );
   const types = transportCalls.slice(before).map((c) => c.type);
   assertEqual(types.filter((t) => t === 'TREE').length, 1, 'one tree request');
-  assertEqual(types.filter((t) => t === 'LINES').length, 2, 'both files fetched');
-  assert(fetchButton().hidden && sizesButton().hidden, 'nothing left to offer');
+  assertEqual(
+    transportCalls.slice(before).filter((c) => c.type === 'LINES').map((c) => c.sha).join(' '),
+    'sha-ap-index',
+    'only the ticked file was fetched'
+  );
+  assert(sizesButton().hidden, 'the sizes button is gone once the tree is in');
+  assert(!fetchButton().hidden && fetchButton().disabled, 'the unticked leftover keeps the button up, disabled');
   assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'asking for counts shows counts');
 });
 
@@ -1049,16 +1066,16 @@ await domCheckAsync('manual mode puts a ticked checkbox on every row with someth
   assert(/6/.test(fetchButton().textContent),
     `the count covers files in subdirectories too (${fetchButton().textContent})`);
 
-  const picked = [...document.querySelectorAll('.ghl-cell[data-pick="on"]')];
-  assertEqual(new Set(picked.map((c) => c.dataset.ghlPath)).size, 5, 'every row offers a checkbox');
-  assert(picked.every((c) => c.querySelector('.ghl-pick').checked), 'all ticked by default');
+  const picked = [...document.querySelectorAll('.ghl-row-pick[data-pick="on"]')];
+  assertEqual(new Set(picked.map((p) => p.dataset.ghlPath)).size, 5, 'every row offers a checkbox');
+  assert(picked.every((p) => p.checked), 'all ticked by default');
 });
 
 await domCheckAsync('unticking a row takes its files out of the count', async () => {
   tick('source/core', false);
   await waitFor(() => /5/.test(fetchButton().textContent), 3000, "the directory's file leaving the count");
   assert(
-    [...document.querySelectorAll('.ghl-cell[data-ghl-path="source/core"] .ghl-pick')].every((p) => !p.checked),
+    [...document.querySelectorAll('.ghl-row-pick[data-ghl-path="source/core"]')].every((p) => !p.checked),
     'both name cells of the row show it unticked'
   );
 
@@ -1083,10 +1100,7 @@ await domCheckAsync('pressing the button fetches only the ticked rows', async ()
   const button = fetchButton();
   assert(!button.hidden && button.disabled && /0/.test(button.textContent),
     `the button stays for the unticked leftovers, disabled with nothing picked (${button.textContent})`);
-  assertEqual(
-    document.querySelector('.ghl-cell[data-ghl-path="source/index.ts"]').dataset.pick, 'blank',
-    'a fetched row loses its checkbox but keeps the space'
-  );
+  assertEqual(rowPick('source/index.ts').dataset.pick, 'blank', 'a fetched row loses its checkbox but keeps the space');
 
   tick('source/core', true);
   await waitFor(() => !fetchButton().disabled, 3000, 'the button to re-enable');
@@ -1106,7 +1120,7 @@ await domCheckAsync("the strip's checkbox ticks or unticks every row at once", a
   await waitFor(() => fetchButton().disabled, 3000, 'the button to disable with nothing ticked');
   assert(!all.checked && !all.indeterminate, 'fully unticked');
   assert(
-    [...document.querySelectorAll('.ghl-cell[data-pick="on"] .ghl-pick')].every((p) => !p.checked),
+    [...document.querySelectorAll('.ghl-row-pick[data-pick="on"]')].every((p) => !p.checked),
     'every row follows'
   );
 
