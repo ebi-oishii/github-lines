@@ -133,15 +133,20 @@
      isolated world, so the page's own pushState calls are invisible to us. */
   function onNavigate(cb) {
     let last = location.href;
-    const check = () => {
-      if (location.href === last) return;
+    const fire = () => {
       last = location.href;
       cb();
+    };
+    // The backstop must not re-fire for a navigation the events already
+    // reported, or every soft navigation loads twice — and in manual mode the
+    // second load throws away whatever the user pressed after the first.
+    const check = () => {
+      if (location.href !== last) fire();
     };
     const checkSoon = GHL.util.debounce(check, 60);
 
     for (const evt of ['turbo:load', 'turbo:render', 'pjax:end', 'soft-nav:end']) {
-      document.addEventListener(evt, () => cb());
+      document.addEventListener(evt, fire);
     }
     window.addEventListener('popstate', checkSoon);
 
