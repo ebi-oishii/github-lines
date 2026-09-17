@@ -61,7 +61,7 @@ github.com から `api.github.com` を直接叩けません。加えて、キャ
 
 ## テスト
 
-### `scripts/test.mjs`（71 件、ネットワーク不要）
+### `scripts/test.mjs`（75 件、ネットワーク不要）
 
 - 純粋なロジック: glob、`.gitattributes`、行数推定、集計、treemap の配置アルゴリズム
 - トークンのルーティング: オーナーごとの選択、旧形式からの移行

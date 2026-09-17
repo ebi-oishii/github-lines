@@ -308,6 +308,57 @@ check('allExact is false until every descendant is exact', () => {
   assertEqual(root.allExact, true, 'clears once everything is exact');
 });
 
+/* --------------------------------------------------------- colour ramp */
+
+/* The light-theme tokens the ramp falls back to, as hues. */
+const HUE_OK = 212.4;
+const HUE_WARN = 42.4;
+const HUE_DANGER = 355.8;
+const THRESHOLDS = { warnLines: 500, dangerLines: 800 };
+
+function hueOf(colour) {
+  const m = /^hsl\(([\d.]+) /.exec(colour);
+  if (!m) throw new Error(`not an hsl colour: ${colour}`);
+  return Number(m[1]);
+}
+
+function near(a, b, tol, what) {
+  assert(Math.abs(a - b) <= tol, `${what}: ${a} is not within ${tol} of ${b}`);
+}
+
+check('the ramp lands on the tokens at zero and at each threshold', () => {
+  near(hueOf(inline.lineColor(0, THRESHOLDS)), HUE_OK, 1, 'zero lines');
+  near(hueOf(inline.lineColor(500, THRESHOLDS)), HUE_WARN, 1, 'the warn threshold');
+  near(hueOf(inline.lineColor(800, THRESHOLDS)), HUE_DANGER, 1, 'the danger threshold');
+});
+
+check('the ramp is continuous between them and clamps above', () => {
+  const mid = hueOf(inline.lineColor(250, THRESHOLDS));
+  assert(mid < HUE_OK && mid > HUE_WARN, `half way to 注意 sits between the two hues (got ${mid})`);
+  const late = hueOf(inline.lineColor(650, THRESHOLDS));
+  assert(late < HUE_WARN, `past 注意 it keeps descending towards red (got ${late})`);
+  assertEqual(inline.lineColor(5000, THRESHOLDS), inline.lineColor(800, THRESHOLDS),
+    'everything past 警告 is the same red');
+});
+
+check('the ramp follows the configured thresholds', () => {
+  const tight = { warnLines: 50, dangerLines: 80 };
+  near(hueOf(inline.lineColor(50, tight)), HUE_WARN, 1, '注意 at 50 lines');
+  assertEqual(inline.lineColor(80, tight), inline.lineColor(800, THRESHOLDS), '警告 is the same red either way');
+  // Thresholds the wrong way round must not divide by zero or go backwards.
+  const inverted = { warnLines: 900, dangerLines: 100 };
+  assert(/^hsl\(/.test(inline.lineColor(500, inverted)), 'an inverted pair still yields a colour');
+});
+
+check('lineColor carries an alpha, and rampStops spans the ramp', () => {
+  assert(/ \/ 0.55\)$/.test(inline.lineColor(100, THRESHOLDS, 0.55)), 'alpha is passed through');
+  const stops = inline.rampStops(THRESHOLDS, 4);
+  assertEqual(stops.length, 5, 'one stop more than the steps asked for');
+  assert(stops[0].endsWith(' 0%') && stops[4].endsWith(' 100%'), 'running end to end');
+  near(hueOf(stops[0]), HUE_OK, 1, 'the first stop');
+  near(hueOf(stops[4]), HUE_DANGER, 1, 'the last stop');
+});
+
 /* ----------------------------------------------------------- treemap */
 
 const RECT = { x: 0, y: 0, w: 800, h: 500 };
@@ -1004,6 +1055,8 @@ await domCheckAsync('pressing サイズを取得 fetches the tree and shows size
   const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
   assertEqual(cell.querySelector('.ghl-num').textContent, '117.2 KB', 'the row shows its size');
   assertEqual(cell.dataset.severity, 'ok', 'no threshold colouring on sizes');
+  assertEqual(cell.querySelector('.ghl-bar-fill').style.background, '',
+    'and no ramp either — bytes have no thresholds to ramp between');
   assertEqual(metricButton('bytes').getAttribute('aria-pressed'), 'true', 'the toggle says サイズ');
   const stats = document.querySelector('.ghl-summary-stats').textContent;
   assert(/117\.2 KB/.test(stats), `the strip totals in bytes too (${stats})`);
@@ -1022,6 +1075,8 @@ await domCheckAsync('flipping the toggle to 行数 shows estimates and offers th
   );
   assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'the toggle says 行数');
   assertEqual(transportCalls.length, before, 'switching the view fetches nothing');
+  const bar = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"] .ghl-bar-fill');
+  assert(/^(hsl|rgb)a?\(/.test(bar.style.background), `the bar takes its colour from the ramp (${bar.style.background})`);
 
   const button = fetchButton();
   assert(button && !button.hidden, 'the fetch button is offered');

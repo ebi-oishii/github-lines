@@ -328,6 +328,15 @@ try {
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-mode.png') });
   }
 
+  // The ramp: every row's bar is coloured by its own line count, so a
+  // directory of differently sized files shows more than one colour.
+  const barColours = await page.$$eval('.ghl-cell[data-ghl-path]', (cells) =>
+    [...cells].filter((c) => c.offsetParent !== null && c.dataset.state === 'file')
+      .map((c) => c.querySelector('.ghl-bar-fill').style.background)
+  );
+  assert(barColours.every((c) => /^(hsl|rgb|color)a?\(/.test(c)), `file bars are coloured from the ramp (${barColours[0]})`);
+  assert(new Set(barColours).size > 1, `and differ with the count (${new Set(barColours).size} distinct)`);
+
   // Treemap
   await page.click('#ghl-summary [data-ghl-action="treemap"]');
   await page.waitForSelector('.ghl-overlay .ghl-tm-tile', { timeout: 10000 });
@@ -335,6 +344,10 @@ try {
     ts.map((t) => ({ w: parseFloat(t.style.width), h: parseFloat(t.style.height) }))
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'treemap.png') });
+
+  const rampBar = await page.$eval('.ghl-modal-foot .ghl-ramp-bar', (n) => n.style.background).catch(() => '');
+  assert(/linear-gradient/.test(rampBar), `the treemap legend is the ramp itself (${rampBar.slice(0, 60)})`);
+  assert(!!(await page.$('.ghl-ramp-tick')), 'with the 注意 threshold ticked on it');
 
   assert(tiles.length > 0, `treemap drew tiles (${tiles.length})`);
   assert(tiles.every((t) => t.w >= 0 && t.h >= 0), 'every tile has a valid size');

@@ -140,6 +140,8 @@
       tile.classList.add('ghl-tm-leaf');
       tile.dataset.kind = node.type;
       tile.dataset.severity = m.severity(node, opts.settings);
+      // Tiles are translucent so the labels stay readable over them.
+      tile.style.background = m.fill ? m.fill(node, opts.settings, 0.55) : '';
 
       if (rect.w > 44 && rect.h > 20) {
         tile.appendChild(el('span', { class: 'ghl-tm-label' }, [
@@ -307,18 +309,20 @@
     const crumbs = el('div', { class: 'ghl-tm-crumbs' });
     const stats = el('span', { class: 'ghl-tm-stats' });
     const status = el('span', { class: 'ghl-tm-status' });
-    const legend = el('span', { class: 'ghl-legend' }, [
-      el('span', { class: 'ghl-legend-item', 'data-tone': 'ok' }, [
-        el('span', { class: 'ghl-legend-dot' }), '通常',
+    // The ramp itself, with the two thresholds marked on it.
+    const legend = el('span', { class: 'ghl-legend ghl-ramp' }, [
+      el('span', { class: 'ghl-ramp-end' }, ['0 行']),
+      el('span', {
+        class: 'ghl-ramp-bar',
+        style: { background: `linear-gradient(to right, ${GHL.inline.rampStops(state.settings).join(', ')})` },
+      }, [
+        el('span', {
+          class: 'ghl-ramp-tick',
+          style: { left: `${(state.settings.warnLines / Math.max(2, state.settings.dangerLines)) * 100}%` },
+          title: `注意 ${fmt(state.settings.warnLines)} 行`,
+        }),
       ]),
-      el('span', { class: 'ghl-legend-item', 'data-tone': 'warn' }, [
-        el('span', { class: 'ghl-legend-dot' }),
-        `${fmt(state.settings.warnLines)} 行以上`,
-      ]),
-      el('span', { class: 'ghl-legend-item', 'data-tone': 'danger' }, [
-        el('span', { class: 'ghl-legend-dot' }),
-        `${fmt(state.settings.dangerLines)} 行以上`,
-      ]),
+      el('span', { class: 'ghl-ramp-end' }, [`${fmt(state.settings.dangerLines)} 行以上`]),
     ]);
 
     const overlay = el('div', { id: OVERLAY_ID, class: 'ghl-overlay' }, [

@@ -20,6 +20,95 @@
     return 'ok';
   }
 
+  /* ---------------------------------------------------------- colour ramp */
+
+  /* A file's colour runs continuously from the 通常 token at zero lines,
+     through 注意 at the warn threshold, to 警告 at the danger threshold and
+     beyond — a rainfall map's ramp rather than three steps. Interpolating in
+     HSL keeps the path through the tokens' own hues (blue → green → amber →
+     red); sRGB would cut across the middle and go muddy.
+
+     The anchors are read from the theme tokens at render time, so GitHub's
+     light/dark switch carries. The fallbacks are the light values, for
+     contexts where the stylesheet is not applied. */
+  const RAMP_TOKENS = ['--ghl-ok', '--ghl-warn', '--ghl-danger'];
+  const RAMP_FALLBACK = ['#0969da', '#bf8700', '#cf222e'];
+
+  function hexToHsl(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    const r = ((n >> 16) & 255) / 255;
+    const g = ((n >> 8) & 255) / 255;
+    const b = (n & 255) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (!d) return [0, 0, l * 100];
+    const s = d / (1 - Math.abs(2 * l - 1));
+    let h;
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    return [(h + 360) % 360, s * 100, l * 100];
+  }
+
+  let rampCache = null;
+
+  function ramp() {
+    const cs = window.getComputedStyle(document.documentElement);
+    const raw = RAMP_TOKENS.map((name, i) => cs.getPropertyValue(name).trim() || RAMP_FALLBACK[i]);
+    const key = raw.join('|');
+    if (rampCache && rampCache.key === key) return rampCache.stops;
+    const stops = raw.map((v, i) => hexToHsl(v) || hexToHsl(RAMP_FALLBACK[i]));
+    rampCache = { key, stops };
+    return stops;
+  }
+
+  /* Hue takes the short way round, which for these tokens is the descending
+     one — through green and amber rather than through magenta. */
+  function mixHsl(a, b, t) {
+    let dh = b[0] - a[0];
+    if (dh > 180) dh -= 360;
+    if (dh < -180) dh += 360;
+    return [
+      (a[0] + dh * t + 360) % 360,
+      a[1] + (b[1] - a[1]) * t,
+      a[2] + (b[2] - a[2]) * t,
+    ];
+  }
+
+  function hsl([h, s, l], alpha) {
+    const base = `${h.toFixed(1)} ${s.toFixed(1)}% ${l.toFixed(1)}%`;
+    return alpha === undefined ? `hsl(${base})` : `hsl(${base} / ${alpha})`;
+  }
+
+  /* The ramp's colour for a line count. */
+  function lineColor(lines, settings, alpha) {
+    const [ok, warn, danger] = ramp();
+    const w = Math.max(1, settings.warnLines);
+    const d = Math.max(w + 1, settings.dangerLines);
+    const n = Math.max(0, lines);
+    if (n >= d) return hsl(danger, alpha);
+    const stop = n <= w
+      ? mixHsl(ok, warn, n / w)
+      : mixHsl(warn, danger, (n - w) / (d - w));
+    return hsl(stop, alpha);
+  }
+
+  /* Stops across the whole ramp, for a legend strip. Sampled rather than left
+     to the browser, whose gradients interpolate in sRGB. */
+  function rampStops(settings, steps = 12) {
+    const d = Math.max(2, settings.dangerLines);
+    const out = [];
+    for (let i = 0; i <= steps; i++) {
+      out.push(`${lineColor((d * i) / steps, settings)} ${((i / steps) * 100).toFixed(0)}%`);
+    }
+    return out;
+  }
+
   function approxPrefix(node) {
     return node.allExact ? '' : '~';
   }
@@ -31,6 +120,10 @@
     lines: {
       key: 'lines',
       label: '行数',
+      // Files ramp with their line count; directories are aggregates and keep
+      // their own token, so an empty string hands the colour back to CSS.
+      fill: (n, settings, alpha) =>
+        (n.type === 'file' && !n.excluded ? lineColor(n.total || 0, settings, alpha) : ''),
       value: (n) => n.total || 0,
       cell: (n) => approxPrefix(n) + fmt(n.total || 0),
       short: (n) => approxPrefix(n) + fmtCompact(n.total || 0) + ' 行',
@@ -186,6 +279,7 @@
     const width = maxTotal > 0 ? Math.max(total > 0 ? 2 : 0, (total / maxTotal) * 100) : 0;
 
     fill.style.width = width.toFixed(2) + '%';
+    fill.style.background = m.fill ? m.fill(node, settings) : '';
     num.textContent = m.cell(node);
     pct.textContent = share >= 0.5 ? Math.round(share) + '%' : '';
 
@@ -288,6 +382,7 @@
       label: n.name + (n.type === 'dir' ? '/' : ''),
       total: m.value(n),
       tone: m.severity(n, settings),
+      color: m.fill ? m.fill(n, settings) : '',
       alt: i % 2 === 1,
     }));
 
@@ -478,7 +573,7 @@
         class: 'ghl-seg',
         'data-tone': seg.tone,
         'data-alt': seg.alt ? '1' : '0',
-        style: { width: pct.toFixed(3) + '%' },
+        style: { width: pct.toFixed(3) + '%', background: seg.color || '' },
         title: `${seg.label}\n${m.fmtTotal(seg.total)} (${pct.toFixed(1)}%)`,
       });
       if (seg.node) {
@@ -497,7 +592,7 @@
       if (pct >= 6) {
         legend.appendChild(
           el('span', { class: 'ghl-legend-item', 'data-tone': seg.tone }, [
-            el('span', { class: 'ghl-legend-dot' }),
+            el('span', { class: 'ghl-legend-dot', style: { background: seg.color || '' } }),
             `${seg.label} ${Math.round(pct)}%`,
           ])
         );
@@ -620,5 +715,8 @@
     }
   }
 
-  GHL.inline = { render, clearRows, removeSummary, severity, errorText, METRICS, metricOf, viewOf, SUMMARY_ID };
+  GHL.inline = {
+    render, clearRows, removeSummary, severity, errorText,
+    METRICS, metricOf, viewOf, lineColor, rampStops, SUMMARY_ID,
+  };
 })(globalThis.GHL);
