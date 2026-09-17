@@ -337,6 +337,15 @@ try {
   assert(barColours.every((c) => /^(hsl|rgb|color)a?\(/.test(c)), `file bars are coloured from the ramp (${barColours[0]})`);
   assert(new Set(barColours).size > 1, `and differ with the count (${new Set(barColours).size} distinct)`);
 
+  // Directories run on their own ramp, keyed to the largest file inside.
+  const dirColours = await page.$$eval('.ghl-cell[data-state="dir"]', (cells) =>
+    [...cells].filter((c) => c.offsetParent !== null)
+      .map((c) => ({ path: c.dataset.ghlPath, colour: c.querySelector('.ghl-bar-fill').style.background, tip: c.title }))
+  );
+  assert(dirColours.every((d) => /^(hsl|rgb|color)a?\(/.test(d.colour)),
+    `directory bars are coloured too (${dirColours[0]?.colour})`);
+  assert(dirColours.every((d) => /最大のファイル/.test(d.tip)), 'and say which file that colour is about');
+
   // Treemap
   await page.click('#ghl-summary [data-ghl-action="treemap"]');
   await page.waitForSelector('.ghl-overlay .ghl-tm-tile', { timeout: 10000 });
@@ -345,9 +354,12 @@ try {
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'treemap.png') });
 
-  const rampBar = await page.$eval('.ghl-modal-foot .ghl-ramp-bar', (n) => n.style.background).catch(() => '');
-  assert(/linear-gradient/.test(rampBar), `the treemap legend is the ramp itself (${rampBar.slice(0, 60)})`);
-  assert(!!(await page.$('.ghl-ramp-tick')), 'with the 注意 threshold ticked on it');
+  const rampBars = await page.$$eval('.ghl-modal-foot .ghl-ramp-bar', (ns) => ns.map((n) => n.style.background));
+  assert(rampBars.length === 2, `the treemap legend shows both ramps (${rampBars.length})`);
+  assert(rampBars.every((b) => /linear-gradient/.test(b)), `each is the ramp itself (${rampBars[0].slice(0, 50)})`);
+  assert(rampBars[0] !== rampBars[1], 'and the folder ramp is its own colour family');
+  const ticks = (await page.$$('.ghl-ramp-tick')).length;
+  assert(ticks === 2, `with the 注意 threshold ticked on each (${ticks})`);
 
   assert(tiles.length > 0, `treemap drew tiles (${tiles.length})`);
   assert(tiles.every((t) => t.w >= 0 && t.h >= 0), 'every tile has a valid size');

@@ -7,6 +7,10 @@
   --ghl-warn: #bf8700;
   --ghl-danger: #cf222e;
   --ghl-dir: #8250df;
+  /* A directory's own ramp, from "nothing big inside" to "holds a file past
+     the 警告 threshold". */
+  --ghl-dir-lo: #d7c9f7;
+  --ghl-dir-hi: #5b21b6;
   --ghl-muted: #8c959f;
   --ghl-track: rgba(140, 149, 159, 0.22);
   --ghl-surface: var(--bgColor-default, var(--color-canvas-default, #ffffff));
@@ -22,6 +26,8 @@
     --ghl-warn: #d29922;
     --ghl-danger: #f85149;
     --ghl-dir: #a371f7;
+    --ghl-dir-lo: #3f2d68;
+    --ghl-dir-hi: #c4a2ff;
     --ghl-muted: #8b949e;
     --ghl-track: rgba(139, 148, 158, 0.24);
   }
@@ -33,6 +39,8 @@ html[data-color-mode='light'] {
   --ghl-warn: #bf8700;
   --ghl-danger: #cf222e;
   --ghl-dir: #8250df;
+  --ghl-dir-lo: #d7c9f7;
+  --ghl-dir-hi: #5b21b6;
   --ghl-track: rgba(140, 149, 159, 0.22);
 }
 html[data-color-mode='dark'] {
@@ -40,6 +48,8 @@ html[data-color-mode='dark'] {
   --ghl-warn: #d29922;
   --ghl-danger: #f85149;
   --ghl-dir: #a371f7;
+  --ghl-dir-lo: #3f2d68;
+  --ghl-dir-hi: #c4a2ff;
   --ghl-track: rgba(139, 148, 158, 0.24);
 }
 
@@ -428,8 +438,14 @@ th:has(> .ghl-col-head)::after {
 }
 .ghl-legend-item[data-tone='warn'] .ghl-legend-dot { background: var(--ghl-warn); }
 
-/* The treemap's legend: the colour ramp itself, with the 注意 threshold
-   ticked on it, between its two ends. */
+/* The treemap's legend: the colour ramps themselves — files, then folders —
+   each with the 注意 threshold ticked on it, between its two ends. */
+.ghl-ramps {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
 .ghl-ramp {
   display: inline-flex;
   align-items: center;
@@ -444,7 +460,7 @@ th:has(> .ghl-col-head)::after {
 .ghl-ramp-bar {
   position: relative;
   display: block;
-  width: 132px;
+  width: 108px;
   height: 8px;
   border-radius: 4px;
 }

@@ -107,6 +107,7 @@
       fileCount: rest.reduce((s, n) => s + n.fileCount, 0),
       allExact: rest.every((n) => n.allExact),
       bytes: rest.reduce((s, n) => s + (n.bytes || 0), 0),
+      maxFile: rest.reduce((s, n) => Math.max(s, n.maxFile || 0), 0),
     });
     return head;
   }
@@ -127,6 +128,7 @@
       `${node.path || node.name}\n` +
       `${m.long(node)} (${share.toFixed(1)}%)` +
       (isDir ? `\n${fmt(node.fileCount)} ファイル` : '') +
+      (isDir && m.key === 'lines' ? `\n最大のファイル: ${fmt(node.maxFile || 0)} 行` : '') +
       `\n${other.long(node)}`;
 
     const canRecurse =
@@ -309,20 +311,30 @@
     const crumbs = el('div', { class: 'ghl-tm-crumbs' });
     const stats = el('span', { class: 'ghl-tm-stats' });
     const status = el('span', { class: 'ghl-tm-status' });
-    // The ramp itself, with the two thresholds marked on it.
-    const legend = el('span', { class: 'ghl-legend ghl-ramp' }, [
-      el('span', { class: 'ghl-ramp-end' }, ['0 行']),
+    // The ramps themselves, with the 注意 threshold ticked on each.
+    const rampBar = (colorAt) => el('span', {
+      class: 'ghl-ramp-bar',
+      style: {
+        background: `linear-gradient(to right, ${GHL.inline.rampStops(state.settings, 12, colorAt).join(', ')})`,
+      },
+    }, [
       el('span', {
-        class: 'ghl-ramp-bar',
-        style: { background: `linear-gradient(to right, ${GHL.inline.rampStops(state.settings).join(', ')})` },
-      }, [
-        el('span', {
-          class: 'ghl-ramp-tick',
-          style: { left: `${(state.settings.warnLines / Math.max(2, state.settings.dangerLines)) * 100}%` },
-          title: `注意 ${fmt(state.settings.warnLines)} 行`,
-        }),
+        class: 'ghl-ramp-tick',
+        style: { left: `${(state.settings.warnLines / Math.max(2, state.settings.dangerLines)) * 100}%` },
+        title: `注意 ${fmt(state.settings.warnLines)} 行`,
+      }),
+    ]);
+    const legend = el('span', { class: 'ghl-legend ghl-ramps' }, [
+      el('span', { class: 'ghl-ramp' }, [
+        el('span', { class: 'ghl-ramp-end' }, ['ファイル 0 行']),
+        rampBar(GHL.inline.lineColor),
+        el('span', { class: 'ghl-ramp-end' }, [`${fmt(state.settings.dangerLines)} 行以上`]),
       ]),
-      el('span', { class: 'ghl-ramp-end' }, [`${fmt(state.settings.dangerLines)} 行以上`]),
+      el('span', { class: 'ghl-ramp' }, [
+        el('span', { class: 'ghl-ramp-end' }, ['フォルダ 最大ファイル']),
+        rampBar(GHL.inline.dirColor),
+        el('span', { class: 'ghl-ramp-end' }, [`${fmt(state.settings.dangerLines)} 行以上`]),
+      ]),
     ]);
 
     const overlay = el('div', { id: OVERLAY_ID, class: 'ghl-overlay' }, [

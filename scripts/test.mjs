@@ -268,6 +268,26 @@ check('buildTree creates implicit parent directories', () => {
   assertEqual(index.get('src/ui/Button.tsx').name, 'Button.tsx');
 });
 
+check('rollup carries the largest file up the tree', () => {
+  const { root, index } = store.buildTree([
+    { path: 'a/small.ts', type: 'file', size: 100, sha: 's1' },
+    { path: 'a/deep/big.ts', type: 'file', size: 100, sha: 's2' },
+    { path: 'b/mid.ts', type: 'file', size: 100, sha: 's3' },
+    { path: 'b/blob.png', type: 'file', size: 100, sha: 's4' },
+  ]);
+  index.get('a/small.ts').lines = 40;
+  index.get('a/deep/big.ts').lines = 900;
+  index.get('b/mid.ts').lines = 120;
+  index.get('b/blob.png').lines = 5000;
+  index.get('b/blob.png').excluded = true;
+  store.rollup(root);
+
+  assertEqual(index.get('a').maxFile, 900, 'a directory reports its worst descendant, however deep');
+  assertEqual(index.get('a/deep').maxFile, 900, 'including the one that holds it');
+  assertEqual(index.get('b').maxFile, 120, 'an excluded file is not a file for this purpose');
+  assertEqual(root.maxFile, 900, 'and the root sees the worst of all');
+});
+
 check('rollup sums descendants and excludes binaries', () => {
   const { root, index } = sampleTree();
   const learner = patterns.createRatioLearner();
@@ -322,6 +342,12 @@ function hueOf(colour) {
   return Number(m[1]);
 }
 
+function lightnessOf(colour) {
+  const m = /^hsl\([\d.]+ [\d.]+% ([\d.]+)%/.exec(colour);
+  if (!m) throw new Error(`not an hsl colour: ${colour}`);
+  return Number(m[1]);
+}
+
 function near(a, b, tol, what) {
   assert(Math.abs(a - b) <= tol, `${what}: ${a} is not within ${tol} of ${b}`);
 }
@@ -357,6 +383,24 @@ check('lineColor carries an alpha, and rampStops spans the ramp', () => {
   assert(stops[0].endsWith(' 0%') && stops[4].endsWith(' 100%'), 'running end to end');
   near(hueOf(stops[0]), HUE_OK, 1, 'the first stop');
   near(hueOf(stops[4]), HUE_DANGER, 1, 'the last stop');
+});
+
+check('directories ramp in violet, on the largest file inside them', () => {
+  const none = inline.dirColor(0, THRESHOLDS);
+  const some = inline.dirColor(500, THRESHOLDS);
+  const bad = inline.dirColor(800, THRESHOLDS);
+
+  for (const [colour, what] of [[none, 'empty'], [some, 'at 注意'], [bad, 'at 警告']]) {
+    const h = hueOf(colour);
+    assert(h > 240 && h < 290, `a directory stays violet, never a file's hue (${what}: ${h})`);
+  }
+  // Light theme: deeper as the worst file grows. The dark tokens run the other
+  // way, which is why the direction is not what is asserted — the distance is.
+  assert(lightnessOf(none) > lightnessOf(some) && lightnessOf(some) > lightnessOf(bad),
+    'and deepens with it');
+  assertEqual(inline.dirColor(99999, THRESHOLDS), bad, 'past 警告 every directory is the same');
+  assertEqual(inline.dirColor(500, THRESHOLDS), inline.dirColor(50, { warnLines: 50, dangerLines: 80 }),
+    'the thresholds place it, so a tighter pair shifts the same colour earlier');
 });
 
 /* ----------------------------------------------------------- treemap */
@@ -1077,6 +1121,8 @@ await domCheckAsync('flipping the toggle to 行数 shows estimates and offers th
   assertEqual(transportCalls.length, before, 'switching the view fetches nothing');
   const bar = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"] .ghl-bar-fill');
   assert(/^(hsl|rgb)a?\(/.test(bar.style.background), `the bar takes its colour from the ramp (${bar.style.background})`);
+  const dirBar = document.querySelector('.ghl-cell[data-state="dir"] .ghl-bar-fill');
+  if (dirBar) assert(/^(hsl|rgb)a?\(/.test(dirBar.style.background), 'directories are coloured too');
 
   const button = fetchButton();
   assert(button && !button.hidden, 'the fetch button is offered');

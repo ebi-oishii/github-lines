@@ -82,30 +82,36 @@
     }
   }
 
-  /* Depth-first sum. `allExact` lets the UI mark a number as approximate. */
+  /* Depth-first sum. `allExact` lets the UI mark a number as approximate, and
+     `maxFile` — the largest file anywhere below — is what a directory's colour
+     is about: whether there is something bloated in there. */
   function rollup(node) {
     if (node.type === 'file') {
       node.total = node.excluded ? 0 : node.lines;
       node.bytes = node.excluded ? 0 : node.size;
       node.fileCount = node.excluded ? 0 : 1;
       node.allExact = node.excluded || node.exact;
+      node.maxFile = node.total;
       return;
     }
     let total = 0;
     let bytes = 0;
     let fileCount = 0;
     let allExact = true;
+    let maxFile = 0;
     for (const child of node.children.values()) {
       rollup(child);
       total += child.total;
       bytes += child.bytes;
       fileCount += child.fileCount;
       if (!child.allExact) allExact = false;
+      if (child.maxFile > maxFile) maxFile = child.maxFile;
     }
     node.total = total;
     node.bytes = bytes;
     node.fileCount = fileCount;
     node.allExact = allExact;
+    node.maxFile = maxFile;
   }
 
   function collectFiles(node, out) {

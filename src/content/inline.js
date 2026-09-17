@@ -31,8 +31,8 @@
      The anchors are read from the theme tokens at render time, so GitHub's
      light/dark switch carries. The fallbacks are the light values, for
      contexts where the stylesheet is not applied. */
-  const RAMP_TOKENS = ['--ghl-ok', '--ghl-warn', '--ghl-danger'];
-  const RAMP_FALLBACK = ['#0969da', '#bf8700', '#cf222e'];
+  const RAMP_TOKENS = ['--ghl-ok', '--ghl-warn', '--ghl-danger', '--ghl-dir-lo', '--ghl-dir-hi'];
+  const RAMP_FALLBACK = ['#0969da', '#bf8700', '#cf222e', '#d7c9f7', '#5b21b6'];
 
   function hexToHsl(hex) {
     const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
@@ -85,26 +85,41 @@
     return alpha === undefined ? `hsl(${base})` : `hsl(${base} / ${alpha})`;
   }
 
-  /* The ramp's colour for a line count. */
-  function lineColor(lines, settings, alpha) {
-    const [ok, warn, danger] = ramp();
+  /* Where a line count sits on the ramp: 0 at none, 0.5 at the warn
+     threshold, 1 at the danger threshold and above. */
+  function rampPosition(lines, settings) {
     const w = Math.max(1, settings.warnLines);
     const d = Math.max(w + 1, settings.dangerLines);
     const n = Math.max(0, lines);
-    if (n >= d) return hsl(danger, alpha);
-    const stop = n <= w
-      ? mixHsl(ok, warn, n / w)
-      : mixHsl(warn, danger, (n - w) / (d - w));
+    if (n >= d) return 1;
+    return n <= w ? (n / w) * 0.5 : 0.5 + ((n - w) / (d - w)) * 0.5;
+  }
+
+  /* The ramp's colour for a line count. */
+  function lineColor(lines, settings, alpha) {
+    const [ok, warn, danger] = ramp();
+    const t = rampPosition(lines, settings);
+    const stop = t <= 0.5 ? mixHsl(ok, warn, t * 2) : mixHsl(warn, danger, (t - 0.5) * 2);
     return hsl(stop, alpha);
   }
 
-  /* Stops across the whole ramp, for a legend strip. Sampled rather than left
-     to the browser, whose gradients interpolate in sRGB. */
-  function rampStops(settings, steps = 12) {
+  /* Directories run on their own ramp, in violet, so they never read as a
+     file's severity. What it measures is the largest file anywhere inside: a
+     deep folder is one with something bloated in it, however small its own
+     share of the directory. The two ends line up with the file ramp, so half
+     way means "holds a 注意 file". */
+  function dirColor(maxFile, settings, alpha) {
+    const [, , , lo, hi] = ramp();
+    return hsl(mixHsl(lo, hi, rampPosition(maxFile, settings)), alpha);
+  }
+
+  /* Stops across a whole ramp, for a legend strip. Sampled rather than left to
+     the browser, whose gradients interpolate in sRGB. */
+  function rampStops(settings, steps = 12, colorAt = lineColor) {
     const d = Math.max(2, settings.dangerLines);
     const out = [];
     for (let i = 0; i <= steps; i++) {
-      out.push(`${lineColor((d * i) / steps, settings)} ${((i / steps) * 100).toFixed(0)}%`);
+      out.push(`${colorAt((d * i) / steps, settings)} ${((i / steps) * 100).toFixed(0)}%`);
     }
     return out;
   }
@@ -120,10 +135,13 @@
     lines: {
       key: 'lines',
       label: '行数',
-      // Files ramp with their line count; directories are aggregates and keep
-      // their own token, so an empty string hands the colour back to CSS.
-      fill: (n, settings, alpha) =>
-        (n.type === 'file' && !n.excluded ? lineColor(n.total || 0, settings, alpha) : ''),
+      // An empty string hands the colour back to CSS — for excluded files, and
+      // for the treemap's "他 N 件" aggregate, which stands for no one count.
+      fill: (n, settings, alpha) => {
+        if (n.type === 'dir') return dirColor(n.maxFile || 0, settings, alpha);
+        if (n.type === 'file' && !n.excluded) return lineColor(n.total || 0, settings, alpha);
+        return '';
+      },
       value: (n) => n.total || 0,
       cell: (n) => approxPrefix(n) + fmt(n.total || 0),
       short: (n) => approxPrefix(n) + fmtCompact(n.total || 0) + ' 行',
@@ -216,6 +234,7 @@
     let bytes = 0;
     let fileCount = 0;
     let allExact = true;
+    let maxFile = 0;
     for (const [name, child] of dirNode.children) {
       if (!isIncluded(state, child.path)) continue;
       children.set(name, child);
@@ -223,8 +242,9 @@
       bytes += child.bytes || 0;
       fileCount += child.fileCount || 0;
       if (!child.allExact) allExact = false;
+      if ((child.maxFile || 0) > maxFile) maxFile = child.maxFile || 0;
     }
-    return { ...dirNode, children, total, bytes, fileCount, allExact };
+    return { ...dirNode, children, total, bytes, fileCount, allExact, maxFile };
   }
 
   function paintCell(cell, row, node, dirTotal, maxTotal, state, included) {
@@ -287,6 +307,8 @@
     tip.push(node.path);
     tip.push(`${m.long(node)} — このディレクトリの ${share.toFixed(1)}%`);
     if (!isFile) tip.push(`${fmt(node.fileCount)} ファイル`);
+    // A directory's colour is about its worst file, so name it.
+    if (!isFile && m.key === 'lines') tip.push(`最大のファイル: ${fmt(node.maxFile || 0)} 行`);
     if (m.key === 'lines') {
       tip.push(util.fmtBytes(node.bytes || node.size || 0));
       if (!node.allExact) tip.push('（推定値。行数を取得中または取得対象外）');
@@ -717,6 +739,6 @@
 
   GHL.inline = {
     render, clearRows, removeSummary, severity, errorText,
-    METRICS, metricOf, viewOf, lineColor, rampStops, SUMMARY_ID,
+    METRICS, metricOf, viewOf, lineColor, dirColor, rampStops, SUMMARY_ID,
   };
 })(globalThis.GHL);
