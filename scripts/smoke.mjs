@@ -359,11 +359,9 @@ try {
     const dirPath = href.split('/main/')[1];
     await subdir.click();
     await page.waitForFunction((h) => location.pathname === h, href, { timeout: 15000 });
-    if (MANUAL) {
-      await page.waitForSelector('#ghl-summary [data-ghl-action="fetch"]:visible', { timeout: 15000 });
-      await page.click('#ghl-summary [data-ghl-metric="bytes"]');
-      await page.click('#ghl-summary [data-ghl-action="fetch"]');
-    }
+    // Manual mode: this commit's tree was cached by the view above, so the
+    // subdirectory shows on its own — no press, no request.
+    const requestsBeforeSubdir = apiRequests.length;
 
     // Wait for the swap to complete rather than sampling mid-flight: the old
     // directory's cells stay attached until teardown runs.
@@ -382,6 +380,9 @@ try {
     );
     assert(swapped, `rows swapped to ${dirPath} after navigating (saw ${subRows.join(', ')})`);
     assert(subRows.length > 0, `bars re-render after navigating into ${href}`);
+    if (MANUAL) {
+      assert(apiRequests.length === requestsBeforeSubdir, 'a cached commit shows in manual mode without a request');
+    }
     await page.screenshot({ path: path.join(OUT_DIR, 'subdirectory.png') });
   }
 

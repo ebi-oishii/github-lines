@@ -759,6 +759,7 @@ const STUB_TREE = [
 ];
 
 let transportCalls = [];
+let stubTreeCached = false; // whether a cache-only TREE probe hits
 
 function stubTransport({ treeDelayMs = 0 } = {}) {
   const calls = [];
@@ -767,6 +768,7 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
     calls.push(msg);
     switch (msg.type) {
       case 'TREE':
+        if (msg.cacheOnly && !stubTreeCached) return { ok: false, error: 'not_cached' };
         if (treeDelayMs) await sleep(treeDelayMs);
         return { ok: true, entries: STUB_TREE, truncated: false };
       case 'CACHED_LINES':
@@ -921,6 +923,8 @@ await domCheckAsync('navigating back up rebuilds the parent view', async () => {
 
 const fetchButton = () => document.querySelector('[data-ghl-action="fetch"]');
 const metricButton = (key) => document.querySelector(`[data-ghl-metric="${key}"]`);
+/* TREE requests that would hit the API — manual mode's cache-only probes do not count. */
+const treeFetches = (calls) => calls.filter((c) => c.type === 'TREE' && !c.cacheOnly);
 
 /* Manual mode from idle: fetch the tree via the サイズ reading of the button,
    then flip the toggle to 行数 so the count button is on offer. */
@@ -948,7 +952,8 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
   await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
 
-  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 0, 'no tree request on open');
+  assertEqual(treeFetches(transportCalls.slice(before)).length, 0, 'no tree request on open');
+  assert(transportCalls.slice(before).some((c) => c.type === 'TREE' && c.cacheOnly), 'only the cache was asked');
   assertEqual(renderedPaths().length, 0, 'no bars yet');
   const idlePicks = [...document.querySelectorAll('.ghl-row-pick[data-pick="on"]')];
   assertEqual(new Set(idlePicks.map((p) => p.dataset.ghlPath)).size, 1, 'the row already has its checkbox');
@@ -990,7 +995,7 @@ await domCheckAsync('pressing サイズを取得 fetches the tree and shows size
     'bars for the new directory'
   );
 
-  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 1, 'exactly one tree request');
+  assertEqual(treeFetches(transportCalls.slice(before)).length, 1, 'exactly one tree request');
   const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 0, 'no line counts fetched without being asked');
   assert(!fetchButton().hidden && fetchButton().disabled && /取得済み/.test(fetchButton().textContent),
@@ -1071,8 +1076,7 @@ await domCheckAsync('rows unticked before anything is fetched are left out of a 
     6000,
     'an exact count without a separate sizes step'
   );
-  const types = transportCalls.slice(before).map((c) => c.type);
-  assertEqual(types.filter((t) => t === 'TREE').length, 1, 'one tree request');
+  assertEqual(treeFetches(transportCalls.slice(before)).length, 1, 'one tree request');
   assertEqual(
     transportCalls.slice(before).filter((c) => c.type === 'LINES').map((c) => c.sha).join(' '),
     'sha-ap-index',
@@ -1202,6 +1206,20 @@ await domCheckAsync('without a table header the all-rows checkbox falls back to 
   assert(box.indeterminate, 'and mirrors the rows');
   box.click();
   await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'it drives the rows too');
+});
+
+await domCheckAsync('a commit already in the cache shows in manual mode without a press', async () => {
+  stubTreeCached = true;
+  const before = transportCalls.length;
+  navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+  await waitFor(() => renderedPaths().includes('source/core/options.ts'), 6000, 'bars without pressing anything');
+
+  const trees = transportCalls.slice(before).filter((c) => c.type === 'TREE');
+  assert(trees.length >= 1 && trees.every((c) => c.cacheOnly), 'the tree was only ever asked for from the cache');
+  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'LINES').length, 0, 'and no counts were fetched');
+  assert(/行数を取得/.test(fetchButton().textContent) && /1/.test(fetchButton().textContent),
+    `the count button is on offer for what is not cached (${fetchButton().textContent})`);
+  stubTreeCached = false;
 });
 
 await domCheckAsync('off mode never fetches and offers no button', async () => {

@@ -120,7 +120,7 @@
     return !node.excluded && !node.exact && node.size > 0 && node.size <= maxBytes;
   }
 
-  async function loadGitattributes(ctx, index, settings) {
+  async function loadGitattributes(ctx, index, settings, cacheOnly) {
     if (!settings.respectGitattributes) return [];
 
     const files = [];
@@ -135,7 +135,7 @@
     const rules = [];
     for (const node of files.slice(0, 20)) {
       const res = await util.send({
-        type: 'BLOB_TEXT', owner: ctx.owner, repo: ctx.repo, sha: node.sha,
+        type: 'BLOB_TEXT', owner: ctx.owner, repo: ctx.repo, sha: node.sha, cacheOnly,
       });
       if (!res.ok) continue;
       const slash = node.path.lastIndexOf('/');
@@ -300,8 +300,10 @@
 
     /* Everything from the tree request on: one API request, then estimates,
        then exact counts — in automatic mode, or when manual mode's "行数を取得"
-       was pressed straight away (`thenExact`). */
-    async function loadTree(thenExact) {
+       was pressed straight away (`thenExact`). With `cacheOnly` nothing is
+       requested: a commit seen before comes back from the cache and shows,
+       anything else leaves the view idle. */
+    async function loadTree(thenExact, cacheOnly) {
       const settings = state.settings;
       // Paint the strip before the network call, so a slow or wedged request is
       // visible as "loading" rather than as a blank page.
@@ -309,11 +311,16 @@
       emitNow();
 
       const res = await util.send(
-        { type: 'TREE', owner: ctx.owner, repo: ctx.repo, oid: ctx.oid },
+        { type: 'TREE', owner: ctx.owner, repo: ctx.repo, oid: ctx.oid, cacheOnly },
         { timeoutMs: 45000 } // a monorepo's recursive tree can be several MB
       );
       if (cancelled) return;
 
+      if (!res.ok && res.error === 'not_cached') {
+        state.status = 'idle';
+        emitNow();
+        return;
+      }
       if (!res.ok) {
         state.status = 'error';
         state.error = res;
@@ -330,7 +337,7 @@
       if (res.truncated) {
         const dirRes = await util.send({
           type: 'TREE', owner: ctx.owner, repo: ctx.repo, oid: ctx.oid,
-          recursive: false, path: ctx.path,
+          recursive: false, path: ctx.path, cacheOnly,
         });
         if (cancelled) return;
         if (dirRes.ok) {
@@ -357,7 +364,7 @@
       emitNow();
 
       // --- linguist attributes -----------------------------------------
-      const rules = await loadGitattributes(ctx, state.index, settings);
+      const rules = await loadGitattributes(ctx, state.index, settings, cacheOnly);
       if (cancelled) return;
       if (rules.length) {
         classify(state.index, isExcluded, patterns.makeLinguistMatcher(rules));
@@ -412,13 +419,9 @@
     (async () => {
       state.settings = await GHL.settings.get();
       if (cancelled) return;
-      // Manual mode fetches nothing until asked — not even the tree.
-      if (state.settings.exactLinesMode === 'manual') {
-        state.status = 'idle';
-        emitNow();
-        return;
-      }
-      await loadTree(false);
+      // Manual mode requests nothing until asked — but what the cache already
+      // holds for this commit shows at once, since that costs nothing.
+      await loadTree(false, state.settings.exactLinesMode === 'manual');
     })().catch(fail);
 
     return {
@@ -427,7 +430,7 @@
          first, in the same press. Safe to call repeatedly. */
       fetchExact() {
         if (cancelled || running) return running;
-        const pass = state.status === 'idle' ? loadTree(true) : (state.index ? runExactPass() : null);
+        const pass = state.status === 'idle' ? loadTree(true, false) : (state.index ? runExactPass() : null);
         if (!pass) return null;
         // Asking for line counts is asking to see them.
         state.metric = 'lines';
@@ -444,7 +447,7 @@
       fetchSizes() {
         if (cancelled || state.status !== 'idle') return;
         state.metric = 'bytes';
-        loadTree(false).catch(fail);
+        loadTree(false, false).catch(fail);
       },
       /* Which quantity the UI shows. Costs nothing: both come from what is
          already loaded. */
