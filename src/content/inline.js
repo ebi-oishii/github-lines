@@ -156,14 +156,36 @@
     return segments;
   }
 
+  /* The toolbar icon, inline so it follows GitHub's theme and stays crisp.
+     Static markup, so innerHTML is safe here. */
+  const ICON_SVG =
+    '<svg viewBox="0 0 128 128" aria-hidden="true">' +
+    '<g fill="currentColor" opacity="0.3">' +
+    '<rect x="17" y="17" width="94" height="24" rx="12"/>' +
+    '<rect x="17" y="52" width="94" height="24" rx="12"/>' +
+    '<rect x="17" y="87" width="94" height="24" rx="12"/></g>' +
+    '<rect x="17" y="17" width="94" height="24" rx="12" style="fill:var(--ghl-danger)"/>' +
+    '<rect x="17" y="52" width="56" height="24" rx="12" style="fill:var(--ghl-warn)"/>' +
+    '<rect x="17" y="87" width="32" height="24" rx="12" style="fill:var(--ghl-ok)"/>' +
+    '</svg>';
+
+  function icon() {
+    const span = el('span', { class: 'ghl-icon' });
+    span.innerHTML = ICON_SVG;
+    return span;
+  }
+
   function buildSummary() {
     return el('div', { id: SUMMARY_ID, class: 'ghl-summary' }, [
       el('div', { class: 'ghl-summary-head' }, [
-        el('span', { class: 'ghl-summary-title' }, ['GitHub Lines']),
+        el('span', { class: 'ghl-summary-title' }, [icon(), 'GitHub Lines']),
         el('span', { class: 'ghl-summary-stats' }),
         el('span', { class: 'ghl-spacer' }),
         el('span', { class: 'ghl-summary-status' }),
-        el('label', { class: 'ghl-pick-all', title: 'すべての行を取得対象にする／外す' }, [
+        // Marked with the icon so the checkboxes in GitHub's table below read
+        // as ours, not GitHub's.
+        el('label', { class: 'ghl-pick-all', title: 'GitHub Lines: すべての行を取得対象にする／外す' }, [
+          icon(),
           el('input', { class: 'ghl-pick', type: 'checkbox', 'data-ghl-action': 'pick-all' }),
           'すべて',
         ]),
