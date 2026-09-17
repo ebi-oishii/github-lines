@@ -973,6 +973,10 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
 await domCheckAsync('pressing サイズを取得 fetches the tree and shows sizes', async () => {
   const before = transportCalls.length;
   fetchButton().click();
+  // The strip must not blink while the tree is in flight: same controls, same places.
+  assert(!document.querySelector('.ghl-metric').hidden, 'the toggle stays up while loading');
+  assert(!fetchButton().hidden && /取得中/.test(fetchButton().textContent), `the button reads 取得中 (${fetchButton().textContent})`);
+  assert(document.querySelectorAll('.ghl-col-head').length === 2, 'the column head stays');
   await waitFor(
     () => renderedPaths().includes('source/core/options.ts'),
     6000,

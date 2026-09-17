@@ -378,10 +378,11 @@
     const m = metricOf(state);
     const idle = state.status === 'idle';
 
-    // 行数 | サイズ. With a tree in, it says what the bars measure; before one
-    // — manual mode's idle — it also says what the button fetches.
+    // 行数 | サイズ. With a tree in, it says what the bars measure; in manual
+    // mode it is up from the start and stays put through the fetch, since it
+    // also says what the button fetches.
     const toggle = node.querySelector('.ghl-metric');
-    toggle.hidden = !state.index && !idle;
+    toggle.hidden = !state.index && settings.exactLinesMode !== 'manual';
     for (const b of toggle.querySelectorAll('[data-ghl-metric]')) {
       b.setAttribute('aria-pressed', String(b.dataset.ghlMetric === m.key));
     }
