@@ -913,11 +913,12 @@ await domCheckAsync('navigating back up rebuilds the parent view', async () => {
 });
 
 const fetchButton = () => document.querySelector('[data-ghl-action="fetch"]');
-const estimateButton = () => document.querySelector('[data-ghl-action="estimate"]');
+const sizesButton = () => document.querySelector('[data-ghl-action="sizes"]');
+const metricButton = (key) => document.querySelector(`[data-ghl-metric="${key}"]`);
 
-async function pressEstimate() {
-  await waitFor(() => { const b = estimateButton(); return b && !b.hidden; }, 6000, 'the estimate button');
-  estimateButton().click();
+async function pressSizes() {
+  await waitFor(() => { const b = sizesButton(); return b && !b.hidden; }, 6000, 'the sizes button');
+  sizesButton().click();
 }
 
 function tick(path, on) {
@@ -931,20 +932,22 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   const before = transportCalls.length;
 
   navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
-  await waitFor(() => { const b = estimateButton(); return b && !b.hidden; }, 6000, 'the estimate button');
+  await waitFor(() => { const b = sizesButton(); return b && !b.hidden; }, 6000, 'the sizes button');
 
   assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 0, 'no tree request on open');
   assertEqual(renderedPaths().length, 0, 'no bars yet');
+  assert(/サイズを取得/.test(sizesButton().textContent), `the plain button is labelled (${sizesButton().textContent})`);
   assert(!fetchButton().hidden && !fetchButton().disabled, 'the exact-count button sits next to it');
   assert(!/\d/.test(fetchButton().textContent), `no count before the tree is known (${fetchButton().textContent})`);
-  assert(!estimateButton().classList.contains('ghl-btn-primary'), 'the estimate button is the plain one');
+  assert(!sizesButton().classList.contains('ghl-btn-primary'), 'the sizes button is the plain one');
+  assert(document.querySelector('.ghl-metric').hidden, 'no metric toggle before there is data');
   const status = document.querySelector('.ghl-summary-status').textContent;
   assert(/未取得/.test(status), `status says nothing has been fetched (${status})`);
 });
 
-await domCheckAsync('pressing 概算を取得 fetches the tree, paints estimates, and waits for the next button', async () => {
+await domCheckAsync('pressing サイズを取得 fetches the tree and shows sizes, with the lines step still on offer', async () => {
   const before = transportCalls.length;
-  estimateButton().click();
+  sizesButton().click();
   await waitFor(
     () => renderedPaths().includes('source/core/options.ts'),
     6000,
@@ -954,15 +957,34 @@ await domCheckAsync('pressing 概算を取得 fetches the tree, paints estimates
   assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 1, 'exactly one tree request');
   const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 0, 'no line counts fetched without being asked');
-  assert(estimateButton().hidden, 'the estimate button goes away once the tree is in');
+  assert(sizesButton().hidden, 'the sizes button goes away once the tree is in');
 
   const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
-  assert(cell.querySelector('.ghl-num').textContent.startsWith('~'), 'shown as an estimate');
+  assertEqual(cell.querySelector('.ghl-num').textContent, '117.2 KB', 'the row shows its size');
+  assertEqual(cell.dataset.severity, 'ok', 'no threshold colouring on sizes');
+  assertEqual(metricButton('bytes').getAttribute('aria-pressed'), 'true', 'the toggle says サイズ');
+  const stats = document.querySelector('.ghl-summary-stats').textContent;
+  assert(/117\.2 KB/.test(stats), `the strip totals in bytes too (${stats})`);
 
-  const button = document.querySelector('[data-ghl-action="fetch"]');
+  const button = fetchButton();
   assert(button && !button.hidden, 'the fetch button is offered');
   assert(/行数を取得/.test(button.textContent), `button is labelled (${button.textContent})`);
   assert(/1/.test(button.textContent), `button names the count (${button.textContent})`);
+});
+
+await domCheckAsync('the toggle switches the same rows to estimated lines without fetching', async () => {
+  const before = transportCalls.length;
+  metricButton('lines').click();
+  await waitFor(
+    () => {
+      const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
+      return cell && cell.querySelector('.ghl-num').textContent.startsWith('~');
+    },
+    3000,
+    'the estimate to show'
+  );
+  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'the toggle says 行数');
+  assertEqual(transportCalls.length, before, 'switching the view fetches nothing');
 });
 
 await domCheckAsync('pressing the button fetches, and the estimate becomes exact', async () => {
@@ -991,7 +1013,7 @@ await domCheckAsync('pressing 行数を取得 straight away fetches the tree and
     { name: 'index.ts', type: 'file' },
     { name: 'types.ts', type: 'file' },
   ]);
-  await waitFor(() => { const b = fetchButton(); return b && !b.hidden && !estimateButton().hidden; }, 6000, 'both buttons');
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden && !sizesButton().hidden; }, 6000, 'both buttons');
   fetchButton().click();
 
   await waitFor(
@@ -1005,7 +1027,8 @@ await domCheckAsync('pressing 行数を取得 straight away fetches the tree and
   const types = transportCalls.slice(before).map((c) => c.type);
   assertEqual(types.filter((t) => t === 'TREE').length, 1, 'one tree request');
   assertEqual(types.filter((t) => t === 'LINES').length, 2, 'both files fetched');
-  assert(fetchButton().hidden && estimateButton().hidden, 'nothing left to offer');
+  assert(fetchButton().hidden && sizesButton().hidden, 'nothing left to offer');
+  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'asking for counts shows counts');
 });
 
 await domCheckAsync('manual mode puts a ticked checkbox on every row with something to fetch', async () => {
@@ -1016,7 +1039,7 @@ await domCheckAsync('manual mode puts a ticked checkbox on every row with someth
     { name: 'index.ts', type: 'file' },
     { name: 'types.ts', type: 'file' },
   ]);
-  await pressEstimate();
+  await pressSizes();
   await waitFor(
     () => fetchButton() && !fetchButton().hidden && renderedPaths().includes('source/create.ts'),
     6000,

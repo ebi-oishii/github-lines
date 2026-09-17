@@ -18,8 +18,11 @@
         GHL.treemap.open(current.state);
       }
     },
-    onFetchEstimate() {
-      if (current && current.handle) current.handle.fetchEstimate();
+    onFetchSizes() {
+      if (current && current.handle) current.handle.fetchSizes();
+    },
+    onMetric(metric) {
+      if (current && current.handle) current.handle.setMetric(metric);
     },
     onFetchExact() {
       if (current && current.handle) current.handle.fetchExact();

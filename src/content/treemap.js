@@ -1,12 +1,13 @@
 /* Squarified treemap, rendered as nested absolutely-positioned divs.
 
-   Area is proportional to line count, so a file that has swallowed half a
-   package is literally half the picture. */
+   Area is proportional to the chosen metric — line count by default, or file
+   size — so a file that has swallowed half a package is literally half the
+   picture. */
 (function (GHL) {
   'use strict';
 
   const { util } = GHL;
-  const { el, fmt, fmtCompact } = util;
+  const { el, fmt } = util;
 
   const OVERLAY_ID = 'ghl-treemap-overlay';
   const HEADER_H = 17;
@@ -88,10 +89,10 @@
 
   /* -------------------------------------------------------------- render */
 
-  function childrenOf(node) {
+  function childrenOf(node, m) {
     const kids = [...node.children.values()]
-      .filter((n) => (n.total || 0) > 0)
-      .sort((a, b) => b.total - a.total);
+      .filter((n) => m.value(n) > 0)
+      .sort((a, b) => m.value(b) - m.value(a));
 
     if (kids.length <= MAX_CHILDREN) return kids;
 
@@ -117,15 +118,16 @@
     tile.style.width = Math.max(0, rect.w - 1) + 'px';
     tile.style.height = Math.max(0, rect.h - 1) + 'px';
 
+    const m = opts.metric;
+    const other = m.key === 'lines' ? GHL.inline.METRICS.bytes : GHL.inline.METRICS.lines;
     const isDir = node.type === 'dir';
-    const approx = node.allExact ? '' : '~';
-    const share = opts.rootTotal > 0 ? (node.total / opts.rootTotal) * 100 : 0;
+    const share = opts.rootTotal > 0 ? (m.value(node) / opts.rootTotal) * 100 : 0;
 
     tile.title =
       `${node.path || node.name}\n` +
-      `${approx}${fmt(node.total)} 行 (${share.toFixed(1)}%)` +
+      `${m.long(node)} (${share.toFixed(1)}%)` +
       (isDir ? `\n${fmt(node.fileCount)} ファイル` : '') +
-      (node.type === 'file' ? `\n${util.fmtBytes(node.size || 0)}` : '');
+      `\n${other.long(node)}`;
 
     const canRecurse =
       isDir &&
@@ -137,14 +139,13 @@
     if (!canRecurse) {
       tile.classList.add('ghl-tm-leaf');
       tile.dataset.kind = node.type;
-      tile.dataset.severity =
-        node.type === 'file' ? GHL.inline.severity(node.total, opts.settings) : 'dir';
+      tile.dataset.severity = m.severity(node, opts.settings);
 
       if (rect.w > 44 && rect.h > 20) {
         tile.appendChild(el('span', { class: 'ghl-tm-label' }, [
           el('span', { class: 'ghl-tm-name', text: node.name + (isDir ? '/' : '') }),
           rect.h > 34 && rect.w > 60
-            ? el('span', { class: 'ghl-tm-value', text: `${approx}${fmtCompact(node.total)}` })
+            ? el('span', { class: 'ghl-tm-value', text: m.short(node) })
             : null,
         ]));
       }
@@ -163,7 +164,7 @@
     tile.classList.add('ghl-tm-group');
     const head = el('div', { class: 'ghl-tm-head ghl-tm-clickable' }, [
       el('span', { class: 'ghl-tm-name', text: node.name + '/' }),
-      el('span', { class: 'ghl-tm-value', text: `${approx}${fmtCompact(node.total)}` }),
+      el('span', { class: 'ghl-tm-value', text: m.short(node) }),
     ]);
     head.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -178,8 +179,8 @@
       w: rect.w - PAD * 2 - 1,
       h: rect.h - HEADER_H - PAD - 1,
     };
-    const kids = childrenOf(node);
-    const placed = squarify(kids.map((n) => ({ node: n, value: n.total })), inner);
+    const kids = childrenOf(node, m);
+    const placed = squarify(kids.map((n) => ({ node: n, value: m.value(n) })), inner);
     for (const p of placed) {
       drawNode(p.node, { x: p.x, y: p.y, w: p.w, h: p.h }, depth + 1, tile, opts);
     }
@@ -236,14 +237,16 @@
     modal.crumbs.textContent = '';
     for (const c of buildBreadcrumb(state.ctx, path, drill)) modal.crumbs.appendChild(c);
 
-    const approx = node.allExact ? '' : '~';
-    modal.stats.textContent =
-      `${approx}${fmt(node.total)} 行 · ${fmt(node.fileCount)} ファイル`;
-    modal.status.textContent = statusLine(state);
+    const m = GHL.inline.metricOf(state);
+    modal.stats.textContent = `${m.long(node)} · ${fmt(node.fileCount)} ファイル`;
+    modal.status.textContent = statusLine(state, m);
+    // The thresholds are line counts; the legend has nothing to say about sizes.
+    modal.legend.hidden = m.key !== 'lines';
 
     const opts = {
       settings: state.settings,
-      rootTotal: node.total || 1,
+      metric: m,
+      rootTotal: m.value(node) || 1,
       onDrill: drill,
       onSelect: (n) => {
         if (n.type === 'dir') drill(n.path);
@@ -251,14 +254,14 @@
       },
     };
 
-    const kids = childrenOf(node);
+    const kids = childrenOf(node, m);
     if (!kids.length) {
       canvas.appendChild(el('div', { class: 'ghl-tm-empty', text: 'カウント対象のファイルがありません' }));
       return;
     }
 
     const placed = squarify(
-      kids.map((n) => ({ node: n, value: n.total })),
+      kids.map((n) => ({ node: n, value: m.value(n) })),
       { x: 0, y: 0, w: rect.width, h: rect.height }
     );
     for (const p of placed) {
@@ -266,14 +269,16 @@
     }
   }
 
-  function statusLine(state) {
-    if (state.status === 'refining') {
-      return `実行数を取得中 ${state.progress.done}/${state.progress.total} — 残りはバイト数からの推定（~ 付き）`;
+  function statusLine(state, m) {
+    if (m.key === 'lines') {
+      if (state.status === 'refining') {
+        return `実行数を取得中 ${state.progress.done}/${state.progress.total} — 残りはバイト数からの推定（~ 付き）`;
+      }
+      if (state.status === 'estimated') return 'バイト数から推定中…';
     }
-    if (state.status === 'estimated') return 'バイト数から推定中…';
     if (state.warning) return GHL.inline.errorText(state.warning);
-    if (state.truncated) return '巨大リポジトリのため一部推定';
-    return '面積 = 行数';
+    if (state.truncated) return m.key === 'lines' ? '巨大リポジトリのため一部推定' : '巨大リポジトリのため一部のみ';
+    return `面積 = ${m.label}`;
   }
 
   function drill(path) {
@@ -297,6 +302,19 @@
     const crumbs = el('div', { class: 'ghl-tm-crumbs' });
     const stats = el('span', { class: 'ghl-tm-stats' });
     const status = el('span', { class: 'ghl-tm-status' });
+    const legend = el('span', { class: 'ghl-legend' }, [
+      el('span', { class: 'ghl-legend-item', 'data-tone': 'ok' }, [
+        el('span', { class: 'ghl-legend-dot' }), '通常',
+      ]),
+      el('span', { class: 'ghl-legend-item', 'data-tone': 'warn' }, [
+        el('span', { class: 'ghl-legend-dot' }),
+        `${fmt(state.settings.warnLines)} 行以上`,
+      ]),
+      el('span', { class: 'ghl-legend-item', 'data-tone': 'danger' }, [
+        el('span', { class: 'ghl-legend-dot' }),
+        `${fmt(state.settings.dangerLines)} 行以上`,
+      ]),
+    ]);
 
     const overlay = el('div', { id: OVERLAY_ID, class: 'ghl-overlay' }, [
       el('div', { class: 'ghl-modal', role: 'dialog', 'aria-label': 'GitHub Lines treemap' }, [
@@ -316,19 +334,7 @@
         ]),
         canvas,
         el('div', { class: 'ghl-modal-foot' }, [
-          el('span', { class: 'ghl-legend' }, [
-            el('span', { class: 'ghl-legend-item', 'data-tone': 'ok' }, [
-              el('span', { class: 'ghl-legend-dot' }), '通常',
-            ]),
-            el('span', { class: 'ghl-legend-item', 'data-tone': 'warn' }, [
-              el('span', { class: 'ghl-legend-dot' }),
-              `${fmt(state.settings.warnLines)} 行以上`,
-            ]),
-            el('span', { class: 'ghl-legend-item', 'data-tone': 'danger' }, [
-              el('span', { class: 'ghl-legend-dot' }),
-              `${fmt(state.settings.dangerLines)} 行以上`,
-            ]),
-          ]),
+          legend,
           el('span', { class: 'ghl-spacer' }),
           status,
         ]),
@@ -347,7 +353,7 @@
     const resizeObserver = new ResizeObserver(util.debounce(draw, 80));
     resizeObserver.observe(canvas);
 
-    modal = { overlay, canvas, crumbs, stats, status, state, path: state.ctx.path, onKey, resizeObserver };
+    modal = { overlay, canvas, crumbs, stats, status, legend, state, path: state.ctx.path, onKey, resizeObserver };
     draw();
   }
 

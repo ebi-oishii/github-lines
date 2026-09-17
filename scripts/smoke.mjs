@@ -153,12 +153,23 @@ try {
   console.log(`opening ${TARGET_URL}`);
   await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
 
-  // Manual mode fetches nothing until asked; the estimate button is step one.
+  // Manual mode fetches nothing until asked. Press the plain button, check the
+  // sizes it shows, then switch the view to lines for the checks below.
   if (MANUAL) {
-    await page.waitForSelector('#ghl-summary [data-ghl-action="estimate"]:visible', { timeout: 30000 });
-    assert(apiRequests.length === 0, `nothing is requested before 概算を取得 is pressed (${apiRequests.length})`);
+    await page.waitForSelector('#ghl-summary [data-ghl-action="sizes"]:visible', { timeout: 30000 });
+    assert(apiRequests.length === 0, `nothing is requested before サイズを取得 is pressed (${apiRequests.length})`);
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-idle.png'), fullPage: false });
-    await page.click('#ghl-summary [data-ghl-action="estimate"]');
+    await page.click('#ghl-summary [data-ghl-action="sizes"]');
+    await page.waitForSelector('.ghl-cell', { state: 'attached', timeout: 30000 });
+    const sizes = await page.$$eval('.ghl-cell[data-ghl-path] .ghl-num', (ns) =>
+      ns.filter((n) => n.offsetParent !== null).map((n) => n.textContent)
+    );
+    assert(
+      sizes.length > 0 && sizes.every((t) => /\d [KM]?B$/.test(t) || /generated|binary/.test(t)),
+      `rows show sizes after サイズを取得 (${sizes.slice(0, 3).join(', ')})`
+    );
+    await page.screenshot({ path: path.join(OUT_DIR, 'manual-sizes.png'), fullPage: false });
+    await page.click('#ghl-summary [data-ghl-metric="lines"]');
   }
 
   // Each row carries a small-screen and a large-screen cell and only one is
@@ -209,6 +220,28 @@ try {
   assert(rows.some((r) => /\d/.test(r.lines)), 'rows show a line count');
   assert(rows.some((r) => parseFloat(r.width) > 90), 'the largest row fills its bar');
   assert(/行/.test(summary), 'summary strip shows a total');
+
+  // The metric toggle: sizes come from the tree alone, so this costs nothing.
+  const requestsBeforeToggle = apiRequests.length;
+  await page.click('#ghl-summary [data-ghl-metric="bytes"]');
+  const sizeNums = await page.$$eval('.ghl-cell[data-ghl-path] .ghl-num', (ns) =>
+    ns.filter((n) => n.offsetParent !== null).map((n) => n.textContent)
+  );
+  assert(sizeNums.some((t) => /\d [KM]?B$/.test(t)), `rows show sizes when the toggle says サイズ (${sizeNums.slice(0, 3).join(', ')})`);
+  assert(apiRequests.length === requestsBeforeToggle, 'switching the metric makes no request');
+  await page.screenshot({ path: path.join(OUT_DIR, 'sizes.png'), fullPage: false });
+
+  // The treemap follows the toggle: area = size, legend of line thresholds hidden.
+  await page.click('#ghl-summary [data-ghl-action="treemap"]');
+  await page.waitForSelector('.ghl-overlay .ghl-tm-tile', { timeout: 10000 });
+  const sizeStatus = await page.$eval('.ghl-tm-status', (n) => n.textContent);
+  assert(/サイズ/.test(sizeStatus), `treemap says it measures sizes (${sizeStatus})`);
+  assert(await page.$('.ghl-modal-foot .ghl-legend:visible') === null, 'the line-threshold legend is hidden for sizes');
+  await page.screenshot({ path: path.join(OUT_DIR, 'treemap-sizes.png') });
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.ghl-overlay', { state: 'detached', timeout: 5000 });
+
+  await page.click('#ghl-summary [data-ghl-metric="lines"]');
 
   const rateLimited = RATE_LIMITED.test(status);
   if (rateLimited) {
@@ -294,8 +327,8 @@ try {
     await subdir.click();
     await page.waitForFunction((h) => location.pathname === h, href, { timeout: 15000 });
     if (MANUAL) {
-      await page.waitForSelector('#ghl-summary [data-ghl-action="estimate"]:visible', { timeout: 15000 });
-      await page.click('#ghl-summary [data-ghl-action="estimate"]');
+      await page.waitForSelector('#ghl-summary [data-ghl-action="sizes"]:visible', { timeout: 15000 });
+      await page.click('#ghl-summary [data-ghl-action="sizes"]');
     }
 
     // Wait for the swap to complete rather than sampling mid-flight: the old

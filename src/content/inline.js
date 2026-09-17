@@ -24,6 +24,36 @@
     return node.allExact ? '' : '~';
   }
 
+  /* The two things a node can be measured by. Lines are what the extension is
+     for; bytes come free with the tree listing and are always exact, so they
+     carry no `~` and no thresholds. */
+  const METRICS = {
+    lines: {
+      key: 'lines',
+      label: '行数',
+      value: (n) => n.total || 0,
+      cell: (n) => approxPrefix(n) + fmt(n.total || 0),
+      short: (n) => approxPrefix(n) + fmtCompact(n.total || 0) + ' 行',
+      long: (n) => `${approxPrefix(n)}${fmt(n.total || 0)} 行`,
+      fmtTotal: (v) => `${fmt(v)} 行`,
+      severity: (n, settings) => (n.type === 'file' ? severity(n.total || 0, settings) : 'dir'),
+    },
+    bytes: {
+      key: 'bytes',
+      label: 'サイズ',
+      value: (n) => n.bytes || 0,
+      cell: (n) => util.fmtBytes(n.bytes || 0),
+      short: (n) => util.fmtBytes(n.bytes || 0),
+      long: (n) => util.fmtBytes(n.bytes || 0),
+      fmtTotal: (v) => util.fmtBytes(v),
+      severity: (n) => (n.type === 'file' ? 'ok' : 'dir'),
+    },
+  };
+
+  function metricOf(state) {
+    return METRICS[state.metric] || METRICS.lines;
+  }
+
   /* ------------------------------------------------------------ row cells */
 
   function cellIn(host, handlers) {
@@ -84,13 +114,14 @@
       return;
     }
 
-    const total = node.total || 0;
+    const m = metricOf(state);
+    const total = m.value(node);
     const isFile = node.type === 'file';
     const excluded = isFile && node.excluded;
 
     cell.dataset.ghlPath = node.path;
     cell.dataset.state = excluded ? 'excluded' : (isFile ? 'file' : 'dir');
-    cell.dataset.severity = excluded ? 'none' : (isFile ? severity(total, settings) : 'dir');
+    cell.dataset.severity = excluded ? 'none' : m.severity(node, settings);
 
     if (excluded) {
       fill.style.width = '0%';
@@ -106,21 +137,25 @@
     const width = maxTotal > 0 ? Math.max(total > 0 ? 2 : 0, (total / maxTotal) * 100) : 0;
 
     fill.style.width = width.toFixed(2) + '%';
-    num.textContent = approxPrefix(node) + fmt(total);
+    num.textContent = m.cell(node);
     pct.textContent = share >= 0.5 ? Math.round(share) + '%' : '';
 
-    const lines = [];
-    lines.push(node.path);
-    lines.push(`${approxPrefix(node)}${fmt(total)} 行 — このディレクトリの ${share.toFixed(1)}%`);
-    if (!isFile) lines.push(`${fmt(node.fileCount)} ファイル`);
-    lines.push(util.fmtBytes(node.bytes || node.size || 0));
-    if (!node.allExact) lines.push('（推定値。行数を取得中または取得対象外）');
-    if (isFile && total >= settings.dangerLines) {
-      lines.push(`⚠ 閾値 ${fmt(settings.dangerLines)} 行を超えています`);
-    } else if (isFile && total >= settings.warnLines) {
-      lines.push(`閾値 ${fmt(settings.warnLines)} 行に近づいています`);
+    const tip = [];
+    tip.push(node.path);
+    tip.push(`${m.long(node)} — このディレクトリの ${share.toFixed(1)}%`);
+    if (!isFile) tip.push(`${fmt(node.fileCount)} ファイル`);
+    if (m.key === 'lines') {
+      tip.push(util.fmtBytes(node.bytes || node.size || 0));
+      if (!node.allExact) tip.push('（推定値。行数を取得中または取得対象外）');
+      if (isFile && total >= settings.dangerLines) {
+        tip.push(`⚠ 閾値 ${fmt(settings.dangerLines)} 行を超えています`);
+      } else if (isFile && total >= settings.warnLines) {
+        tip.push(`閾値 ${fmt(settings.warnLines)} 行に近づいています`);
+      }
+    } else {
+      tip.push(METRICS.lines.long(node));
     }
-    cell.title = lines.join('\n');
+    cell.title = tip.join('\n');
   }
 
   function clearRows() {
@@ -129,18 +164,18 @@
 
   /* ---------------------------------------------------------- summary bar */
 
-  function segmentsFor(dirNode, settings, limit = 12) {
+  function segmentsFor(dirNode, settings, m, limit = 12) {
     const kids = [...dirNode.children.values()]
-      .filter((n) => (n.total || 0) > 0)
-      .sort((a, b) => b.total - a.total);
+      .filter((n) => m.value(n) > 0)
+      .sort((a, b) => m.value(b) - m.value(a));
 
     const head = kids.slice(0, limit);
     const tail = kids.slice(limit);
     const segments = head.map((n, i) => ({
       node: n,
       label: n.name + (n.type === 'dir' ? '/' : ''),
-      total: n.total,
-      tone: n.type === 'file' ? severity(n.total, settings) : 'dir',
+      total: m.value(n),
+      tone: m.severity(n, settings),
       alt: i % 2 === 1,
     }));
 
@@ -148,7 +183,7 @@
       segments.push({
         node: null,
         label: `他 ${tail.length} 件`,
-        total: tail.reduce((s, n) => s + n.total, 0),
+        total: tail.reduce((s, n) => s + m.value(n), 0),
         tone: 'rest',
         alt: false,
       });
@@ -179,6 +214,11 @@
     return el('div', { id: SUMMARY_ID, class: 'ghl-summary' }, [
       el('div', { class: 'ghl-summary-head' }, [
         el('span', { class: 'ghl-summary-title' }, [icon(), 'GitHub Lines']),
+        // What the bars measure. Sizes are known as soon as the tree is in.
+        el('span', { class: 'ghl-metric', role: 'group', 'aria-label': '表示する量' }, [
+          el('button', { type: 'button', 'data-ghl-metric': 'lines', title: 'バーと割合を行数で表示' }, ['行数']),
+          el('button', { type: 'button', 'data-ghl-metric': 'bytes', title: 'バーと割合をファイルサイズで表示' }, ['サイズ']),
+        ]),
         el('span', { class: 'ghl-summary-stats' }),
         el('span', { class: 'ghl-spacer' }),
         el('span', { class: 'ghl-summary-status' }),
@@ -190,9 +230,9 @@
           'すべて',
         ]),
         el('button', {
-          class: 'ghl-btn', type: 'button', 'data-ghl-action': 'estimate',
-          title: 'ファイル一覧を 1 リクエストで取得し、バイト数から行数を推定します',
-        }, ['概算を取得']),
+          class: 'ghl-btn', type: 'button', 'data-ghl-action': 'sizes',
+          title: 'ファイル一覧を 1 リクエストで取得し、各ファイルのサイズを表示します',
+        }, ['サイズを取得']),
         el('button', { class: 'ghl-btn ghl-btn-primary', type: 'button', 'data-ghl-action': 'fetch' }),
         el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [
           'ツリーマップ',
@@ -212,8 +252,11 @@
       node = buildSummary();
       node.querySelector('[data-ghl-action="treemap"]')
         .addEventListener('click', () => handlers.onTreemap && handlers.onTreemap());
-      node.querySelector('[data-ghl-action="estimate"]')
-        .addEventListener('click', () => handlers.onFetchEstimate && handlers.onFetchEstimate());
+      node.querySelector('[data-ghl-action="sizes"]')
+        .addEventListener('click', () => handlers.onFetchSizes && handlers.onFetchSizes());
+      for (const b of node.querySelectorAll('[data-ghl-metric]')) {
+        b.addEventListener('click', () => handlers.onMetric && handlers.onMetric(b.dataset.ghlMetric));
+      }
       node.querySelector('[data-ghl-action="fetch"]')
         .addEventListener('click', () => handlers.onFetchExact && handlers.onFetchExact());
       node.querySelector('[data-ghl-action="pick-all"]')
@@ -230,11 +273,20 @@
     treemapButton.hidden = !settings.showTreemapButton;
     treemapButton.disabled = !state.index;
 
+    const m = metricOf(state);
+
+    // The metric toggle needs a tree to mean anything.
+    const toggle = node.querySelector('.ghl-metric');
+    toggle.hidden = !state.index;
+    for (const b of toggle.querySelectorAll('[data-ghl-metric]')) {
+      b.setAttribute('aria-pressed', String(b.dataset.ghlMetric === m.key));
+    }
+
     // Manual mode offers both buttons side by side while nothing has been
-    // fetched. The plain one costs a single request and paints estimates; the
+    // fetched. The plain one costs a single request and shows sizes; the
     // primary one goes on to fetch every file's count, so it carries the colour.
     const idle = state.status === 'idle';
-    node.querySelector('[data-ghl-action="estimate"]').hidden = !idle;
+    node.querySelector('[data-ghl-action="sizes"]').hidden = !idle;
 
     // Once the tree is in, the exact-count button names its price. With every
     // row unticked it stays visible but disabled, so the zero is explained.
@@ -272,28 +324,28 @@
     const stack = node.querySelector('.ghl-stack');
     const legend = node.querySelector('.ghl-legend');
 
-    const total = dirNode.total || 0;
-    const biggest = [...dirNode.children.values()].sort((a, b) => b.total - a.total)[0];
+    const total = m.value(dirNode);
+    const biggest = [...dirNode.children.values()].sort((a, b) => m.value(b) - m.value(a))[0];
 
     if (!state.index) {
       // Nothing fetched yet — the status line carries the message instead.
       stats.textContent = '—';
     } else {
-      const parts = [`${approxPrefix(dirNode)}${fmt(total)} 行`, `${fmt(dirNode.fileCount)} ファイル`];
+      const parts = [m.long(dirNode), `${fmt(dirNode.fileCount)} ファイル`];
       if (biggest && total > 0) {
-        const share = Math.round((biggest.total / total) * 100);
-        parts.push(`最大: ${biggest.name}${biggest.type === 'dir' ? '/' : ''} ${fmtCompact(biggest.total)} 行 (${share}%)`);
+        const share = Math.round((m.value(biggest) / total) * 100);
+        parts.push(`最大: ${biggest.name}${biggest.type === 'dir' ? '/' : ''} ${m.short(biggest)} (${share}%)`);
       }
       stats.textContent = parts.join('  ·  ');
     }
 
-    status.textContent = statusText(state);
+    status.textContent = statusText(state, m);
     status.dataset.tone = state.status === 'error' ? 'error' : (state.warning ? 'warn' : 'ok');
 
     // Stacked proportion bar
     stack.textContent = '';
     legend.textContent = '';
-    const segments = segmentsFor(dirNode, settings);
+    const segments = segmentsFor(dirNode, settings, m);
     for (const seg of segments) {
       const pct = total > 0 ? (seg.total / total) * 100 : 0;
       const bar = el('span', {
@@ -301,7 +353,7 @@
         'data-tone': seg.tone,
         'data-alt': seg.alt ? '1' : '0',
         style: { width: pct.toFixed(3) + '%' },
-        title: `${seg.label}\n${fmt(seg.total)} 行 (${pct.toFixed(1)}%)`,
+        title: `${seg.label}\n${m.fmtTotal(seg.total)} (${pct.toFixed(1)}%)`,
       });
       if (seg.node) {
         bar.addEventListener('click', () => {
@@ -332,16 +384,18 @@
     return String(value).replace(/["\\]/g, '\\$&');
   }
 
-  function statusText(state) {
+  function statusText(state, m) {
     if (state.status === 'error') return errorText(state.error);
     if (state.warning) return errorText(state.warning);
     if (state.status === 'loading') return '読み込み中…';
     if (state.status === 'idle') return '未取得';
-    if (state.status === 'estimated') return 'バイト数から推定中…';
-    if (state.status === 'pending') return 'バイト数からの推定値';
     if (state.status === 'refining') {
       return `実行数を取得中 ${state.progress.done}/${state.progress.total}`;
     }
+    // Estimates only exist for lines; sizes are exact from the start.
+    if (m && m.key === 'bytes') return state.truncated ? '巨大リポジトリのため一部のみ' : '';
+    if (state.status === 'estimated') return 'バイト数から推定中…';
+    if (state.status === 'pending') return 'バイト数からの推定値';
     if (state.truncated) return '巨大リポジトリのため一部推定';
     return '';
   }
@@ -386,7 +440,7 @@
 
   /* ------------------------------------------------------------- render */
 
-  const EMPTY_DIR = { children: new Map(), total: 0, fileCount: 0, allExact: true };
+  const EMPTY_DIR = { children: new Map(), total: 0, bytes: 0, fileCount: 0, allExact: true };
 
   function render(state, handlers) {
     const settings = state.settings;
@@ -416,13 +470,14 @@
       .map((r) => ({ row: r, node: state.index.get(r.path) }))
       .filter((x) => x.node);
 
-    const dirTotal = dirNode.total || 0;
-    const maxTotal = visible.reduce((m, x) => Math.max(m, x.node.total || 0), 0);
+    const m = metricOf(state);
+    const dirTotal = m.value(dirNode);
+    const maxTotal = visible.reduce((acc, x) => Math.max(acc, m.value(x.node)), 0);
 
     for (const r of rows) {
       renderRow(r, state.index.get(r.path), dirTotal, maxTotal, state, handlers);
     }
   }
 
-  GHL.inline = { render, clearRows, removeSummary, severity, errorText, SUMMARY_ID };
+  GHL.inline = { render, clearRows, removeSummary, severity, errorText, METRICS, metricOf, SUMMARY_ID };
 })(globalThis.GHL);

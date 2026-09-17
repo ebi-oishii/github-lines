@@ -163,6 +163,7 @@
       index: null,
       learner: patterns.createRatioLearner(),
       progress: { done: 0, total: 0 },
+      metric: 'lines',     // what the UI measures by: 'lines' | 'bytes'
       pending: 0,          // files a manual fetch would request
       pickable: new Map(), // row path -> files still to fetch under it (manual mode's checkboxes)
       deselected: new Set(), // row paths the user has unticked
@@ -429,6 +430,8 @@
         if (cancelled || running) return running;
         const pass = state.status === 'idle' ? loadTree(true) : (state.index ? runExactPass() : null);
         if (!pass) return null;
+        // Asking for line counts is asking to see them.
+        state.metric = 'lines';
         running = pass
           .catch((err) => {
             state.warning = { error: 'exception', message: String(err && err.message || err) };
@@ -437,11 +440,19 @@
           .finally(() => { running = null; });
         return running;
       },
-      /* Manual mode: fetch the tree and paint the estimates. The status leaves
-         idle synchronously, so a double click is harmless. */
-      fetchEstimate() {
+      /* Manual mode: fetch the tree and show sizes. The status leaves idle
+         synchronously, so a double click is harmless. */
+      fetchSizes() {
         if (cancelled || state.status !== 'idle') return;
+        state.metric = 'bytes';
         loadTree(false).catch(fail);
+      },
+      /* Which quantity the UI shows. Costs nothing: both come from what is
+         already loaded. */
+      setMetric(metric) {
+        if (cancelled || (metric !== 'lines' && metric !== 'bytes')) return;
+        state.metric = metric;
+        emitNow();
       },
       /* Manual mode: tick or untick a row. A directory row stands for every
          file under it. */

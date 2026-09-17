@@ -193,6 +193,33 @@ html[data-color-mode='dark'] {
 }
 .ghl-icon svg { width: 100%; height: 100%; }
 
+/* 行数 | サイズ — what the bars measure. */
+.ghl-metric {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--ghl-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ghl-metric[hidden] { display: none; }
+.ghl-metric button {
+  padding: 0 8px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ghl-fg-muted);
+  background: var(--ghl-surface);
+  border: 0;
+  cursor: pointer;
+}
+.ghl-metric button + button { border-left: 1px solid var(--ghl-border); }
+.ghl-metric button:hover { color: var(--ghl-fg); }
+.ghl-metric button[aria-pressed='true'] {
+  color: var(--ghl-fg);
+  background: var(--ghl-track);
+  font-weight: 600;
+}
+
 .ghl-summary-stats {
   font-variant-numeric: tabular-nums;
   overflow: hidden;
