@@ -162,6 +162,10 @@ try {
       ps.filter((p) => p.offsetParent !== null).length
     );
     assert(idlePicks > 0, `checkboxes are up before anything is fetched (${idlePicks} visible)`);
+    // GitHub fills the latest-commit box a beat after the table; the head
+    // follows it in on the next render.
+    const head = await page.waitForSelector('[data-testid="latest-commit"] > .ghl-col-head', { timeout: 15000 }).catch(() => null);
+    assert(!!head, 'the icon heads the checkbox column from the latest-commit box');
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-idle.png'), fullPage: false });
     await page.click('#ghl-summary [data-ghl-action="sizes"]');
     await page.waitForSelector('.ghl-cell', { state: 'attached', timeout: 30000 });

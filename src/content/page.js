@@ -237,6 +237,11 @@
     return rows;
   }
 
+  /* The "latest commit" box between the summary strip and the table. */
+  function findCommitBox() {
+    return document.querySelector('[data-testid="latest-commit"]');
+  }
+
   /* The summary strip goes above the file table, inside the same column. */
   function findSummaryAnchor() {
     const container = findListContainer();
@@ -252,6 +257,7 @@
     getContext,
     findListContainer,
     findRows,
+    findCommitBox,
     findSummaryAnchor,
   };
 })(globalThis.GHL);

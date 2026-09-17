@@ -116,9 +116,51 @@ html[data-color-mode='dark'] {
   cursor: pointer;
   accent-color: var(--ghl-ok);
 }
-.ghl-row-pick { margin-right: 8px; }
+.ghl-row-pick { margin-right: 32px; }
 .ghl-row-pick[data-pick='none'] { display: none; }
 .ghl-row-pick[data-pick='blank'] { visibility: hidden; }
+
+/* The checkbox column gets a vertical rule between the checkbox and GitHub's
+   file icon (13px box, 16px, rule, 16px, icon — GitHub's own cell padding), drawn on every row that shows
+   a checkbox — including `blank` rows, so the rule stays continuous. It
+   overshoots the cell by a pixel to cover the row border. */
+.react-directory-filename-column:has(> .ghl-row-pick:not([data-pick='none'])) {
+  position: relative;
+}
+.react-directory-filename-column:has(> .ghl-row-pick:not([data-pick='none']))::before {
+  content: '';
+  position: absolute;
+  left: 29px;
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  background: var(--ghl-border);
+  pointer-events: none;
+}
+
+/* The column's head: our icon in the latest-commit box, sitting over the
+   checkboxes (the box is inset 4px from the table cells), with the same rule
+   running the box's full height. It pushes the avatar to where the file icons
+   start. */
+.ghl-col-head {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 49px;
+  padding-left: 4px;
+}
+.ghl-col-head .ghl-icon { width: 13px; height: 13px; }
+.ghl-col-head::after {
+  content: '';
+  position: absolute;
+  left: 33px;
+  top: -8px;
+  bottom: -8px;
+  width: 1px;
+  background: var(--ghl-border);
+}
 
 /* The strip's all-rows toggle. */
 .ghl-pick-all {

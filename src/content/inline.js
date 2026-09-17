@@ -176,7 +176,23 @@
   }
 
   function clearRows() {
-    for (const n of document.querySelectorAll(`.${CELL_CLASS}, .${PICK_CLASS}`)) n.remove();
+    for (const n of document.querySelectorAll(`.${CELL_CLASS}, .${PICK_CLASS}, .${COL_HEAD_CLASS}`)) n.remove();
+  }
+
+  /* The icon at the head of the checkbox column, in GitHub's latest-commit
+     box just above the table, so the column reads as ours. The vertical rule
+     between the checkboxes and GitHub's file icons is CSS on the rows. */
+  const COL_HEAD_CLASS = 'ghl-col-head';
+
+  function renderColumnHead(show) {
+    let head = document.querySelector(`.${COL_HEAD_CLASS}`);
+    if (!show) { if (head) head.remove(); return; }
+    const box = GHL.page.findCommitBox();
+    if (!box) return;
+    if (!head) {
+      head = el('span', { class: COL_HEAD_CLASS, title: 'GitHub Lines: 「行数を取得」の対象' }, [icon()]);
+    }
+    if (box.firstChild !== head) box.insertBefore(head, box.firstChild);
   }
 
   /* ---------------------------------------------------------- summary bar */
@@ -477,6 +493,8 @@
     const ctx = state.ctx;
     const dirNode = state.index && (state.index.get(ctx.path) || state.root);
     const rows = GHL.page.findRows(ctx);
+    const picking = settings.showInlineBars && (state.status === 'idle' || state.status === 'pending');
+    renderColumnHead(picking);
 
     // Manual mode, nothing fetched yet. The rows are already on screen, so the
     // checkboxes go up now: what to fetch is decided before anything is spent.

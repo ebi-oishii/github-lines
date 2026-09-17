@@ -933,6 +933,14 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   await settings.set({ exactLinesMode: 'manual' });
   const before = transportCalls.length;
 
+  // The fixture predates GitHub's latest-commit box; stand one in so the
+  // column head has somewhere to go.
+  const table = document.querySelector('table[aria-labelledby="folders-and-files"]');
+  const box = document.createElement('div');
+  box.setAttribute('data-testid', 'latest-commit');
+  box.innerHTML = '<div class="avatar">author</div>';
+  table.parentElement.insertBefore(box, table);
+
   navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
   await waitFor(() => { const b = sizesButton(); return b && !b.hidden; }, 6000, 'the sizes button');
 
@@ -943,6 +951,10 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   assert(idlePicks.every((p) => p.checked), 'ticked by default');
   const host = idlePicks[0].parentElement;
   assert(host.firstElementChild === idlePicks[0], 'the checkbox leads the name cell');
+  const head = document.querySelector('.ghl-col-head');
+  assert(head && head.parentElement.dataset.testid === 'latest-commit' && head.parentElement.firstChild === head,
+    'the icon heads the column from the latest-commit box');
+  assert(head.querySelector('.ghl-icon svg'), 'and it is the extension icon');
   assert(!document.querySelector('.ghl-pick-all').hidden, 'the all-rows toggle is up too');
   assert(/サイズを取得/.test(sizesButton().textContent), `the plain button is labelled (${sizesButton().textContent})`);
   assert(!fetchButton().hidden && !fetchButton().disabled, 'the exact-count button sits next to it');
@@ -1046,6 +1058,7 @@ await domCheckAsync('rows unticked before anything is fetched are left out of a 
   assert(sizesButton().hidden, 'the sizes button is gone once the tree is in');
   assert(!fetchButton().hidden && fetchButton().disabled, 'the unticked leftover keeps the button up, disabled');
   assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'asking for counts shows counts');
+  assert(document.querySelector('.ghl-col-head'), 'the column head stays while checkboxes are offered');
 });
 
 await domCheckAsync('manual mode puts a ticked checkbox on every row with something to fetch', async () => {
@@ -1145,6 +1158,8 @@ await domCheckAsync('off mode never fetches and offers no button', async () => {
   const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 0, 'nothing fetched');
   assert(document.querySelector('[data-ghl-action="fetch"]').hidden, 'no button offered');
+  assert(!document.querySelector('.ghl-col-head'), 'no column head without checkboxes');
+  assert(!document.querySelector('.ghl-row-pick:not([data-pick="none"])'), 'no checkboxes outside manual mode');
 
   await settings.set({ exactLinesMode: 'auto' });
 });
