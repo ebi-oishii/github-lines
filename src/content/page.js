@@ -238,11 +238,21 @@
   }
 
   /* The "Name" header cells of the file table — one per breakpoint, like the
-     rows' name cells. Older layouts have no header row and return none. */
+     rows' name cells. Only cells that actually take up space: the repository
+     root keeps its header row in the DOM at zero height, and older layouts
+     have none at all. */
   function findNameHeaders() {
     const container = findListContainer();
     if (!container) return [];
-    return [...container.querySelectorAll('thead th')].filter((th) => th.textContent.trim() === 'Name');
+    return [...container.querySelectorAll('thead th')].filter(
+      (th) => th.textContent.trim() === 'Name' && th.getBoundingClientRect().height > 0
+    );
+  }
+
+  /* The "latest commit" box above the table — on the repository root it sits
+     directly on top of the rows, where the header row would be. */
+  function findCommitBox() {
+    return document.querySelector('[data-testid="latest-commit"]');
   }
 
   /* The summary strip goes above the file table, inside the same column. */
@@ -261,6 +271,7 @@
     findListContainer,
     findRows,
     findNameHeaders,
+    findCommitBox,
     findSummaryAnchor,
   };
 })(globalThis.GHL);

@@ -385,6 +385,18 @@ try {
     await page.screenshot({ path: path.join(OUT_DIR, 'subdirectory.png') });
   }
 
+  // The repository root keeps its header row at zero height; the column head
+  // must land in the latest-commit box there, not on top of the first row.
+  if (MANUAL) {
+    const root = TARGET_URL.split('/').slice(0, 5).join('/');
+    await page.goto(root, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#ghl-summary [data-ghl-action="fetch"]:visible', { timeout: 30000 });
+    const home = await page.waitForSelector('[data-testid="latest-commit"] > .ghl-col-head', { timeout: 15000 }).catch(() => null);
+    assert(!!home, 'on the repository root the head sits in the latest-commit box');
+    assert((await page.$$('thead th > .ghl-col-head')).length === 0, 'and not in the collapsed header row');
+    await page.screenshot({ path: path.join(OUT_DIR, 'manual-root.png'), fullPage: false });
+  }
+
   const realErrors = consoleErrors.filter(
     (e) => !/net::|Failed to load resource|favicon|Content Security Policy/i.test(e)
   );

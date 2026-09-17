@@ -140,38 +140,62 @@ html[data-color-mode='dark'] {
   pointer-events: none;
 }
 
-/* The column's head in the table's "Name" header cell: the icon stacked over
-   the all-rows checkbox, exactly over the rows' checkboxes (the header cell
-   and the name cells share GitHub's 16px padding). It is taken out of the
-   cell's flow and centred in it, so the header row keeps its own height and
-   its label never wraps; the cell's padding makes room instead, pushing
-   "Name" to where the file icons start. The rule runs the header's full
-   height. */
-th:has(> .ghl-col-head) {
-  position: relative;
-  /* GitHub sets the cell's padding from its own stylesheet, which can load
-     after ours at equal specificity — hence the !important. */
-  padding-left: 61px !important;
-}
+/* The column's head: the icon stacked over the all-rows checkbox, placed
+   exactly over the rows' checkboxes, with the rule between checkbox and file
+   icon running its home's full height. Two homes, styled by context. */
 .ghl-col-head {
-  position: absolute;
-  left: 16px;
-  top: 50%;
-  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 1px;
-  width: 45px;
+  box-sizing: border-box;
 }
 .ghl-col-head .ghl-icon { width: 14px; height: 14px; }
 .ghl-col-head .ghl-pick { margin: 0; }
+
+/* In the "Name" header cell (the header cell and the name cells share
+   GitHub's 16px padding). Taken out of the cell's flow and centred, so the
+   header row keeps its own height and its label never wraps; the cell's
+   padding makes the room instead, pushing "Name" to where the file icons
+   start. GitHub sets that padding from a stylesheet that can load after ours
+   at equal specificity — hence the !important. */
+th:has(> .ghl-col-head) {
+  position: relative;
+  padding-left: 61px !important;
+}
+th > .ghl-col-head {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 45px;
+}
 th:has(> .ghl-col-head)::after {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
   left: 45px;
+  width: 1px;
+  background: var(--ghl-border);
+}
+
+/* In the latest-commit box (the repository root), which is inset 4px from
+   the table cells. In flow, pushing the avatar to where the file icons
+   start. */
+[data-testid='latest-commit'] > .ghl-col-head {
+  position: relative;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 49px;
+  padding-left: 4px;
+}
+[data-testid='latest-commit'] > .ghl-col-head::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  left: 33px;
   width: 1px;
   background: var(--ghl-border);
 }

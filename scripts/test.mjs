@@ -76,6 +76,13 @@ function installDom(html, url) {
   });
   globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
   globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+  // jsdom lays nothing out. Table cells report a height, since the column head
+  // asks for one — unless the row is marked collapsed, as GitHub's repository
+  // root renders its header row.
+  w.HTMLTableCellElement.prototype.getBoundingClientRect = function () {
+    const collapsed = this.closest('thead')?.hasAttribute('data-test-collapsed');
+    return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: collapsed ? 0 : 100, height: collapsed ? 0 : 40 };
+  };
   return dom;
 }
 
@@ -1163,6 +1170,26 @@ await domCheckAsync("the column head's checkbox ticks or unticks every row at on
 
   all.click();
   await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'back to all ticked');
+});
+
+await domCheckAsync('on the repository root, where the header row has no height, the head moves to the latest-commit box', async () => {
+  const table = document.querySelector('table[aria-labelledby="folders-and-files"]');
+  table.tHead.setAttribute('data-test-collapsed', '');
+  const box = document.createElement('div');
+  box.setAttribute('data-testid', 'latest-commit');
+  box.innerHTML = '<div class="avatar">author</div>';
+  table.parentElement.insertBefore(box, table);
+
+  tick('source/core', false);
+  await waitFor(() => box.firstElementChild?.classList.contains('ghl-col-head'), 3000, 'the head to move into the box');
+  assertEqual(document.querySelectorAll('.ghl-col-head').length, 1, 'and to leave the header cells');
+  assert(document.querySelector('#ghl-summary .ghl-pick-all').hidden, "the strip's copy stays hidden");
+  assert(box.querySelector('[data-ghl-action="pick-all"]').indeterminate, 'mirroring the rows');
+
+  box.remove();
+  table.tHead.removeAttribute('data-test-collapsed');
+  tick('source/core', true);
+  await waitFor(() => document.querySelectorAll('thead th > .ghl-col-head').length === 2, 3000, 'the head to return to the header cells');
 });
 
 await domCheckAsync('without a table header the all-rows checkbox falls back to the strip', async () => {
