@@ -982,7 +982,8 @@ await domCheckAsync('pressing サイズを取得 fetches the tree and shows size
   assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 1, 'exactly one tree request');
   const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 0, 'no line counts fetched without being asked');
-  assert(fetchButton().hidden, 'nothing left to fetch for sizes, so no button');
+  assert(!fetchButton().hidden && fetchButton().disabled && /取得済み/.test(fetchButton().textContent),
+    `nothing left to fetch for sizes: the button stays put, disabled, as 取得済み (${fetchButton().textContent})`);
 
   const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
   assertEqual(cell.querySelector('.ghl-num').textContent, '117.2 KB', 'the row shows its size');
@@ -1029,7 +1030,8 @@ await domCheckAsync('pressing the button fetches, and the estimate becomes exact
   assertEqual(fetched.length, 1, 'exactly the queued file was fetched');
 
   const button = document.querySelector('[data-ghl-action="fetch"]');
-  assert(button.hidden, 'the button goes away once there is nothing left to fetch');
+  assert(!button.hidden && button.disabled && /取得済み/.test(button.textContent),
+    `the button stays put, disabled, as 取得済み (${button.textContent})`);
   const pick = rowPick('source/core/options.ts');
   assert(pick && pick.dataset.pick === 'on' && !pick.disabled && pick.checked, 'the checkbox stays, live');
   const headAll = document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]');

@@ -323,10 +323,8 @@ try {
     console.log(`\nmanual fetch: "${label.trim()}" -> ${spent} requests`);
     assert(spent > 0, `pressing the button fetched (${spent} requests)`);
     assert(after.some((n) => /^[\d,]+$/.test(n)), 'estimates were replaced with exact counts');
-    assert(
-      await page.$('#ghl-summary [data-ghl-action="fetch"]:visible') === null,
-      'the button goes away once there is nothing left to fetch'
-    );
+    const doneLabel = await page.$eval('#ghl-summary [data-ghl-action="fetch"]', (b) => `${b.disabled ? 'disabled ' : ''}${b.textContent}`);
+    assert(/^disabled 取得済み/.test(doneLabel), `the button stays put, disabled, as 取得済み (${doneLabel})`);
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-mode.png') });
   }
 

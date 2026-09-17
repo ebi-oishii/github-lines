@@ -388,34 +388,47 @@
 
     // Manual mode's one button fetches whichever the toggle says. Sizes cost a
     // single request, so that reading is plain; lines cost one per file and
-    // carry the colour. Once the tree is in the sizes are known, so the button
-    // stays only for lines and names its price. With every row unticked it
-    // stays visible but disabled, so the zero is explained.
+    // carry the colour. It never leaves the strip once the view is up, so the
+    // controls beside it never move: while a fetch runs it reads 取得中…, and
+    // with nothing left to fetch it sits disabled as 取得済み.
     const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
     const wantsLines = m.key === 'lines';
     const none = pickKeys.length > 0 &&
       pickKeys.every((k) => state.deselected && state.deselected.has(k));
-    fetchButton.classList.toggle('ghl-btn-primary', wantsLines);
-    fetchButton.hidden = !(idle || (state.status === 'pending' && wantsLines));
+    const busy = state.status === 'loading' || state.status === 'estimated' || state.status === 'refining';
+    let label = '取得済み';
+    let title = wantsLines ? 'チェックした行の行数は取得済みです' : 'サイズは取得済みです';
+    let disabled = true;
+    let primary = false;
     if (idle && !wantsLines) {
-      fetchButton.disabled = false;
-      fetchButton.textContent = 'サイズを取得';
-      fetchButton.title = 'ファイル一覧を 1 リクエストで取得し、各ファイルのサイズを表示します';
+      label = 'サイズを取得';
+      title = 'ファイル一覧を 1 リクエストで取得し、各ファイルのサイズを表示します';
+      disabled = false;
     } else if (idle) {
-      fetchButton.disabled = none;
-      fetchButton.textContent = '行数を取得';
-      fetchButton.title = none
+      label = '行数を取得';
+      primary = true;
+      disabled = none;
+      title = none
         ? '取得する行にチェックを入れてください'
         : 'ファイル一覧を取得し、続けてチェックした行の各ファイルの行数を GitHub から取得します\n' +
           '（ファイル数と同じだけ API リクエストを使います）';
-    } else if (!fetchButton.hidden) {
-      fetchButton.disabled = state.pending === 0;
-      fetchButton.textContent = `行数を取得（${fmt(state.pending)}）`;
-      fetchButton.title = state.pending
+    } else if (busy) {
+      label = '取得中…';
+      title = '';
+    } else if (state.status === 'pending' && wantsLines) {
+      label = `行数を取得（${fmt(state.pending)}）`;
+      primary = true;
+      disabled = state.pending === 0;
+      title = state.pending
         ? `${fmt(state.pending)} ファイルの行数を GitHub から取得します\n` +
           '（同じ数だけ API リクエストを使います。取得済みのファイルは含みません）'
         : '取得する行にチェックを入れてください';
     }
+    fetchButton.hidden = settings.exactLinesMode !== 'manual' || state.status === 'error';
+    fetchButton.classList.toggle('ghl-btn-primary', primary);
+    fetchButton.disabled = disabled;
+    fetchButton.textContent = label;
+    fetchButton.title = title;
 
     // The strip's copy of the all-rows checkbox, for pages where the column
     // head could not be placed.
