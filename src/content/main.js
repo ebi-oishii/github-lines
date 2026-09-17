@@ -18,6 +18,9 @@
         GHL.treemap.open(current.state);
       }
     },
+    onFetchEstimate() {
+      if (current && current.handle) current.handle.fetchEstimate();
+    },
     onFetchExact() {
       if (current && current.handle) current.handle.fetchExact();
     },

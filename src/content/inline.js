@@ -189,6 +189,10 @@
           el('input', { class: 'ghl-pick', type: 'checkbox', 'data-ghl-action': 'pick-all' }),
           'すべて',
         ]),
+        el('button', {
+          class: 'ghl-btn', type: 'button', 'data-ghl-action': 'estimate',
+          title: 'ファイル一覧を 1 リクエストで取得し、バイト数から行数を推定します',
+        }, ['概算を取得']),
         el('button', { class: 'ghl-btn ghl-btn-primary', type: 'button', 'data-ghl-action': 'fetch' }),
         el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [
           'ツリーマップ',
@@ -208,6 +212,8 @@
       node = buildSummary();
       node.querySelector('[data-ghl-action="treemap"]')
         .addEventListener('click', () => handlers.onTreemap && handlers.onTreemap());
+      node.querySelector('[data-ghl-action="estimate"]')
+        .addEventListener('click', () => handlers.onFetchEstimate && handlers.onFetchEstimate());
       node.querySelector('[data-ghl-action="fetch"]')
         .addEventListener('click', () => handlers.onFetchExact && handlers.onFetchExact());
       node.querySelector('[data-ghl-action="pick-all"]')
@@ -224,12 +230,22 @@
     treemapButton.hidden = !settings.showTreemapButton;
     treemapButton.disabled = !state.index;
 
-    // Manual mode: nothing is fetched until this is pressed. With every row
-    // unticked it stays visible but disabled, so the zero is explained.
+    // Manual mode offers both buttons side by side while nothing has been
+    // fetched. The plain one costs a single request and paints estimates; the
+    // primary one goes on to fetch every file's count, so it carries the colour.
+    const idle = state.status === 'idle';
+    node.querySelector('[data-ghl-action="estimate"]').hidden = !idle;
+
+    // Once the tree is in, the exact-count button names its price. With every
+    // row unticked it stays visible but disabled, so the zero is explained.
     const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
-    const offerFetch = state.status === 'pending';
-    fetchButton.hidden = !offerFetch;
-    if (offerFetch) {
+    fetchButton.hidden = !(idle || state.status === 'pending');
+    if (idle) {
+      fetchButton.disabled = false;
+      fetchButton.textContent = '行数を取得';
+      fetchButton.title = 'ファイル一覧を取得し、続けて各ファイルの行数を GitHub から取得します\n' +
+        '（ファイル数と同じだけ API リクエストを使います）';
+    } else if (state.status === 'pending') {
       fetchButton.disabled = state.pending === 0;
       fetchButton.textContent = `行数を取得（${fmt(state.pending)}）`;
       fetchButton.title = state.pending
@@ -241,8 +257,9 @@
     // The strip's own checkbox mirrors the rows: ticked when every row is,
     // indeterminate when only some are. Clicking it takes all rows with it.
     const pickAll = node.querySelector('.ghl-pick-all');
-    pickAll.hidden = !offerFetch;
-    if (offerFetch) {
+    const picking = state.status === 'pending';
+    pickAll.hidden = !picking;
+    if (picking) {
       const keys = [...(state.pickable ? state.pickable.keys() : [])];
       const selected = keys.filter((k) => !(state.deselected && state.deselected.has(k))).length;
       const box = pickAll.querySelector('input');
@@ -319,6 +336,7 @@
     if (state.status === 'error') return errorText(state.error);
     if (state.warning) return errorText(state.warning);
     if (state.status === 'loading') return '読み込み中…';
+    if (state.status === 'idle') return '未取得';
     if (state.status === 'estimated') return 'バイト数から推定中…';
     if (state.status === 'pending') return 'バイト数からの推定値';
     if (state.status === 'refining') {

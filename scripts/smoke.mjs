@@ -153,6 +153,14 @@ try {
   console.log(`opening ${TARGET_URL}`);
   await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
 
+  // Manual mode fetches nothing until asked; the estimate button is step one.
+  if (MANUAL) {
+    await page.waitForSelector('#ghl-summary [data-ghl-action="estimate"]:visible', { timeout: 30000 });
+    assert(apiRequests.length === 0, `nothing is requested before 概算を取得 is pressed (${apiRequests.length})`);
+    await page.screenshot({ path: path.join(OUT_DIR, 'manual-idle.png'), fullPage: false });
+    await page.click('#ghl-summary [data-ghl-action="estimate"]');
+  }
+
   // Each row carries a small-screen and a large-screen cell and only one is
   // visible, so wait on attachment rather than visibility.
   await page.waitForSelector('.ghl-cell', { state: 'attached', timeout: 30000 });
@@ -285,6 +293,10 @@ try {
     const dirPath = href.split('/main/')[1];
     await subdir.click();
     await page.waitForFunction((h) => location.pathname === h, href, { timeout: 15000 });
+    if (MANUAL) {
+      await page.waitForSelector('#ghl-summary [data-ghl-action="estimate"]:visible', { timeout: 15000 });
+      await page.click('#ghl-summary [data-ghl-action="estimate"]');
+    }
 
     // Wait for the swap to complete rather than sampling mid-flight: the old
     // directory's cells stay attached until teardown runs.

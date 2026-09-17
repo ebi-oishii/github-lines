@@ -912,19 +912,49 @@ await domCheckAsync('navigating back up rebuilds the parent view', async () => {
   assert(!paths.some((p) => p.startsWith('source/as-promise/')), 'stale child rows are gone');
 });
 
-await domCheckAsync('manual mode paints estimates and waits for the button', async () => {
+const fetchButton = () => document.querySelector('[data-ghl-action="fetch"]');
+const estimateButton = () => document.querySelector('[data-ghl-action="estimate"]');
+
+async function pressEstimate() {
+  await waitFor(() => { const b = estimateButton(); return b && !b.hidden; }, 6000, 'the estimate button');
+  estimateButton().click();
+}
+
+function tick(path, on) {
+  const pick = document.querySelector(`.ghl-cell[data-ghl-path="${path}"] .ghl-pick`);
+  pick.checked = on;
+  pick.dispatchEvent(new currentDom.window.Event('change', { bubbles: true }));
+}
+
+await domCheckAsync('manual mode fetches nothing — not even the tree — until asked', async () => {
   await settings.set({ exactLinesMode: 'manual' });
   const before = transportCalls.length;
 
   navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+  await waitFor(() => { const b = estimateButton(); return b && !b.hidden; }, 6000, 'the estimate button');
+
+  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 0, 'no tree request on open');
+  assertEqual(renderedPaths().length, 0, 'no bars yet');
+  assert(!fetchButton().hidden && !fetchButton().disabled, 'the exact-count button sits next to it');
+  assert(!/\d/.test(fetchButton().textContent), `no count before the tree is known (${fetchButton().textContent})`);
+  assert(!estimateButton().classList.contains('ghl-btn-primary'), 'the estimate button is the plain one');
+  const status = document.querySelector('.ghl-summary-status').textContent;
+  assert(/未取得/.test(status), `status says nothing has been fetched (${status})`);
+});
+
+await domCheckAsync('pressing 概算を取得 fetches the tree, paints estimates, and waits for the next button', async () => {
+  const before = transportCalls.length;
+  estimateButton().click();
   await waitFor(
     () => renderedPaths().includes('source/core/options.ts'),
     6000,
     'bars for the new directory'
   );
 
+  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE').length, 1, 'exactly one tree request');
   const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 0, 'no line counts fetched without being asked');
+  assert(estimateButton().hidden, 'the estimate button goes away once the tree is in');
 
   const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
   assert(cell.querySelector('.ghl-num').textContent.startsWith('~'), 'shown as an estimate');
@@ -955,13 +985,28 @@ await domCheckAsync('pressing the button fetches, and the estimate becomes exact
   assert(button.hidden, 'the button goes away once there is nothing left to fetch');
 });
 
-const fetchButton = () => document.querySelector('[data-ghl-action="fetch"]');
+await domCheckAsync('pressing 行数を取得 straight away fetches the tree and the counts in one go', async () => {
+  const before = transportCalls.length;
+  navigateDom(currentDom, 'source/as-promise', [
+    { name: 'index.ts', type: 'file' },
+    { name: 'types.ts', type: 'file' },
+  ]);
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden && !estimateButton().hidden; }, 6000, 'both buttons');
+  fetchButton().click();
 
-function tick(path, on) {
-  const pick = document.querySelector(`.ghl-cell[data-ghl-path="${path}"] .ghl-pick`);
-  pick.checked = on;
-  pick.dispatchEvent(new currentDom.window.Event('change', { bubbles: true }));
-}
+  await waitFor(
+    () => {
+      const cells = [...document.querySelectorAll('.ghl-cell[data-ghl-path^="source/as-promise/"] .ghl-num')];
+      return cells.length > 0 && cells.every((n) => !n.textContent.startsWith('~'));
+    },
+    6000,
+    'exact counts without a separate estimate step'
+  );
+  const types = transportCalls.slice(before).map((c) => c.type);
+  assertEqual(types.filter((t) => t === 'TREE').length, 1, 'one tree request');
+  assertEqual(types.filter((t) => t === 'LINES').length, 2, 'both files fetched');
+  assert(fetchButton().hidden && estimateButton().hidden, 'nothing left to offer');
+});
 
 await domCheckAsync('manual mode puts a ticked checkbox on every row with something to fetch', async () => {
   navigateDom(currentDom, 'source', [
@@ -971,6 +1016,7 @@ await domCheckAsync('manual mode puts a ticked checkbox on every row with someth
     { name: 'index.ts', type: 'file' },
     { name: 'types.ts', type: 'file' },
   ]);
+  await pressEstimate();
   await waitFor(
     () => fetchButton() && !fetchButton().hidden && renderedPaths().includes('source/create.ts'),
     6000,

@@ -152,7 +152,8 @@
 
     const state = {
       ctx,
-      // loading | estimated | pending | refining | ready | error
+      // loading | idle | estimated | pending | refining | ready | error
+      //   idle    = manual mode, nothing fetched yet, waiting for the estimate button
       //   pending = manual mode, waiting for the user to ask for exact counts
       status: 'loading',
       error: null,
@@ -297,12 +298,14 @@
       emitNow();
     }
 
-    (async () => {
-      const settings = await GHL.settings.get();
-      state.settings = settings;
-      if (cancelled) return;
+    /* Everything from the tree request on: one API request, then estimates,
+       then exact counts — in automatic mode, or when manual mode's "行数を取得"
+       was pressed straight away (`thenExact`). */
+    async function loadTree(thenExact) {
+      const settings = state.settings;
       // Paint the strip before the network call, so a slow or wedged request is
       // visible as "loading" rather than as a blank page.
+      state.status = 'loading';
       emitNow();
 
       const res = await util.send(
@@ -390,32 +393,55 @@
         return;
       }
 
-      if (settings.exactLinesMode === 'manual') {
+      if (settings.exactLinesMode === 'manual' && !thenExact) {
         settle();
         emitNow();
         return;
       }
 
       await runExactPass();
-    })().catch((err) => {
+    }
+
+    function fail(err) {
       if (cancelled) return;
       state.status = 'error';
       state.error = { error: 'exception', message: String(err && err.message || err) };
       emitNow();
-    });
+    }
+
+    (async () => {
+      state.settings = await GHL.settings.get();
+      if (cancelled) return;
+      // Manual mode fetches nothing until asked — not even the tree.
+      if (state.settings.exactLinesMode === 'manual') {
+        state.status = 'idle';
+        emitNow();
+        return;
+      }
+      await loadTree(false);
+    })().catch(fail);
 
     return {
       cancel() { cancelled = true; },
-      /* Manual mode: run the exact pass now. Safe to call repeatedly. */
+      /* Manual mode: run the exact pass now. From idle it fetches the tree
+         first, in the same press. Safe to call repeatedly. */
       fetchExact() {
-        if (cancelled || !state.index || running) return running;
-        running = runExactPass()
+        if (cancelled || running) return running;
+        const pass = state.status === 'idle' ? loadTree(true) : (state.index ? runExactPass() : null);
+        if (!pass) return null;
+        running = pass
           .catch((err) => {
             state.warning = { error: 'exception', message: String(err && err.message || err) };
             emitNow();
           })
           .finally(() => { running = null; });
         return running;
+      },
+      /* Manual mode: fetch the tree and paint the estimates. The status leaves
+         idle synchronously, so a double click is harmless. */
+      fetchEstimate() {
+        if (cancelled || state.status !== 'idle') return;
+        loadTree(false).catch(fail);
       },
       /* Manual mode: tick or untick a row. A directory row stands for every
          file under it. */
