@@ -133,30 +133,44 @@
     return !node.excluded && !node.exact && node.size > 0 && node.size <= maxBytes;
   }
 
+  /* Returns `{ rules, complete }`. Incomplete means some rule could not be
+     read, so files this repository declares generated are about to be counted
+     as if they were not — worth saying, and worth reading again when the reader
+     next asks for anything. */
   async function loadGitattributes(ctx, index, settings, cacheOnly, isCancelled) {
-    if (!settings.respectGitattributes) return [];
+    if (!settings.respectGitattributes) return { rules: [], complete: true };
 
     const files = [];
     for (const node of index.values()) {
       if (node.type === 'file' && node.name === '.gitattributes') files.push(node);
     }
-    if (!files.length) return [];
+    if (!files.length) return { rules: [], complete: true };
 
     // Root first, so deeper files' rules take precedence.
     files.sort((a, b) => a.path.split('/').length - b.path.split('/').length);
 
     const rules = [];
+    let complete = files.length <= 20;
+    let error = files.length > 20 ? { error: 'attributes_limit' } : null;
+
     for (const node of files.slice(0, 20)) {
-      if (isCancelled()) return rules;
+      if (isCancelled()) return { rules, complete: false, error };
       const res = await util.send({
         type: 'BLOB_TEXT', owner: ctx.owner, repo: ctx.repo, sha: node.sha, cacheOnly,
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        complete = false;
+        // Not being in the cache is not a failure to report — it is what a
+        // cache-only pass is for. Anything else is.
+        if (res.error !== 'not_cached') error = res;
+        if (FATAL_ERRORS.has(res.error)) break;
+        continue;
+      }
       const slash = node.path.lastIndexOf('/');
       const baseDir = slash === -1 ? '' : node.path.slice(0, slash);
       rules.push(...patterns.parseGitattributes(res.text, baseDir));
     }
-    return rules;
+    return { rules, complete, error };
   }
 
   /* Returns a handle: { cancel() }. `onUpdate(state)` fires repeatedly as the
@@ -178,6 +192,11 @@
       learner: patterns.createRatioLearner(),
       progress: { done: 0, total: 0 },
       metric: 'lines',     // what the UI measures by: 'lines' | 'bytes'
+      /* Something the view is built on could not be read: an exclusion rule, or
+         the listing of the directory on screen. The next press re-reads it
+         rather than counting on top of a picture known to be wrong. */
+      needsMetadata: false,
+      missingDirectory: false,
       pending: 0,          // files a manual fetch would request
       rate: null,          // what is left of the API budget, once anything is spent
       pickable: new Map(), // row path -> files still to fetch under it (manual mode's checkboxes)
@@ -340,8 +359,11 @@
     async function loadTree(thenExact, cacheOnly) {
       const settings = state.settings;
       // Paint the strip before the network call, so a slow or wedged request is
-      // visible as "loading" rather than as a blank page.
+      // visible as "loading" rather than as a blank page. Whatever went wrong
+      // last time is being tried again, so it is no longer what is on screen.
       state.status = 'loading';
+      state.error = null;
+      state.warning = null;
       emitNow();
 
       const res = await util.send(
@@ -377,10 +399,15 @@
         if (dirRes.ok) {
           const prefix = ctx.path ? `${ctx.path}/` : '';
           const known = new Set(entries.map((e) => e.path));
+          const extra = [];
           for (const e of dirRes.entries) {
             const full = prefix + e.path;
-            if (!known.has(full)) entries = entries.concat([{ ...e, path: full }]);
+            if (!known.has(full)) extra.push({ ...e, path: full });
           }
+          if (extra.length) entries = entries.concat(extra);
+        } else {
+          // Without it, nothing describes the directory on screen.
+          state.missingDirectory = true;
         }
       }
 
@@ -399,13 +426,15 @@
       emitNow();
 
       // --- linguist attributes -----------------------------------------
-      const rules = await loadGitattributes(ctx, state.index, settings, cacheOnly, () => cancelled);
+      const attributes = await loadGitattributes(ctx, state.index, settings, cacheOnly, () => cancelled);
       if (cancelled) return;
-      if (rules.length) {
-        classify(state.index, isExcluded, patterns.makeLinguistMatcher(rules));
+      if (attributes.rules.length) {
+        classify(state.index, isExcluded, patterns.makeLinguistMatcher(attributes.rules));
         refresh();
-        emitNow();
       }
+      state.needsMetadata = !attributes.complete || state.missingDirectory;
+      state.warning = attributes.error || state.warning;
+      emitNow();
 
       // --- exact counts ---------------------------------------------------
       const dirNode = state.index.get(ctx.path) || state.root;
@@ -466,7 +495,12 @@
          first, in the same press. Safe to call repeatedly. */
       fetchExact() {
         if (cancelled || running) return running;
-        const pass = state.status === 'idle' ? loadTree(true, false) : (state.index ? runExactPass() : null);
+        /* A press authorises the whole picture, not just the counts: anything
+           the view could not read — the listing, an exclusion rule — is read
+           again first, and an earlier failure is simply tried again. */
+        const fromScratch = state.status === 'idle' || state.status === 'error'
+          || state.needsMetadata || !state.index;
+        const pass = fromScratch ? loadTree(true, false) : runExactPass();
         if (!pass) return null;
         // Asking for line counts is asking to see them.
         state.metric = 'lines';
@@ -490,7 +524,7 @@
       /* Manual mode: fetch the tree and show sizes. The status leaves idle
          synchronously, so a double click is harmless. */
       fetchSizes() {
-        if (cancelled || state.status !== 'idle') return;
+        if (cancelled || (state.status !== 'idle' && state.status !== 'error')) return;
         state.metric = 'bytes';
         loadTree(false, false).catch(fail);
       },

@@ -243,6 +243,21 @@
     const node = raw && state.settings.exactLinesMode === 'manual' && path === state.ctx.path
       ? GHL.inline.viewOf(raw, state, GHL.inline.droppedChildren(raw, GHL.page.findRows(state.ctx), state))
       : raw;
+    const m = GHL.inline.metricOf(state);
+
+    /* The legend describes the ramp, not the tiles, so it is labelled before
+       anything that might decide there is nothing to draw. Both readings ramp;
+       only the units change with whichever is on screen. */
+    modal.legend.hidden = false;
+    for (const end of modal.legend.querySelectorAll('[data-ghl-ramp-end]')) {
+      end.textContent = m.rampEnd(state.settings);
+    }
+    modal.legend.querySelector('[data-ghl-ramp-start]').textContent =
+      t(m.key === 'lines' ? 'rampFileStart' : 'rampFileStartSize');
+    for (const tick of modal.legend.querySelectorAll('.ghl-ramp-tick')) {
+      tick.title = t('rampTick', m.warnAt(state.settings));
+    }
+
     const canvas = modal.canvas;
     canvas.textContent = '';
     if (!node) return;
@@ -254,21 +269,8 @@
     modal.crumbs.textContent = '';
     for (const c of buildBreadcrumb(state.ctx, path, drill)) modal.crumbs.appendChild(c);
 
-    const m = GHL.inline.metricOf(state);
     modal.stats.textContent = `${m.long(node)} · ${filesOf(node.fileCount)}`;
     modal.status.textContent = statusLine(state, m);
-    // Both readings ramp, so the legend applies to both — its ends just change
-    // unit with whichever is on screen.
-    modal.legend.hidden = false;
-    for (const end of modal.legend.querySelectorAll('[data-ghl-ramp-end]')) {
-      end.textContent = m.rampEnd(state.settings);
-    }
-    modal.legend.querySelector('[data-ghl-ramp-start]').textContent =
-      t(m.key === 'lines' ? 'rampFileStart' : 'rampFileStartSize');
-    // The tick marks the same threshold, said in whichever unit is on screen.
-    for (const tick of modal.legend.querySelectorAll('.ghl-ramp-tick')) {
-      tick.title = t('rampTick', m.warnAt(state.settings));
-    }
 
     const opts = {
       settings: state.settings,

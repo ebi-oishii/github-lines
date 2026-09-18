@@ -446,5 +446,11 @@
   },
   "apiResetsIn": {
     "message": "\nあと約 $1 分で回復します。"
+  },
+  "errAttributes": {
+    "message": "除外ルールの一部を読めませんでした — 生成物が数えられている可能性があります"
+  },
+  "statusNoDirectory": {
+    "message": "このディレクトリの一覧を取得できていません"
   }
 }

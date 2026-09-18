@@ -244,7 +244,10 @@ function collect() {
     // typed-out zero says the same thing, so it is held to the same floor.
     const raw = $(id).value.trim();
     const n = Number(raw);
-    if (raw && Number.isFinite(n) && n >= LEAST[id]) patch[id] = n;
+    // Clamped rather than dropped: dropping it would save nothing while the
+    // page said "Saved", leaving the field showing a number that is not in
+    // effect. `reflect()` puts the clamped value back once the field is done.
+    if (raw && Number.isFinite(n)) patch[id] = Math.max(LEAST[id], n);
   }
   if (patch.concurrency !== undefined) {
     patch.concurrency = Math.min(16, Math.max(1, patch.concurrency || 1));
@@ -279,8 +282,19 @@ function scheduleSave() {
 async function saveNow() {
   clearTimeout(pendingWrite);
   pendingWrite = null;
-  await GHL.settings.set(collect());
+  const saved = await GHL.settings.set(collect());
   flash(t('saved'), 'ok');
+  return saved;
+}
+
+/* The one thing read back into the form: a number that was clamped on the way
+   in. Only fields nobody is typing in are touched, so the cursor stays put. */
+function reflect(saved) {
+  for (const id of NUMBERS) {
+    const field = $(id);
+    if (field === document.activeElement) continue;
+    if (String(saved[id]) !== field.value.trim()) field.value = saved[id];
+  }
 }
 
 async function refreshCacheStats() {
@@ -322,7 +336,8 @@ $('locale').addEventListener('change', async () => {
 });
 
 document.addEventListener('input', scheduleSave);
-document.addEventListener('change', saveNow);
+// `change` is the field saying it is finished, which is when it can be tidied.
+document.addEventListener('change', () => saveNow().then(reflect));
 
 // Ctrl/Cmd-S is muscle memory; honour it by flushing rather than by ignoring it.
 document.addEventListener('keydown', (e) => {

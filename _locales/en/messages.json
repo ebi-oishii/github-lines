@@ -446,5 +446,11 @@
   },
   "apiResetsIn": {
     "message": "\nResets in about $1 min."
+  },
+  "errAttributes": {
+    "message": "Some exclusion rules could not be read — generated files may be counted"
+  },
+  "statusNoDirectory": {
+    "message": "This directory is not in the listing that came back"
   }
 }

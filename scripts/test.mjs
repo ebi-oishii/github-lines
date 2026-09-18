@@ -1046,6 +1046,8 @@ const STUB_TREE = [
 
 let transportCalls = [];
 let stubTreeCached = false; // whether a cache-only TREE probe hits
+let stubTreeFails = null;   // an error every TREE request answers with, while set
+let stubAttributes = null;  // what BLOB_TEXT answers, when the tree has one
 
 function stubTransport({ treeDelayMs = 0 } = {}) {
   const calls = [];
@@ -1054,6 +1056,7 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
     calls.push(msg);
     switch (msg.type) {
       case 'TREE':
+        if (stubTreeFails) return { ok: false, error: stubTreeFails };
         if (msg.cacheOnly && !stubTreeCached) return { ok: false, error: 'not_cached' };
         if (treeDelayMs) await sleep(treeDelayMs);
         return { ok: true, entries: STUB_TREE, truncated: false };
@@ -1062,6 +1065,8 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
       case 'RATE':
         return { ok: true, limit: 5000, remaining: 4987, reset: Date.now() + 1800000,
                  authenticated: true, label: 'scoped' };
+      case 'BLOB_TEXT':
+        return stubAttributes || { ok: false, error: 'not_cached' };
       case 'LOCALE': {
         const file = path.join(ROOT, `_locales/${msg.locale}/messages.json`);
         if (!fs.existsSync(file)) return { ok: false, error: 'unknown_locale' };
@@ -1591,6 +1596,70 @@ await domCheckAsync('the strip reports what is left of the API budget', async ()
   assert(/\d+/.test(note.split('\n').pop()), 'and says when it comes back');
   assert(rate.getAttribute('tabindex') === '0', 'and is reachable from the keyboard');
   await settings.set({ exactLinesMode: 'manual' });
+});
+
+await domCheckAsync('a failed fetch leaves something to press, and pressing it starts over', async () => {
+  /* The message says to wait and try again, so there has to be something to
+     try again with — and it has to read what it could not read the first time. */
+  await settings.set({ exactLinesMode: 'manual' });
+  navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+
+  stubTreeFails = 'rate_limit';
+  fetchButton().click();
+  await waitFor(
+    () => document.querySelector('.ghl-summary-status').dataset.tone === 'error',
+    6000,
+    'the failure to be reported'
+  );
+  const button = fetchButton();
+  assert(!button.hidden && !button.disabled, 'the button is still there to press');
+  assert(!/\d/.test(button.textContent), `and offers the whole thing again (${button.textContent})`);
+
+  stubTreeFails = null;
+  const before = transportCalls.length;
+  button.click();
+  await waitFor(() => renderedPaths().includes('source/core/options.ts'), 6000, 'the retry to land');
+  assert(treeFetches(transportCalls.slice(before)).length >= 1, 'which asked for the tree again');
+  assertEqual(document.querySelector('.ghl-summary-status').dataset.tone, 'ok', 'and the error is gone');
+});
+
+await domCheckAsync('an exclusion rule that could not be read is read again on the next press', async () => {
+  /* Counting a repository's generated files as if they were not is a wrong
+     number, so a rule that went unread is not something to carry on from. */
+  STUB_TREE.push({ path: 'source/as-promise/.gitattributes', type: 'file', size: 40, sha: 'sha-attrs' });
+  try {
+    stubAttributes = { ok: false, error: 'rate_limit' };
+    stubTreeCached = true;
+    navigateDom(currentDom, 'source/as-promise', [
+      { name: 'index.ts', type: 'file' },
+      { name: 'types.ts', type: 'file' },
+    ]);
+    await waitFor(() => renderedPaths().includes('source/as-promise/types.ts'), 6000, 'the cached view');
+
+    const button = fetchButton();
+    assert(!button.hidden, 'the button is offered even though the tree came from the cache');
+    assert(!/\d/.test(button.textContent),
+      `because what it would count is not yet trustworthy (${button.textContent})`);
+
+    stubAttributes = { ok: true, text: 'types.ts linguist-generated=true\n' };
+    const before = transportCalls.length;
+    button.click();
+    await waitFor(
+      () => transportCalls.slice(before).some((c) => c.type === 'BLOB_TEXT' && !c.cacheOnly),
+      6000,
+      'the rules to be read for real'
+    );
+    await waitFor(
+      () => document.querySelector('.ghl-cell[data-ghl-path="source/as-promise/types.ts"]')?.dataset.state === 'excluded',
+      6000,
+      'and applied — the file the repository calls generated stops being counted'
+    );
+  } finally {
+    stubAttributes = null;
+    stubTreeCached = false;
+    STUB_TREE.pop();
+  }
 });
 
 await domCheckAsync('a collapsed row takes the files it stands for with it', async () => {

@@ -68,9 +68,11 @@
      tokens only move when the theme does, which is rare enough that holding the
      answer for a moment costs nothing and saves all of that. */
   const RAMP_TTL = 250;
+  // Monotonic: a wall clock that steps backwards would pin the cache for good.
+  const since = () => (globalThis.performance ? performance.now() : Date.now());
 
   function ramp() {
-    const now = Date.now();
+    const now = since();
     if (rampCache && now - rampCache.at < RAMP_TTL) return rampCache.stops;
 
     const cs = window.getComputedStyle(document.documentElement);
@@ -565,7 +567,9 @@
     treemapButton.disabled = !state.index;
 
     const m = metricOf(state);
-    const idle = state.status === 'idle';
+    /* An error, or a view built on something that could not be read, offers
+       the same thing an untouched one does: press it and it is read again. */
+    const idle = state.status === 'idle' || state.status === 'error' || state.needsMetadata;
 
     // Lines | Size. With a tree in, it says what the bars measure; in manual
     // mode it is up from the start and stays put through the fetch, since it
@@ -608,7 +612,7 @@
       disabled = state.pending === 0;
       title = state.pending ? t('fetchLinesCountTitle', fmt(state.pending)) : t('fetchNothingTicked');
     }
-    fetchButton.hidden = settings.exactLinesMode !== 'manual' || state.status === 'error';
+    fetchButton.hidden = settings.exactLinesMode !== 'manual';
     fetchButton.classList.toggle('ghl-btn-primary', primary);
     fetchButton.disabled = disabled;
     fetchButton.textContent = label;
@@ -720,6 +724,7 @@
     if (state.status === 'refining') {
       return t('statusRefining', state.progress.done, state.progress.total);
     }
+    if (state.missingDirectory) return t('statusNoDirectory');
     // Estimates only exist for lines; sizes are exact from the start.
     if (m && m.key === 'bytes') return state.truncated ? t('statusTruncatedSizes') : '';
     if (state.status === 'estimated') return t('statusEstimating');
@@ -750,6 +755,8 @@
         // With several accounts configured, naming the one that was tried is
         // the difference between a useful message and a mystery.
         return err.authenticated ? t('errNotFound', token) : t('errPrivate');
+      case 'attributes_limit':
+        return t('errAttributes');
       case 'timeout':
         return t('errTimeout');
       case 'disconnected':
@@ -772,7 +779,7 @@
     if (!settings) return;
 
     const ctx = state.ctx;
-    const dirNode = state.index && (state.index.get(ctx.path) || state.root);
+    const dirNode = state.index && (state.index.get(ctx.path) || (ctx.path ? null : state.root));
     const rows = GHL.page.findRows(ctx);
     // Manual mode's checkbox column is up for the whole view, one box per row
     // on screen.
