@@ -503,8 +503,14 @@
       el('div', { class: 'ghl-summary-foot' }, [
         el('div', { class: 'ghl-legend' }),
         el('span', { class: 'ghl-spacer' }),
-        // What is left of the budget these bars were drawn out of.
-        el('span', { class: 'ghl-rate' }),
+        /* What is left of the budget these bars were drawn out of. The detail
+           is our own tooltip rather than a `title`: a native one depends on the
+           window being focused and the pointer resting, and cannot be reached
+           from the keyboard at all. */
+        el('span', { class: 'ghl-rate', tabindex: '0' }, [
+          el('span', { class: 'ghl-rate-value' }),
+          el('span', { class: 'ghl-rate-note', role: 'tooltip' }),
+        ]),
       ]),
     ]);
   }
@@ -665,19 +671,19 @@
   function renderRate(node, state) {
     const rate = state.rate;
     if (!rate || rate.limit == null || rate.remaining == null) {
-      node.textContent = '';
       node.hidden = true;
       return;
     }
     node.hidden = false;
-    node.textContent = t('apiLeft', fmt(rate.remaining), fmt(rate.limit));
+    node.querySelector('.ghl-rate-value').textContent =
+      t('apiLeft', fmt(rate.remaining), fmt(rate.limit));
     node.dataset.tone = rate.remaining === 0 ? 'error'
       : rate.remaining <= Math.max(5, rate.limit * 0.1) ? 'warn' : 'ok';
 
     const resets = rate.reset && rate.reset > Date.now()
       ? t('apiResetsIn', Math.ceil((rate.reset - Date.now()) / 60000))
       : '';
-    node.title = rate.authenticated
+    node.querySelector('.ghl-rate-note').textContent = rate.authenticated
       ? t('apiLeftTitle', fmt(rate.remaining), fmt(rate.limit), resets, rate.label)
       : t('apiLeftTitleAnon', fmt(rate.remaining), fmt(rate.limit), resets);
   }

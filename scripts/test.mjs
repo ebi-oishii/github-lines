@@ -1554,10 +1554,13 @@ await domCheckAsync('the strip reports what is left of the API budget', async ()
   );
 
   const rate = document.querySelector('.ghl-rate');
-  assertEqual(rate.textContent, msg('apiLeft', '4,987', '5,000'), 'it reads remaining out of the limit');
+  assertEqual(rate.querySelector('.ghl-rate-value').textContent, msg('apiLeft', '4,987', '5,000'),
+    'it reads remaining out of the limit');
   assertEqual(rate.dataset.tone, 'ok', 'with plenty left, it is quiet');
-  assert(rate.title.includes('scoped'), `the tooltip names the account it belongs to (${rate.title})`);
-  assert(/\d+/.test(rate.title.split('\n').pop()), 'and says when it comes back');
+  const note = rate.querySelector('.ghl-rate-note').textContent;
+  assert(note.includes('scoped'), `the note names the account it belongs to (${note})`);
+  assert(/\d+/.test(note.split('\n').pop()), 'and says when it comes back');
+  assert(rate.getAttribute('tabindex') === '0', 'and is reachable from the keyboard');
   await settings.set({ exactLinesMode: 'manual' });
 });
 

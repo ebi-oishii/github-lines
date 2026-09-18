@@ -419,8 +419,10 @@ th:has(> .ghl-col-head)::after {
   gap: 12px;
 }
 
-/* What is left of the API budget, under the right-hand end of the bar. */
+/* What is left of the API budget, under the right-hand end of the bar, with
+   the detail in a tooltip of our own — see the comment where it is built. */
 .ghl-rate {
+  position: relative;
   flex: 0 0 auto;
   margin-top: 6px;
   font-size: 11px;
@@ -432,6 +434,28 @@ th:has(> .ghl-col-head)::after {
 .ghl-rate[hidden] { display: none; }
 .ghl-rate[data-tone='warn'] { color: var(--ghl-warn); }
 .ghl-rate[data-tone='error'] { color: var(--ghl-danger); }
+.ghl-rate:focus-visible { outline: 2px solid var(--ghl-ok); outline-offset: 2px; }
+
+.ghl-rate-note {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 10;
+  display: none;
+  width: max-content;
+  max-width: 320px;
+  padding: 6px 9px;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-line;
+  color: var(--ghl-fg);
+  background: var(--ghl-surface);
+  border: 1px solid var(--ghl-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(31, 35, 40, 0.15);
+}
+.ghl-rate:hover .ghl-rate-note,
+.ghl-rate:focus-visible .ghl-rate-note { display: block; }
 
 .ghl-legend {
   display: flex;

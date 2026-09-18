@@ -390,15 +390,20 @@ try {
   }
 
   // What is left of the budget, read off the response headers by the worker.
-  const rate = await page.$eval('#ghl-summary .ghl-rate', (n) => `${n.hidden}|${n.textContent}|${n.title}`)
-    .catch(() => 'missing');
+  const rate = await page.$eval('#ghl-summary .ghl-rate', (n) => [
+    n.hidden, n.querySelector('.ghl-rate-value').textContent, n.querySelector('.ghl-rate-note').textContent,
+  ].join('|')).catch(() => 'missing');
   if (rateLimited) {
     skip(`API budget — already exhausted (${rate.split('|')[1]})`);
   } else {
-    const [hidden, text, title] = rate.split('|');
+    const [hidden, text, note] = rate.split('|');
     assert(hidden === 'false' && /\d[\d,]*\s*\/\s*[\d,]+/.test(text),
       `the strip reports what is left of the API budget (${text})`);
-    assert(title.trim().length > 0, 'with a tooltip saying whose budget it is');
+    assert(note.trim().length > 0, 'with a note saying whose budget it is');
+    // Our own tooltip, so it can be shown and read rather than taken on trust.
+    await page.hover('#ghl-summary .ghl-rate');
+    await page.waitForSelector('#ghl-summary .ghl-rate-note:visible', { timeout: 3000 });
+    assert(true, 'and the note appears on hover');
   }
 
   // The ramp: every row's bar is coloured by its own line count, so a
