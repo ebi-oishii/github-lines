@@ -3,7 +3,7 @@
     "message": "GitHub Lines"
   },
   "appDesc": {
-    "message": "Shows line-count proportions on GitHub's file list, so bloated files are obvious at a glance."
+    "message": "Visualises line counts on GitHub's file list, so bloated files stand out."
   },
   "actionTitle": {
     "message": "GitHub Lines options"

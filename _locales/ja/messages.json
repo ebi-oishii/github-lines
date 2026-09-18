@@ -3,7 +3,7 @@
     "message": "GitHub Lines"
   },
   "appDesc": {
-    "message": "GitHub のファイル一覧に行数の割合バーとツリーマップを表示し、肥大化したファイルを一目で見つけられるようにします。"
+    "message": "GitHub のファイル一覧で行数を可視化し、肥大化したファイルを一目で見つけます。"
   },
   "actionTitle": {
     "message": "GitHub Lines の設定"
