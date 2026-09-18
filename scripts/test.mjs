@@ -800,7 +800,7 @@ domCheck('findRows returns real entries with both responsive name cells', () => 
     );
     assert(row.path.startsWith('source/'), `${row.name}: path is prefixed with the directory`);
     assert(['dir', 'file'].includes(row.type), `${row.name}: has a type`);
-    assert(!row.name.includes('/'), `${row.name}: bare entry name`);
+    assertEqual(row.path, `source/${row.name}`, `${row.name}: path and name agree`);
   }
   assert(rows.some((r) => r.type === 'dir'), 'at least one directory');
   assert(rows.some((r) => r.type === 'file'), 'at least one file');
@@ -808,6 +808,54 @@ domCheck('findRows returns real entries with both responsive name cells', () => 
 
   const names = rows.map((r) => r.name);
   assertEqual(new Set(names).size, names.length, 'no duplicate rows');
+});
+
+domCheck('findRows reads a collapsed row from its href, not its label', () => {
+  installDom(fixtureHtml, FIXTURE_URL);
+  const ctx = page.getContext();
+
+  /* GitHub folds a chain of single-child directories into one row: the text is
+     the whole chain, and the title says so in words rather than naming it. */
+  const tbody = document.querySelector('table[aria-labelledby="folders-and-files"] tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="react-directory-row-name-cell-small-screen">
+      <div class="react-directory-filename-column">
+        <a title="This path skips through empty directories" class="Link--primary"
+           href="/sindresorhus/got/tree/main/source/deep/nested">source/deep/nested</a>
+      </div>
+    </td>
+    <td class="react-directory-row-name-cell-large-screen">
+      <div class="react-directory-filename-column">
+        <a title="This path skips through empty directories" class="Link--primary"
+           href="/sindresorhus/got/tree/main/source/deep/nested">source/deep/nested</a>
+      </div>
+    </td>`;
+  tbody.appendChild(tr);
+
+  const collapsed = page.findRows(ctx).find((r) => r.el === tr);
+  assert(collapsed, 'the collapsed row is not skipped');
+  assertEqual(collapsed.path, 'source/deep/nested', 'its path comes from the href');
+  assertEqual(collapsed.name, 'deep/nested', 'and it reads as the chain it stands for');
+  assertEqual(collapsed.type, 'dir', 'a tree link is a directory');
+  tr.remove();
+});
+
+domCheck('findRows ignores links that leave the directory being shown', () => {
+  installDom(fixtureHtml, FIXTURE_URL);
+  const ctx = page.getContext();
+  const tbody = document.querySelector('table[aria-labelledby="folders-and-files"] tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="react-directory-row-name-cell-large-screen">
+      <div class="react-directory-filename-column">
+        <a title="elsewhere" class="Link--primary" href="/sindresorhus/got/tree/main/test">test</a>
+      </div>
+    </td>`;
+  tbody.appendChild(tr);
+
+  assert(!page.findRows(ctx).some((r) => r.el === tr), 'a sibling directory is not a row here');
+  tr.remove();
 });
 
 domCheck('render injects an aligned bar into every name cell', () => {

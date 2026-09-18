@@ -5,7 +5,7 @@ dependencies (jsdom, playwright-core).
 
 ```bash
 npm install
-npm test             # logic and DOM tests (81 of them, no network)
+npm test             # logic and DOM tests (83 of them, no network)
 npm run smoke        # load it into a real Chrome and drive github.com
 npm run measure      # count the API requests
 npm run icons        # regenerate icons/*.png
@@ -66,6 +66,11 @@ on a client-side navigation, so taking the path from it leaves every soft
 navigation labelled with the previous directory. (A bug that actually happened;
 `scripts/test.mjs` has the regression test.)
 
+**A row's own path comes from its link's href**, for the same reason in
+miniature: GitHub folds a chain of single-child directories into one row whose
+text is the whole chain and whose `title` is the sentence "This path skips
+through empty directories". The href is the only part that names the entry.
+
 ## Localisation
 
 The UI strings live in `_locales/<lang>/messages.json` and are looked up through
@@ -90,7 +95,7 @@ the service worker's `LOCALE` handler).
 
 ## Tests
 
-### `scripts/test.mjs` (81, no network)
+### `scripts/test.mjs` (83, no network)
 
 - Pure logic: globs, `.gitattributes`, line estimation, rollups, the treemap
   layout algorithm
