@@ -646,7 +646,22 @@ check('settings: a number the options page could not read is left alone', () => 
     assertEqual(settings.normalise({ ...stored })[key], stored[key], `${key} round-trips`);
   }
   assertEqual(settings.normalise({ ...stored, warnLines: 0 }).warnLines, 0,
-    'a zero someone actually typed is still theirs to set');
+    'the store keeps what it is given; the options page is what refuses a zero');
+});
+
+check('the ramp answers the same whether it is asked once or a hundred times', () => {
+  // The cached answer is what a row's bar is painted from, so a stale one would
+  // be a wrong colour rather than a slow one.
+  const first = inline.lineColor(600, THRESHOLDS);
+  for (let i = 0; i < 100; i++) assertEqual(inline.lineColor(600, THRESHOLDS), first, 'stable');
+  assertEqual(inline.dirColor(600, THRESHOLDS), inline.dirColor(600, THRESHOLDS), 'and for directories');
+});
+
+check('each reading says where its own warn threshold falls', () => {
+  const perLine = patterns.DEFAULT_BYTES_PER_LINE;
+  assertEqual(inline.METRICS.lines.warnAt(THRESHOLDS), msg('unitLines', '500'), 'lines, in lines');
+  assertEqual(inline.METRICS.bytes.warnAt(THRESHOLDS), `${(500 * perLine / 1024).toFixed(1)} KB`,
+    'and size, in bytes');
 });
 
 check('settings: an unknown exact-lines mode falls back to the default', () => {

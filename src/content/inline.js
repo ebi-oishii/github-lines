@@ -62,13 +62,26 @@
 
   let rampCache = null;
 
+  /* Reading a custom property means reading computed style, and a row paints
+     its bar just before asking for its colour — so asking per row would force a
+     style recalculation per row, every render, all the way through a fetch. The
+     tokens only move when the theme does, which is rare enough that holding the
+     answer for a moment costs nothing and saves all of that. */
+  const RAMP_TTL = 250;
+
   function ramp() {
+    const now = Date.now();
+    if (rampCache && now - rampCache.at < RAMP_TTL) return rampCache.stops;
+
     const cs = window.getComputedStyle(document.documentElement);
     const raw = RAMP_TOKENS.map((name, i) => cs.getPropertyValue(name).trim() || RAMP_FALLBACK[i]);
     const key = raw.join('|');
-    if (rampCache && rampCache.key === key) return rampCache.stops;
+    if (rampCache && rampCache.key === key) {
+      rampCache.at = now;
+      return rampCache.stops;
+    }
     const stops = raw.map((v, i) => hexToHsl(v) || hexToHsl(RAMP_FALLBACK[i]));
-    rampCache = { key, stops };
+    rampCache = { key, stops, at: now };
     return stops;
   }
 
@@ -160,6 +173,7 @@
       long: (n) => linesOf(n.total || 0, approxPrefix(n) + fmt(n.total || 0)),
       fmtTotal: (v) => linesOf(v),
       rampEnd: (settings) => t('unitLinesOrMore', linesOf(settings.dangerLines)),
+      warnAt: (settings) => linesOf(settings.warnLines),
       severity: (n, settings) => (n.type === 'file' ? severity(n.total || 0, settings) : 'dir'),
     },
     bytes: {
@@ -180,6 +194,7 @@
       // Where this ramp's far end sits, for the legend.
       rampEnd: (settings) =>
         t('unitLinesOrMore', util.fmtBytes(settings.dangerLines * GHL.patterns.DEFAULT_BYTES_PER_LINE)),
+      warnAt: (settings) => util.fmtBytes(settings.warnLines * GHL.patterns.DEFAULT_BYTES_PER_LINE),
     },
   };
 

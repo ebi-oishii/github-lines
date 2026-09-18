@@ -12,6 +12,9 @@ const CHECKBOXES = [
   'respectGitattributes',
 ];
 const NUMBERS = ['warnLines', 'dangerLines', 'maxExactFetch', 'concurrency'];
+// A threshold of zero would put every file past it, so zero is not an answer —
+// unlike a fetch limit of zero, which is a way of saying "fetch nothing".
+const LEAST = { warnLines: 1, dangerLines: 1, concurrency: 1, maxExactFetch: 0 };
 const SELECTS = ['locale'];
 
 function setStatus(node, text, tone) {
@@ -237,10 +240,11 @@ function collect() {
   if (mode) patch.exactLinesMode = mode.value;
   for (const id of NUMBERS) {
     // An emptied field is someone mid-edit, not a zero — and `Number('')` is 0,
-    // which would autosave a threshold of nothing and colour every file.
+    // which would autosave a threshold of nothing and colour every file. A
+    // typed-out zero says the same thing, so it is held to the same floor.
     const raw = $(id).value.trim();
     const n = Number(raw);
-    if (raw && Number.isFinite(n) && n >= 0) patch[id] = n;
+    if (raw && Number.isFinite(n) && n >= LEAST[id]) patch[id] = n;
   }
   if (patch.concurrency !== undefined) {
     patch.concurrency = Math.min(16, Math.max(1, patch.concurrency || 1));

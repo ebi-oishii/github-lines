@@ -265,6 +265,10 @@
     }
     modal.legend.querySelector('[data-ghl-ramp-start]').textContent =
       t(m.key === 'lines' ? 'rampFileStart' : 'rampFileStartSize');
+    // The tick marks the same threshold, said in whichever unit is on screen.
+    for (const tick of modal.legend.querySelectorAll('.ghl-ramp-tick')) {
+      tick.title = t('rampTick', m.warnAt(state.settings));
+    }
 
     const opts = {
       settings: state.settings,
@@ -335,7 +339,6 @@
       el('span', {
         class: 'ghl-ramp-tick',
         style: { left: `${(state.settings.warnLines / Math.max(2, state.settings.dangerLines)) * 100}%` },
-        title: t('rampTick', linesOf(state.settings.warnLines)),
       }),
     ]);
     const legend = el('span', { class: 'ghl-legend ghl-ramps' }, [
