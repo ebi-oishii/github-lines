@@ -422,5 +422,11 @@
   },
   "autosave": {
     "message": "変更はその場で保存されます。"
+  },
+  "language": {
+    "message": "言語"
+  },
+  "languageAuto": {
+    "message": "ブラウザの設定に従う"
   }
 }

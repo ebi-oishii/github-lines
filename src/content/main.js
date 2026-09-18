@@ -99,10 +99,12 @@
       setTimeout(tick, 400);
     });
 
+    // A changed locale means a different catalogue, which has to be in before
+    // anything is drawn again.
     GHL.settings.onChange(() => {
       const ctx = current && current.ctx;
       teardown();
-      if (ctx) setTimeout(tick, 0);
+      GHL.i18n.load().then(() => { if (ctx) tick(); });
     });
 
     // The React file list can mount after document_idle.
@@ -111,9 +113,13 @@
     setTimeout(tick, 1000);
   }
 
+  /* Nothing is drawn before the catalogue is settled, so no label is ever
+     painted in one language and replaced in another. */
+  const start = () => GHL.i18n.ready().then(boot);
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot, { once: true });
+    document.addEventListener('DOMContentLoaded', start, { once: true });
   } else {
-    boot();
+    start();
   }
 })(globalThis.GHL);

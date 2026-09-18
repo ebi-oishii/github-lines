@@ -20,6 +20,9 @@
     showInlineBars: true,
     showTreemapButton: true,
 
+    // '' follows the browser's UI language; 'en' or 'ja' pins it.
+    locale: '',
+
     // Exclusions
     excludeGenerated: true,
     respectGitattributes: true,
@@ -79,6 +82,8 @@
     if (!s.tokens.some((t) => t.id === s.defaultTokenId)) {
       s.defaultTokenId = s.tokens.length ? s.tokens[0].id : '';
     }
+
+    if (s.locale !== 'en' && s.locale !== 'ja') s.locale = '';
 
     // An emptied pattern box means "no patterns", but a missing key means
     // "never configured" and should fall back to the defaults.

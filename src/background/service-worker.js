@@ -9,7 +9,7 @@
    storage, and it survives navigation. */
 'use strict';
 
-importScripts('../lib/namespace.js', '../lib/i18n.js', '../lib/patterns.js', '../lib/settings.js');
+importScripts('../lib/namespace.js', '../lib/patterns.js', '../lib/settings.js', '../lib/i18n.js');
 
 const GHL = globalThis.GHL;
 const API = 'https://api.github.com';
@@ -465,8 +465,19 @@ async function cacheStats() {
   return { ok: true, lines, trees, texts };
 }
 
+/* The packaged catalogue for one locale. Content scripts cannot read a
+   packaged file themselves without making `_locales` web-accessible, which
+   would hand it to every page as well. */
+async function getLocale({ locale }) {
+  if (!GHL.i18n.SUPPORTED.includes(locale)) return { ok: false, error: 'unknown_locale' };
+  const res = await fetch(chrome.runtime.getURL(`_locales/${locale}/messages.json`));
+  if (!res.ok) return { ok: false, error: 'not_found' };
+  return { ok: true, messages: await res.json() };
+}
+
 const HANDLERS = {
   TREE: getTree,
+  LOCALE: getLocale,
   LINES: getLines,
   CACHED_LINES: getCachedLines,
   BLOB_TEXT: getBlobText,

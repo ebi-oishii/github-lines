@@ -21,9 +21,9 @@
       ],
       "js": [
         "src/lib/namespace.js",
-        "src/lib/i18n.js",
         "src/lib/patterns.js",
         "src/lib/settings.js",
+        "src/lib/i18n.js",
         "src/content/util.js",
         "src/content/page.js",
         "src/content/store.js",

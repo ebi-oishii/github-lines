@@ -61,20 +61,24 @@ github.com から `api.github.com` を直接叩けません。加えて、キャ
 
 ## 多言語対応
 
-UI の文言は `_locales/<言語>/messages.json` にあり、`chrome.i18n` 経由で引きます。
-既定は `en`、ほかに `ja`。**どちらが出るかは Chrome の表示言語**（macOS では OS の言語）で決まり、
-ページの言語や拡張の設定では変わりません。
+UI の文言は `_locales/<言語>/messages.json` にあり、既定では `chrome.i18n` 経由で引きます。
+どちらが出るかは **Chrome の表示言語**（macOS では OS の言語）で決まります。
+設定画面で言語を選ぶとその指定が優先され、`chrome.i18n` には上書きの仕組みが無いので、
+選ばれたカタログを読み込んで先に引きます（content script は自分で読めないので service worker
+の `LOCALE` に取りに行きます）。
 
 - コードからは `GHL.t('キー', 差し込み…)`。数えられる名詞は `GHL.i18n.count('unitLines', n, 表示文字列)`
   で単複を選びます（英語は `unitLines` / `unitLinesOne` の 2 キー、日本語は同じ文言）
 - HTML は `data-i18n="キー"`（テキスト）、`-html`（`<code>` 等を含む文）、`-title` / `-placeholder` / `-label`。
   読み込み時に `GHL.i18n.applyDom()` が差し替えます
-- 言語を追加するときは `_locales/<言語>/messages.json` を作って全キーを訳します。
+- 言語を追加するときは `_locales/<言語>/messages.json` を作って全キーを訳し、
+  `src/lib/i18n.js` の `SUPPORTED` と設定画面の `<select id="locale">` に足します。
   キーの過不足と `$1` の食い違いは `scripts/test.mjs` が落とします
+- 描画は `GHL.i18n.ready()` の解決後。文言が一瞬別の言語で出ることはありません
 
 ## テスト
 
-### `scripts/test.mjs`（80 件、ネットワーク不要）
+### `scripts/test.mjs`（81 件、ネットワーク不要）
 
 - 純粋なロジック: glob、`.gitattributes`、行数推定、集計、treemap の配置アルゴリズム
 - トークンのルーティング: オーナーごとの選択、旧形式からの移行

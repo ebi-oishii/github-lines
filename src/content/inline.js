@@ -139,7 +139,7 @@
   const METRICS = {
     lines: {
       key: 'lines',
-      label: t('metricLines'),
+      get label() { return t('metricLines'); },
       // An empty string hands the colour back to CSS — for excluded files, and
       // for the treemap's "N more" aggregate, which stands for no one count.
       fill: (n, settings, alpha) => {
@@ -156,7 +156,7 @@
     },
     bytes: {
       key: 'bytes',
-      label: t('metricBytes'),
+      get label() { return t('metricBytes'); },
       value: (n) => n.bytes || 0,
       cell: (n) => util.fmtBytes(n.bytes || 0),
       short: (n) => util.fmtBytes(n.bytes || 0),

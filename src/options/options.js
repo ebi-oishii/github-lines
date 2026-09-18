@@ -12,6 +12,7 @@ const CHECKBOXES = [
   'respectGitattributes',
 ];
 const NUMBERS = ['warnLines', 'dangerLines', 'maxExactFetch', 'concurrency'];
+const SELECTS = ['locale'];
 
 function setStatus(node, text, tone) {
   node.textContent = text;
@@ -217,6 +218,7 @@ async function fill() {
 
   for (const id of CHECKBOXES) $(id).checked = !!s[id];
   for (const id of NUMBERS) $(id).value = s[id];
+  for (const id of SELECTS) $(id).value = s[id] || '';
 
   const mode = document.querySelector(`input[name="exactLinesMode"][value="${s.exactLinesMode}"]`)
     || document.querySelector('input[name="exactLinesMode"][value="auto"]');
@@ -229,6 +231,7 @@ function collect() {
   const patch = collectTokens();
 
   for (const id of CHECKBOXES) patch[id] = $(id).checked;
+  for (const id of SELECTS) patch[id] = $(id).value;
 
   const mode = document.querySelector('input[name="exactLinesMode"]:checked');
   if (mode) patch.exactLinesMode = mode.value;
@@ -302,6 +305,13 @@ $('add-token').addEventListener('click', () => {
 $('reset').addEventListener('click', reset);
 $('clear-cache').addEventListener('click', clearCache);
 
+/* Every other setting takes effect without redrawing this page; a new language
+   changes every label on it, so the page comes back in it. */
+$('locale').addEventListener('change', async () => {
+  await saveNow();
+  location.reload();
+});
+
 document.addEventListener('input', scheduleSave);
 document.addEventListener('change', saveNow);
 
@@ -318,7 +328,10 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && pendingWrite) saveNow();
 });
 
-GHL.i18n.applyDom();
-document.documentElement.lang = t('lang');
-fill();
-refreshCacheStats();
+(async () => {
+  await GHL.i18n.ready();
+  GHL.i18n.applyDom();
+  document.documentElement.lang = t('lang');
+  await fill();
+  refreshCacheStats();
+})();

@@ -422,5 +422,11 @@
   },
   "autosave": {
     "message": "Changes are saved as you make them."
+  },
+  "language": {
+    "message": "Language"
+  },
+  "languageAuto": {
+    "message": "Follow the browser"
   }
 }

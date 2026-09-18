@@ -948,6 +948,11 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
         return { ok: true, entries: STUB_TREE, truncated: false };
       case 'CACHED_LINES':
         return { ok: true, lines: {} };
+      case 'LOCALE': {
+        const file = path.join(ROOT, `_locales/${msg.locale}/messages.json`);
+        if (!fs.existsSync(file)) return { ok: false, error: 'unknown_locale' };
+        return { ok: true, messages: JSON.parse(fs.readFileSync(file, 'utf8')) };
+      }
       case 'LINES': {
         const entry = STUB_TREE.find((e) => e.sha === msg.sha);
         return { ok: true, lines: Math.round((entry ? entry.size : 0) / 30) };
@@ -1403,6 +1408,23 @@ await domCheckAsync('a commit already in the cache shows in manual mode without 
   assertEqual(fetchButton().textContent, msg('fetchLinesCount', 1),
     'the count button is on offer for what is not cached');
   stubTreeCached = false;
+});
+
+await domCheckAsync('a pinned locale replaces every label, and clearing it hands them back', async () => {
+  const ja = JSON.parse(fs.readFileSync(path.join(ROOT, '_locales/ja/messages.json'), 'utf8'));
+
+  await settings.set({ locale: 'ja' });
+  await GHL.i18n.load();
+  assertEqual(inline.METRICS.lines.label, ja.metricLines.message, 'the metric toggle speaks the chosen language');
+  assertEqual(GHL.t('fetchLinesCount', 3), ja.fetchLinesCount.message.replace('$1', '3'),
+    'and so do the substituted ones');
+
+  await settings.set({ locale: '' });
+  await GHL.i18n.load();
+  assertEqual(inline.METRICS.lines.label, msg('metricLines'), 'clearing it follows the browser again');
+
+  await settings.set({ locale: 'kl' });
+  assertEqual((await settings.get()).locale, '', 'a locale with no catalogue is not a setting');
 });
 
 await domCheckAsync('off mode never fetches and offers no button', async () => {
