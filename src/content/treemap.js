@@ -8,6 +8,10 @@
 
   const { util } = GHL;
   const { el, fmt } = util;
+  const { t, count } = GHL.i18n;
+
+  const linesOf = (n) => count('unitLines', n, fmt(n));
+  const filesOf = (n) => count('unitFiles', n, fmt(n));
 
   const OVERLAY_ID = 'ghl-treemap-overlay';
   const HEADER_H = 17;
@@ -99,7 +103,7 @@
     const head = kids.slice(0, MAX_CHILDREN - 1);
     const rest = kids.slice(MAX_CHILDREN - 1);
     head.push({
-      name: `他 ${rest.length} 件`,
+      name: t('restItems', rest.length),
       path: node.path,
       type: 'aggregate',
       children: new Map(),
@@ -127,8 +131,8 @@
     tile.title =
       `${node.path || node.name}\n` +
       `${m.long(node)} (${share.toFixed(1)}%)` +
-      (isDir ? `\n${fmt(node.fileCount)} ファイル` : '') +
-      (isDir && m.key === 'lines' ? `\n最大のファイル: ${fmt(node.maxFile || 0)} 行` : '') +
+      (isDir ? `\n${filesOf(node.fileCount)}` : '') +
+      (isDir && m.key === 'lines' ? `\n${t('tipMaxFile', linesOf(node.maxFile || 0))}` : '') +
       `\n${other.long(node)}`;
 
     const canRecurse =
@@ -247,7 +251,7 @@
     for (const c of buildBreadcrumb(state.ctx, path, drill)) modal.crumbs.appendChild(c);
 
     const m = GHL.inline.metricOf(state);
-    modal.stats.textContent = `${m.long(node)} · ${fmt(node.fileCount)} ファイル`;
+    modal.stats.textContent = `${m.long(node)} · ${filesOf(node.fileCount)}`;
     modal.status.textContent = statusLine(state, m);
     // The thresholds are line counts; the legend has nothing to say about sizes.
     modal.legend.hidden = m.key !== 'lines';
@@ -265,7 +269,7 @@
 
     const kids = childrenOf(node, m);
     if (!kids.length) {
-      canvas.appendChild(el('div', { class: 'ghl-tm-empty', text: 'カウント対象のファイルがありません' }));
+      canvas.appendChild(el('div', { class: 'ghl-tm-empty', text: t('tmEmpty') }));
       return;
     }
 
@@ -281,13 +285,13 @@
   function statusLine(state, m) {
     if (m.key === 'lines') {
       if (state.status === 'refining') {
-        return `実行数を取得中 ${state.progress.done}/${state.progress.total} — 残りはバイト数からの推定（~ 付き）`;
+        return t('tmRefining', state.progress.done, state.progress.total);
       }
-      if (state.status === 'estimated') return 'バイト数から推定中…';
+      if (state.status === 'estimated') return t('statusEstimating');
     }
     if (state.warning) return GHL.inline.errorText(state.warning);
-    if (state.truncated) return m.key === 'lines' ? '巨大リポジトリのため一部推定' : '巨大リポジトリのため一部のみ';
-    return `面積 = ${m.label}`;
+    if (state.truncated) return t(m.key === 'lines' ? 'statusTruncated' : 'statusTruncatedSizes');
+    return t('tmArea', m.label);
   }
 
   function drill(path) {
@@ -321,24 +325,24 @@
       el('span', {
         class: 'ghl-ramp-tick',
         style: { left: `${(state.settings.warnLines / Math.max(2, state.settings.dangerLines)) * 100}%` },
-        title: `注意 ${fmt(state.settings.warnLines)} 行`,
+        title: t('rampTick', linesOf(state.settings.warnLines)),
       }),
     ]);
     const legend = el('span', { class: 'ghl-legend ghl-ramps' }, [
       el('span', { class: 'ghl-ramp' }, [
-        el('span', { class: 'ghl-ramp-end' }, ['ファイル 0 行']),
+        el('span', { class: 'ghl-ramp-end' }, [t('rampFileStart')]),
         rampBar(GHL.inline.lineColor),
-        el('span', { class: 'ghl-ramp-end' }, [`${fmt(state.settings.dangerLines)} 行以上`]),
+        el('span', { class: 'ghl-ramp-end' }, [t('unitLinesOrMore', fmt(state.settings.dangerLines))]),
       ]),
       el('span', { class: 'ghl-ramp' }, [
-        el('span', { class: 'ghl-ramp-end' }, ['フォルダ 最大ファイル']),
+        el('span', { class: 'ghl-ramp-end' }, [t('rampDirStart')]),
         rampBar(GHL.inline.dirColor),
-        el('span', { class: 'ghl-ramp-end' }, [`${fmt(state.settings.dangerLines)} 行以上`]),
+        el('span', { class: 'ghl-ramp-end' }, [t('unitLinesOrMore', fmt(state.settings.dangerLines))]),
       ]),
     ]);
 
     const overlay = el('div', { id: OVERLAY_ID, class: 'ghl-overlay' }, [
-      el('div', { class: 'ghl-modal', role: 'dialog', 'aria-label': 'GitHub Lines treemap' }, [
+      el('div', { class: 'ghl-modal', role: 'dialog', 'aria-label': t('tmLabel') }, [
         el('div', { class: 'ghl-modal-head' }, [
           crumbs,
           stats,
@@ -346,10 +350,10 @@
           el('a', {
             class: 'ghl-btn ghl-btn-quiet',
             href: dirUrl(state.ctx, state.ctx.path),
-            title: 'このディレクトリを GitHub で開く',
-          }, ['開く']),
+            title: t('tmOpenTitle'),
+          }, [t('tmOpen')]),
           el('button', {
-            class: 'ghl-btn ghl-btn-quiet', type: 'button', 'aria-label': '閉じる',
+            class: 'ghl-btn ghl-btn-quiet', type: 'button', 'aria-label': t('tmClose'),
             onclick: close,
           }, ['✕']),
         ]),

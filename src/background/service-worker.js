@@ -9,7 +9,7 @@
    storage, and it survives navigation. */
 'use strict';
 
-importScripts('../lib/namespace.js', '../lib/patterns.js', '../lib/settings.js');
+importScripts('../lib/namespace.js', '../lib/i18n.js', '../lib/patterns.js', '../lib/settings.js');
 
 const GHL = globalThis.GHL;
 const API = 'https://api.github.com';
@@ -185,7 +185,7 @@ const ownerToken = new Map();
 
 function describe(entry) {
   if (!entry) return '';
-  return entry.label || (entry.owners && entry.owners[0]) || 'トークン';
+  return entry.label || (entry.owners && entry.owners[0]) || GHL.t('tokenFallback');
 }
 
 /* The token to try first, then any others worth trying if it cannot see the

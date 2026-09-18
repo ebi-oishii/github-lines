@@ -1,9 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "GitHub Lines",
+  "name": "__MSG_appName__",
   "version": "0.1.0",
-  "description": "GitHub のファイル一覧に行数の割合バーとツリーマップを表示し、肥大化したファイルを一目で見つけられるようにします。",
-  "permissions": ["storage"],
+  "description": "__MSG_appDesc__",
+  "default_locale": "en",
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://github.com/*",
     "https://api.github.com/*"
@@ -13,9 +16,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://github.com/*"],
+      "matches": [
+        "https://github.com/*"
+      ],
       "js": [
         "src/lib/namespace.js",
+        "src/lib/i18n.js",
         "src/lib/patterns.js",
         "src/lib/settings.js",
         "src/content/util.js",
@@ -25,13 +31,15 @@
         "src/content/treemap.js",
         "src/content/main.js"
       ],
-      "css": ["src/styles/content.css"],
+      "css": [
+        "src/styles/content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
   "options_page": "src/options/options.html",
   "action": {
-    "default_title": "GitHub Lines の設定",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

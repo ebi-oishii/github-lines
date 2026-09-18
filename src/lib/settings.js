@@ -62,7 +62,7 @@
     // Migration: a single top-level token becomes the first entry.
     const legacy = stored && typeof stored.token === 'string' ? stored.token.trim() : '';
     if (legacy && !s.tokens.some((t) => t.token === legacy)) {
-      s.tokens.unshift(normaliseToken({ label: '既定', token: legacy }));
+      s.tokens.unshift(normaliseToken({ label: GHL.t('tokenDefaultLabel'), token: legacy }));
     }
     delete s.token;
 

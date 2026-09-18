@@ -10,6 +10,11 @@
 
   const { util } = GHL;
   const { el, fmt, fmtCompact } = util;
+  const { t, count } = GHL.i18n;
+
+  /* Counted nouns, formatted then declined — "1 line" against "1,204 lines". */
+  const linesOf = (n, text) => count('unitLines', n, text === undefined ? fmt(n) : text);
+  const filesOf = (n) => count('unitFiles', n, fmt(n));
 
   const SUMMARY_ID = 'ghl-summary';
   const CELL_CLASS = 'ghl-cell';
@@ -22,8 +27,8 @@
 
   /* ---------------------------------------------------------- colour ramp */
 
-  /* A file's colour runs continuously from the 通常 token at zero lines,
-     through 注意 at the warn threshold, to 警告 at the danger threshold and
+  /* A file's colour runs continuously from the "ok" token at zero lines,
+     through "warn" at the warn threshold, to "danger" at the danger threshold and
      beyond — a rainfall map's ramp rather than three steps. Interpolating in
      HSL keeps the path through the tokens' own hues (blue → green → amber →
      red); sRGB would cut across the middle and go muddy.
@@ -107,7 +112,7 @@
      file's severity. What it measures is the largest file anywhere inside: a
      deep folder is one with something bloated in it, however small its own
      share of the directory. The two ends line up with the file ramp, so half
-     way means "holds a 注意 file". */
+     way means "holds a file past the warn threshold". */
   function dirColor(maxFile, settings, alpha) {
     const [, , , lo, hi] = ramp();
     return hsl(mixHsl(lo, hi, rampPosition(maxFile, settings)), alpha);
@@ -134,9 +139,9 @@
   const METRICS = {
     lines: {
       key: 'lines',
-      label: '行数',
+      label: t('metricLines'),
       // An empty string hands the colour back to CSS — for excluded files, and
-      // for the treemap's "他 N 件" aggregate, which stands for no one count.
+      // for the treemap's "N more" aggregate, which stands for no one count.
       fill: (n, settings, alpha) => {
         if (n.type === 'dir') return dirColor(n.maxFile || 0, settings, alpha);
         if (n.type === 'file' && !n.excluded) return lineColor(n.total || 0, settings, alpha);
@@ -144,14 +149,14 @@
       },
       value: (n) => n.total || 0,
       cell: (n) => approxPrefix(n) + fmt(n.total || 0),
-      short: (n) => approxPrefix(n) + fmtCompact(n.total || 0) + ' 行',
-      long: (n) => `${approxPrefix(n)}${fmt(n.total || 0)} 行`,
-      fmtTotal: (v) => `${fmt(v)} 行`,
+      short: (n) => linesOf(n.total || 0, approxPrefix(n) + fmtCompact(n.total || 0)),
+      long: (n) => linesOf(n.total || 0, approxPrefix(n) + fmt(n.total || 0)),
+      fmtTotal: (v) => linesOf(v),
       severity: (n, settings) => (n.type === 'file' ? severity(n.total || 0, settings) : 'dir'),
     },
     bytes: {
       key: 'bytes',
-      label: 'サイズ',
+      label: t('metricBytes'),
       value: (n) => n.bytes || 0,
       cell: (n) => util.fmtBytes(n.bytes || 0),
       short: (n) => util.fmtBytes(n.bytes || 0),
@@ -214,7 +219,7 @@
 
   /* Manual mode's checkbox column is up for the whole view. A ticked row is
      in: its bar and number show, it counts towards the totals and the
-     percentages, and its files are what "行数を取得" fetches. Untick it and it
+     percentages, and its files are what the fetch button fetches. Untick it and it
      drops out of all of that. Other modes have no column. */
   function paintPick(pick, path, state, manual) {
     pick.dataset.ghlPath = path;
@@ -222,7 +227,7 @@
     pick.dataset.pick = 'on';
     pick.checked = isIncluded(state, path);
     const left = (state.pickable && state.pickable.get(path)) || 0;
-    pick.title = 'この行を表示と取得に含める' + (left ? `（未取得 ${fmt(left)} ファイル）` : '');
+    pick.title = left ? t('pickRowLeft', filesOf(left)) : t('pickRow');
   }
 
   /* Manual mode's view of the directory: the unticked rows dropped, totals
@@ -272,7 +277,7 @@
       fill.style.width = '0%';
       num.textContent = '–';
       pct.textContent = '';
-      cell.title = 'GitHub Lines: この項目の情報を取得できませんでした（サブモジュール等）';
+      cell.title = t('tipUnknown');
       return;
     }
 
@@ -289,9 +294,7 @@
       fill.style.width = '0%';
       num.textContent = node.binary ? 'binary' : 'generated';
       pct.textContent = '';
-      cell.title = node.binary
-        ? `${node.path}\nバイナリのため行数を数えていません (${util.fmtBytes(node.size)})`
-        : `${node.path}\n生成物として除外 (${util.fmtBytes(node.size)})`;
+      cell.title = t(node.binary ? 'tipBinary' : 'tipGenerated', node.path, util.fmtBytes(node.size));
       return;
     }
 
@@ -305,17 +308,17 @@
 
     const tip = [];
     tip.push(node.path);
-    tip.push(`${m.long(node)} — このディレクトリの ${share.toFixed(1)}%`);
-    if (!isFile) tip.push(`${fmt(node.fileCount)} ファイル`);
+    tip.push(t('tipShare', m.long(node), share.toFixed(1)));
+    if (!isFile) tip.push(filesOf(node.fileCount));
     // A directory's colour is about its worst file, so name it.
-    if (!isFile && m.key === 'lines') tip.push(`最大のファイル: ${fmt(node.maxFile || 0)} 行`);
+    if (!isFile && m.key === 'lines') tip.push(t('tipMaxFile', linesOf(node.maxFile || 0)));
     if (m.key === 'lines') {
       tip.push(util.fmtBytes(node.bytes || node.size || 0));
-      if (!node.allExact) tip.push('（推定値。行数を取得中または取得対象外）');
+      if (!node.allExact) tip.push(t('tipEstimate'));
       if (isFile && total >= settings.dangerLines) {
-        tip.push(`⚠ 閾値 ${fmt(settings.dangerLines)} 行を超えています`);
+        tip.push(t('tipOverDanger', linesOf(settings.dangerLines)));
       } else if (isFile && total >= settings.warnLines) {
-        tip.push(`閾値 ${fmt(settings.warnLines)} 行に近づいています`);
+        tip.push(t('tipNearWarn', linesOf(settings.warnLines)));
       }
     } else {
       tip.push(METRICS.lines.long(node));
@@ -341,7 +344,7 @@
   function allRowsBox(handlers) {
     const box = el('input', {
       class: 'ghl-pick', type: 'checkbox', 'data-ghl-action': 'pick-all',
-      title: 'GitHub Lines: すべての行を取得対象にする／外す',
+      title: GHL.i18n.t('pickAllTitle'),
     });
     box.addEventListener('click', (e) => e.stopPropagation());
     box.addEventListener('change', () => {
@@ -411,7 +414,7 @@
     if (tail.length) {
       segments.push({
         node: null,
-        label: `他 ${tail.length} 件`,
+        label: t('restItems', tail.length),
         total: tail.reduce((s, n) => s + m.value(n), 0),
         tone: 'rest',
         alt: false,
@@ -449,20 +452,18 @@
         // Marked with the icon so the checkboxes in GitHub's table below read
         // as ours, not GitHub's.
         // Only when the column head has no home (older GitHub layouts).
-        el('label', { class: 'ghl-pick-all', title: 'GitHub Lines: すべての行を取得対象にする／外す' }, [
+        el('label', { class: 'ghl-pick-all', title: t('pickAllTitle') }, [
           icon(),
-          'すべて',
+          t('pickAll'),
         ]),
         // What the bars measure — and, in manual mode, what the button beside
         // it fetches.
-        el('span', { class: 'ghl-metric', role: 'group', 'aria-label': '表示する量' }, [
-          el('button', { type: 'button', 'data-ghl-metric': 'lines', title: 'バーと割合を行数で表示' }, ['行数']),
-          el('button', { type: 'button', 'data-ghl-metric': 'bytes', title: 'バーと割合をファイルサイズで表示' }, ['サイズ']),
+        el('span', { class: 'ghl-metric', role: 'group', 'aria-label': t('metricGroup') }, [
+          el('button', { type: 'button', 'data-ghl-metric': 'lines', title: t('metricLinesTitle') }, [t('metricLines')]),
+          el('button', { type: 'button', 'data-ghl-metric': 'bytes', title: t('metricBytesTitle') }, [t('metricBytes')]),
         ]),
         el('button', { class: 'ghl-btn ghl-btn-fetch', type: 'button', 'data-ghl-action': 'fetch' }),
-        el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [
-          'ツリーマップ',
-        ]),
+        el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [t('treemap')]),
       ]),
       el('div', { class: 'ghl-stack' }),
       el('div', { class: 'ghl-legend' }),
@@ -502,7 +503,7 @@
     const m = metricOf(state);
     const idle = state.status === 'idle';
 
-    // 行数 | サイズ. With a tree in, it says what the bars measure; in manual
+    // Lines | Size. With a tree in, it says what the bars measure; in manual
     // mode it is up from the start and stays put through the fetch, since it
     // also says what the button fetches.
     const toggle = node.querySelector('.ghl-metric');
@@ -514,40 +515,34 @@
     // Manual mode's one button fetches whichever the toggle says. Sizes cost a
     // single request, so that reading is plain; lines cost one per file and
     // carry the colour. It never leaves the strip once the view is up, so the
-    // controls beside it never move: while a fetch runs it reads 取得中…, and
-    // with nothing left to fetch it sits disabled as 取得済み.
+    // controls beside it never move: while a fetch runs it reads "fetching", and
+    // with nothing left to fetch it sits disabled as "fetched".
     const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
     const wantsLines = m.key === 'lines';
     const none = pickKeys.length > 0 &&
       pickKeys.every((k) => state.deselected && state.deselected.has(k));
     const busy = state.status === 'loading' || state.status === 'estimated' || state.status === 'refining';
-    let label = '取得済み';
-    let title = wantsLines ? 'チェックした行の行数は取得済みです' : 'サイズは取得済みです';
+    let label = t('fetchDone');
+    let title = t(wantsLines ? 'fetchDoneLinesTitle' : 'fetchDoneSizesTitle');
     let disabled = true;
     let primary = false;
     if (idle && !wantsLines) {
-      label = 'サイズを取得';
-      title = 'ファイル一覧を 1 リクエストで取得し、各ファイルのサイズを表示します';
+      label = t('fetchSizes');
+      title = t('fetchSizesTitle');
       disabled = false;
     } else if (idle) {
-      label = '行数を取得';
+      label = t('fetchLines');
       primary = true;
       disabled = none;
-      title = none
-        ? '取得する行にチェックを入れてください'
-        : 'ファイル一覧を取得し、続けてチェックした行の各ファイルの行数を GitHub から取得します\n' +
-          '（ファイル数と同じだけ API リクエストを使います）';
+      title = none ? t('fetchNothingTicked') : t('fetchLinesTitle');
     } else if (busy) {
-      label = '取得中…';
+      label = t('fetchBusy');
       title = '';
     } else if (state.status === 'pending' && wantsLines) {
-      label = `行数を取得（${fmt(state.pending)}）`;
+      label = t('fetchLinesCount', fmt(state.pending));
       primary = true;
       disabled = state.pending === 0;
-      title = state.pending
-        ? `${fmt(state.pending)} ファイルの行数を GitHub から取得します\n` +
-          '（同じ数だけ API リクエストを使います。取得済みのファイルは含みません）'
-        : '取得する行にチェックを入れてください';
+      title = state.pending ? t('fetchLinesCountTitle', fmt(state.pending)) : t('fetchNothingTicked');
     }
     fetchButton.hidden = settings.exactLinesMode !== 'manual' || state.status === 'error';
     fetchButton.classList.toggle('ghl-btn-primary', primary);
@@ -574,10 +569,11 @@
       // Nothing fetched yet — the status line carries the message instead.
       stats.textContent = '—';
     } else {
-      const parts = [m.long(dirNode), `${fmt(dirNode.fileCount)} ファイル`];
+      const parts = [m.long(dirNode), filesOf(dirNode.fileCount)];
       if (biggest && total > 0) {
         const share = Math.round((m.value(biggest) / total) * 100);
-        parts.push(`最大: ${biggest.name}${biggest.type === 'dir' ? '/' : ''} ${m.short(biggest)} (${share}%)`);
+        parts.push(t('summaryBiggest',
+          biggest.name + (biggest.type === 'dir' ? '/' : ''), m.short(biggest), share));
       }
       stats.textContent = parts.join('  ·  ');
     }
@@ -630,50 +626,47 @@
   function statusText(state, m) {
     if (state.status === 'error') return errorText(state.error);
     if (state.warning) return errorText(state.warning);
-    if (state.status === 'loading') return '読み込み中…';
-    if (state.status === 'idle') return '未取得';
+    if (state.status === 'loading') return t('statusLoading');
+    if (state.status === 'idle') return t('statusIdle');
     if (state.status === 'refining') {
-      return `実行数を取得中 ${state.progress.done}/${state.progress.total}`;
+      return t('statusRefining', state.progress.done, state.progress.total);
     }
     // Estimates only exist for lines; sizes are exact from the start.
-    if (m && m.key === 'bytes') return state.truncated ? '巨大リポジトリのため一部のみ' : '';
-    if (state.status === 'estimated') return 'バイト数から推定中…';
-    if (state.status === 'pending') return 'バイト数からの推定値';
-    if (state.truncated) return '巨大リポジトリのため一部推定';
+    if (m && m.key === 'bytes') return state.truncated ? t('statusTruncatedSizes') : '';
+    if (state.status === 'estimated') return t('statusEstimating');
+    if (state.status === 'pending') return t('statusEstimated');
+    if (state.truncated) return t('statusTruncated');
     return '';
   }
 
   function untilText(reset) {
     if (!reset) return '';
     const minutes = Math.ceil((reset - Date.now()) / 60000);
-    return minutes > 0 ? `（あと約 ${minutes} 分）` : '';
+    return minutes > 0 ? t('untilMinutes', minutes) : '';
   }
 
   function errorText(err) {
-    if (!err) return 'エラー';
+    if (!err) return t('errGeneric');
+    const token = err.tokenLabel || t('tokenFallback');
     switch (err.error) {
       case 'rate_limit':
-        return err.authenticated
-          ? `API レート制限に到達しました${untilText(err.reset)}`
-          : 'API レート制限（未認証 60回/時）— 設定でトークンを登録してください';
+        return err.authenticated ? t('errRateLimit', untilText(err.reset)) : t('errRateLimitAnon');
       case 'secondary_rate_limit':
-        return `GitHub の二次レート制限により一時停止中${untilText(err.reset)}`;
+        return t('errSecondary', untilText(err.reset));
       case 'throttled':
-        return '短時間に取得しすぎたため待機中 — しばらくすると再開します';
+        return t('errThrottled');
       case 'bad_token':
-        return `${err.tokenLabel || 'トークン'} が無効です — 設定を確認してください`;
+        return t('errBadToken', token);
       case 'not_found':
         // With several accounts configured, naming the one that was tried is
         // the difference between a useful message and a mystery.
-        return err.authenticated
-          ? `リポジトリにアクセスできません（${err.tokenLabel || 'トークン'} の権限を確認）`
-          : 'private リポジトリ — 設定でトークンを登録してください';
+        return err.authenticated ? t('errNotFound', token) : t('errPrivate');
       case 'timeout':
-        return 'バックグラウンドが応答しません — ページを更新してください';
+        return t('errTimeout');
       case 'disconnected':
       case 'invalidated':
-        return '拡張が再読み込みされました — ページを更新してください';
-      default: return `取得に失敗しました (${err.error || 'error'})`;
+        return t('errReloaded');
+      default: return t('errFailed', err.error || 'error');
     }
   }
 

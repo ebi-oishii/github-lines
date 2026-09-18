@@ -1,6 +1,7 @@
 'use strict';
 
 const GHL = globalThis.GHL;
+const t = GHL.i18n.t;
 
 const $ = (id) => document.getElementById(id);
 
@@ -25,7 +26,7 @@ function flash(text, tone) {
 /* ------------------------------------------------------------------ tokens */
 
 function addTokenRow(entry) {
-  const row = $('token-row-template').content.firstElementChild.cloneNode(true);
+  const row = GHL.i18n.applyDom($('token-row-template').content.firstElementChild.cloneNode(true));
   row.dataset.id = entry.id || GHL.settings.newId();
   row.querySelector('.token-label').value = entry.label || '';
   row.querySelector('.token-value').value = entry.token || '';
@@ -121,11 +122,11 @@ async function verifyRow(row) {
   const token = row.querySelector('.token-value').value.trim();
 
   if (!token) {
-    setStatus(status, 'トークンが未入力です', 'error');
+    setStatus(status, t('optTokenEmpty'), 'error');
     return;
   }
 
-  setStatus(status, '確認中…', 'idle');
+  setStatus(status, t('optVerifying'), 'idle');
 
   const headers = {
     Accept: 'application/vnd.github+json',
@@ -136,11 +137,11 @@ async function verifyRow(row) {
   try {
     const user = await ghGet('/user', headers);
     if (user.status === 401) {
-      setStatus(status, 'トークンが無効です', 'error');
+      setStatus(status, t('optTokenInvalid'), 'error');
       return;
     }
     if (!user.ok) {
-      setStatus(status, `確認に失敗しました (HTTP ${user.status})`, 'error');
+      setStatus(status, t('optVerifyHttp', user.status), 'error');
       return;
     }
 
@@ -176,9 +177,10 @@ async function verifyRow(row) {
     }
 
     const found = [...discovered];
+    const shown = found.slice(0, 4).join(', ');
     const summary = found.length
-      ? `対象: ${found.slice(0, 4).join(', ')}${found.length > 4 ? ` ほか${found.length - 4}件` : ''}`
-      : '対象のオーナーを特定できませんでした — 手動で入力してください';
+      ? t('optOwnersFound', found.length > 4 ? t('optOwnersMore', shown, found.length - 4) : shown)
+      : t('optOwnersNone');
 
     const writable = writeGranting(user.scopes);
     let kindNote = '';
@@ -186,19 +188,15 @@ async function verifyRow(row) {
     if (writable === null) {
       kindNote = ' / fine-grained';
     } else if (writable.length) {
-      kindNote = ` / ⚠ 書き込み権限を含みます（${writable.join(', ')}）`;
+      kindNote = t('optTokenWritable', writable.join(', '));
       if (tone === 'ok') tone = 'warn';
     } else {
-      kindNote = ' / classic（読み取りのみ）';
+      kindNote = t('optTokenClassic');
     }
 
-    setStatus(
-      status,
-      `${login} として有効 — ${summary}（残り ${user.remaining}/${user.limit} 回/時）${kindNote}`,
-      tone
-    );
+    setStatus(status, t('optVerifyOk', login, summary, user.remaining, user.limit, kindNote), tone);
   } catch (e) {
-    setStatus(status, `確認に失敗しました: ${e.message}`, 'error');
+    setStatus(status, t('optVerifyFailed', e.message), 'error');
   }
 }
 
@@ -254,29 +252,29 @@ async function save() {
   await GHL.settings.set(patch);
   await fill();
   const n = patch.tokens.length;
-  flash(n ? `保存しました（トークン ${n} 件）` : '保存しました（トークンなし）', 'ok');
+  flash(n ? t('optSaved', n) : t('optSavedNone'), 'ok');
 }
 
 async function refreshCacheStats() {
   const res = await chrome.runtime.sendMessage({ type: 'CACHE_STATS' });
   if (res && res.ok) {
     $('cache-stats').textContent =
-      `行数 ${res.lines.toLocaleString()} 件 / ツリー ${res.trees} 件 / テキスト ${res.texts} 件`;
+      t('optCacheStats', res.lines.toLocaleString(), res.trees, res.texts);
   } else {
-    $('cache-stats').textContent = 'キャッシュ情報を取得できませんでした';
+    $('cache-stats').textContent = t('optCacheStatsFailed');
   }
 }
 
 async function clearCache() {
   await chrome.runtime.sendMessage({ type: 'CLEAR_CACHE' });
   await refreshCacheStats();
-  flash('キャッシュを削除しました', 'ok');
+  flash(t('optCacheCleared'), 'ok');
 }
 
 async function reset() {
   await GHL.settings.reset();
   await fill();
-  flash('初期設定に戻しました', 'ok');
+  flash(t('optResetDone'), 'ok');
 }
 
 $('add-token').addEventListener('click', () => {
@@ -294,5 +292,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+GHL.i18n.applyDom();
+document.documentElement.lang = t('optLang');
 fill();
 refreshCacheStats();

@@ -18,7 +18,7 @@
         GHL.treemap.open(current.state);
       }
     },
-    /* The one fetch button does whatever the 行数 | サイズ toggle says. */
+    /* The one fetch button does whatever the Lines | Size toggle says. */
     onFetch() {
       if (!current || !current.handle) return;
       const s = current.state;

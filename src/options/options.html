@@ -1,171 +1,149 @@
 <!doctype html>
-<html lang="ja">
+<html>
 <head>
   <meta charset="utf-8">
-  <title>GitHub Lines の設定</title>
+  <title data-i18n="optTitle">GitHub Lines</title>
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <main class="wrap">
     <header class="head">
       <h1>GitHub Lines</h1>
-      <p class="lede">
-        GitHub のファイル一覧に、ディレクトリ内での行数の割合バーとツリーマップを表示します。
-      </p>
+      <p class="lede" data-i18n="optLede"></p>
     </header>
 
     <section class="card">
-      <h2>アクセストークン</h2>
-      <p class="hint">
-        未設定でも public リポジトリでは動作しますが、GitHub API のレート制限が
-        <strong>60 回/時</strong> になります。トークンを登録すると
-        <strong>5,000 回/時</strong> になり、private リポジトリでも使えます。
-      </p>
-      <p class="hint">
-        複数のアカウントを使い分けている場合は、トークンを複数登録して
-        <strong>オーナー（ユーザー名 / Organization 名）ごとに</strong>割り当てられます。
-        あるアカウントのトークンで別アカウントの private リポジトリは読めないためです。
-      </p>
+      <h2 data-i18n="optTokens"></h2>
+      <p class="hint" data-i18n-html="optTokensHint1"></p>
+      <p class="hint" data-i18n-html="optTokensHint2"></p>
 
       <div id="token-list"></div>
-      <button class="btn" id="add-token" type="button">＋ トークンを追加</button>
+      <button class="btn" id="add-token" type="button" data-i18n="optAddToken"></button>
 
       <p class="hint">
-        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">
-          Fine-grained token を作成
-        </a>
-        — 必要な権限は <code>Repository permissions → Contents: Read-only</code> のみです。
-        トークンはこの端末の <code>chrome.storage.local</code> にのみ保存され、
-        <code>api.github.com</code> 以外には送信しません。
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer"
+           data-i18n="optTokenLink"></a>
+        <span data-i18n-html="optTokensHint3"></span>
       </p>
     </section>
 
     <template id="token-row-template">
       <div class="token-row">
         <div class="token-head">
-          <label class="radio" title="どのオーナーにも一致しないときに使うトークン">
+          <label class="radio" data-i18n-title="optTokenDefaultTitle">
             <input type="radio" name="default-token" class="token-default">
-            <span>既定</span>
+            <span data-i18n="optTokenDefault"></span>
           </label>
-          <input class="token-label" type="text" spellcheck="false" placeholder="ラベル（例: 個人 / 仕事）">
-          <button class="btn quiet token-remove" type="button" aria-label="このトークンを削除">削除</button>
+          <input class="token-label" type="text" spellcheck="false" data-i18n-placeholder="optTokenLabelPlaceholder">
+          <button class="btn quiet token-remove" type="button"
+                  data-i18n-label="optTokenRemoveLabel" data-i18n="optTokenRemove"></button>
         </div>
         <label class="field">
-          <span class="label">Personal Access Token</span>
+          <span class="label" data-i18n="optTokenValue"></span>
           <input class="token-value" type="password" autocomplete="off" spellcheck="false"
-                 placeholder="github_pat_… または ghp_…">
+                 data-i18n-placeholder="optTokenValuePlaceholder">
         </label>
         <label class="field">
-          <span class="label">このトークンを使うオーナー（カンマ区切り）</span>
-          <input class="token-owners" type="text" spellcheck="false" placeholder="ebi-oishii, my-org">
+          <span class="label" data-i18n="optTokenOwners"></span>
+          <input class="token-owners" type="text" spellcheck="false" placeholder="my-name, my-org">
         </label>
         <div class="token-actions">
-          <button class="btn token-verify" type="button">検証してオーナーを自動取得</button>
+          <button class="btn token-verify" type="button" data-i18n="optTokenVerify"></button>
           <span class="status token-status" data-tone="idle"></span>
         </div>
       </div>
     </template>
 
     <section class="card">
-      <h2>閾値</h2>
-      <p class="hint">1 ファイルの行数がこの値を超えたら色を変えて警告します。</p>
+      <h2 data-i18n="optThresholds"></h2>
+      <p class="hint" data-i18n="optThresholdsHint"></p>
       <div class="row">
         <label class="field narrow">
-          <span class="label">注意 (黄)</span>
+          <span class="label" data-i18n="optWarn"></span>
           <input id="warnLines" type="number" min="1" step="50">
         </label>
         <label class="field narrow">
-          <span class="label">警告 (赤)</span>
+          <span class="label" data-i18n="optDanger"></span>
           <input id="dangerLines" type="number" min="1" step="50">
         </label>
       </div>
     </section>
 
     <section class="card">
-      <h2>表示</h2>
+      <h2 data-i18n="optDisplay"></h2>
       <label class="check">
         <input id="showInlineBars" type="checkbox">
-        <span>ファイル一覧に割合バーを表示する</span>
+        <span data-i18n="optShowBars"></span>
       </label>
       <label class="check">
         <input id="showTreemapButton" type="checkbox">
-        <span>ツリーマップのボタンを表示する</span>
+        <span data-i18n="optShowTreemap"></span>
       </label>
     </section>
 
     <section class="card">
-      <h2>行数のカウント</h2>
+      <h2 data-i18n="optCounting"></h2>
       <div class="field">
-        <span class="label">実際の行数の取得</span>
+        <span class="label" data-i18n="optModeLabel"></span>
         <label class="check">
           <input type="radio" name="exactLinesMode" value="auto">
-          <span><strong>自動</strong> — ページを開いたら取得する</span>
+          <span data-i18n-html="optModeAuto"></span>
         </label>
         <label class="check">
           <input type="radio" name="exactLinesMode" value="manual">
-          <span><strong>手動</strong> — ページを開いても何も取得しない。一覧の上の「行数 | サイズ」で選んだ方を
-            「取得」ボタンで取りに行きます。各行のチェックで対象を絞れます</span>
+          <span data-i18n-html="optModeManual"></span>
         </label>
         <label class="check">
           <input type="radio" name="exactLinesMode" value="off">
-          <span><strong>取得しない</strong> — 推定値のみ。1 画面あたり API 1 リクエストで済みます</span>
+          <span data-i18n-html="optModeOff"></span>
         </label>
       </div>
-      <p class="hint">
-        どのモードでも、過去に取得してキャッシュ済みのファイルは API を使わずに実測値で表示されます。
-      </p>
+      <p class="hint" data-i18n="optModeHint"></p>
       <div class="row">
         <label class="field narrow">
-          <span class="label">1 画面あたりの取得上限</span>
+          <span class="label" data-i18n="optMaxFetch"></span>
           <input id="maxExactFetch" type="number" min="0" step="50">
         </label>
         <label class="field narrow">
-          <span class="label">並列数</span>
+          <span class="label" data-i18n="optConcurrency"></span>
           <input id="concurrency" type="number" min="1" max="16" step="1">
         </label>
       </div>
-      <p class="hint">
-        取得した行数は blob SHA をキーにキャッシュされます。git の blob SHA は内容のハッシュなので、
-        ブランチやコミットが変わっても内容が同じファイルは再取得されません。
-      </p>
+      <p class="hint" data-i18n="optCacheHint"></p>
     </section>
 
     <section class="card">
-      <h2>除外</h2>
+      <h2 data-i18n="optExclusions"></h2>
       <label class="check">
         <input id="respectGitattributes" type="checkbox">
-        <span>
-          <code>.gitattributes</code> の <code>linguist-generated</code> /
-          <code>linguist-vendored</code> を尊重する
-        </span>
+        <span data-i18n-html="optRespectGitattributes"></span>
       </label>
       <label class="check">
         <input id="excludeGenerated" type="checkbox">
-        <span>下記のパターンに一致するファイルを除外する</span>
+        <span data-i18n="optExcludeGenerated"></span>
       </label>
       <label class="field">
-        <span class="label">除外パターン（1 行に 1 つ、glob）</span>
+        <span class="label" data-i18n="optPatterns"></span>
         <textarea id="excludePatterns" rows="12" spellcheck="false"></textarea>
       </label>
-      <p class="hint">
-        バイナリ（画像・フォント・アーカイブ等）は拡張子で判定して常に除外されます。
-      </p>
+      <p class="hint" data-i18n="optPatternsHint"></p>
     </section>
 
     <section class="card">
-      <h2>キャッシュ</h2>
+      <h2 data-i18n="optCache"></h2>
       <p class="hint" id="cache-stats">…</p>
-      <button class="btn" id="clear-cache" type="button">キャッシュを削除</button>
+      <button class="btn" id="clear-cache" type="button" data-i18n="optClearCache"></button>
     </section>
 
     <footer class="foot">
-      <button class="btn primary" id="save" type="button">保存</button>
-      <button class="btn" id="reset" type="button">初期設定に戻す</button>
+      <button class="btn primary" id="save" type="button" data-i18n="optSave"></button>
+      <button class="btn" id="reset" type="button" data-i18n="optReset"></button>
       <span class="status" id="save-status" data-tone="idle"></span>
     </footer>
   </main>
 
   <script src="../lib/namespace.js"></script>
+  <script src="../lib/i18n.js"></script>
   <script src="../lib/patterns.js"></script>
   <script src="../lib/settings.js"></script>
   <script src="options.js"></script>

@@ -305,8 +305,8 @@
     }
 
     /* Everything from the tree request on: one API request, then estimates,
-       then exact counts — in automatic mode, or when manual mode's "行数を取得"
-       was pressed straight away (`thenExact`). With `cacheOnly` nothing is
+       then exact counts — in automatic mode, or when manual mode's fetch button
+       was pressed on the lines reading straight away (`thenExact`). With `cacheOnly` nothing is
        requested: a commit seen before comes back from the cache and shows,
        anything else leaves the view idle. */
     async function loadTree(thenExact, cacheOnly) {

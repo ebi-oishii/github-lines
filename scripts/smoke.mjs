@@ -55,12 +55,30 @@ function assert(cond, msg) {
   if (!cond) failures++;
 }
 
-function skip(msg) {
-  console.log(`skip  ${msg}`);
+function assertDocLang(lang) {
+  assert(lang === msg('optLang'), `the options page declares its language (${lang})`);
+}
+
+function skip(name) {
+  console.log(`skip  ${name}`);
   skips++;
 }
 
-const RATE_LIMITED = /レート制限|rate limit/;
+/* Chrome resolves the catalogue from its own UI language — which it takes from
+   the OS, not from a flag — so the run asks the extension which one it landed
+   on and asserts through that. Otherwise every check here would be testing one
+   translation, and would fail on a machine set to the other. */
+let MESSAGES = JSON.parse(fs.readFileSync(path.join(ROOT, '_locales/en/messages.json'), 'utf8'));
+const msg = (key, ...subs) =>
+  (MESSAGES[key] ? MESSAGES[key].message : key).replace(/\$(\d)/g, (_, i) => subs[Number(i) - 1] ?? '');
+
+/* Still working on it — none of these is a resting state. The trailing
+   placeholders are trimmed off, leaving a prefix to match on. */
+const busyPrefixes = () => ['fetchBusy', 'statusLoading', 'statusEstimating', 'statusRefining']
+  .map((key) => msg(key, '', '').replace(/[\s/…]+$/, '').trim())
+  .filter(Boolean);
+
+const RATE_LIMITED = /rate limit|レート制限/i;
 
 const context = await chromium.launchPersistentContext(profile, {
   executablePath: findChrome(),
@@ -76,6 +94,21 @@ const context = await chromium.launchPersistentContext(profile, {
 
 try {
   const page = context.pages()[0] || (await context.newPage());
+  const worker = context.serviceWorkers()[0] || (await context.waitForEvent('serviceworker'));
+  const extensionId = new URL(worker.url()).host;
+
+  // Which catalogue the extension resolved to, asked of the extension itself.
+  const locale = await worker.evaluate(() => chrome.i18n.getMessage('optLang'));
+  if (locale && locale !== 'en') {
+    MESSAGES = JSON.parse(fs.readFileSync(path.join(ROOT, `_locales/${locale}/messages.json`), 'utf8'));
+  }
+  console.log(`extension locale: ${locale}`);
+
+  // The catalogue's own wording for "still working", for the waits below.
+  await context.addInitScript(([busy, verifying]) => {
+    window.__ghlBusy = busy;
+    window.__ghlVerifying = verifying;
+  }, [busyPrefixes(), msg('optVerifying')]);
 
   // Feed the extension a token if one is in the environment, by driving its own
   // options page — the same path a user takes.
@@ -86,8 +119,6 @@ try {
   // instead of quietly passing.
   if (process.env.GITHUB_TOKEN) {
     const owner = new URL(TARGET_URL).pathname.split('/').filter(Boolean)[0];
-    const worker = context.serviceWorkers()[0] || (await context.waitForEvent('serviceworker'));
-    const extensionId = new URL(worker.url()).host;
 
     await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
     await page.fill('.token-row:nth-child(1) .token-value', process.env.GITHUB_TOKEN);
@@ -97,15 +128,17 @@ try {
     await page.waitForFunction(
       () => {
         const s = document.querySelector('.token-row:nth-child(1) .token-status');
-        return s && s.textContent && !/確認中/.test(s.textContent);
+        return s && s.textContent && s.textContent !== window.__ghlVerifying;
       },
       { timeout: 20000 }
     );
-    const verdict = await page.$eval('.token-row:nth-child(1) .token-status', (n) => n.textContent);
+    const verdict = await page.$eval('.token-row:nth-child(1) .token-status', (n) => `${n.dataset.tone}|${n.textContent}`);
     const discovered = await page.$eval('.token-row:nth-child(1) .token-owners', (n) => n.value);
     const autoLabel = await page.$eval('.token-row:nth-child(1) .token-label', (n) => n.value);
 
-    assert(/として有効/.test(verdict), `verify identified the token (${verdict})`);
+    // The tone is the verdict: `ok` (or `warn`, for a write-capable token)
+    // means it identified the account behind the token.
+    assert(/^(ok|warn)\|\S/.test(verdict), `verify identified the token (${verdict.split('|')[0]})`);
     assert(discovered.trim().length > 0, `owners were auto-filled (${discovered})`);
     assert(autoLabel.trim().length > 0, `label was auto-filled (${autoLabel})`);
 
@@ -126,7 +159,16 @@ try {
     await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
 
     const saved = await page.$eval('#save-status', (n) => n.textContent);
-    assert(/2 件/.test(saved), `both tokens saved (${saved})`);
+    assert(saved === msg('optSaved', 2), `both tokens saved (${saved})`);
+
+    // Every label on the options page comes from the catalogue; a key that is
+    // missing or misspelt renders as an empty element rather than failing.
+    const blank = await page.$$eval('[data-i18n], [data-i18n-html]', (nodes) =>
+      nodes.filter((n) => !n.textContent.trim())
+        .map((n) => n.getAttribute('data-i18n') || n.getAttribute('data-i18n-html'))
+    );
+    assert(blank.length === 0, `every label on the options page resolved${blank.length ? `: ${blank.join(', ')} did not` : ''}`);
+    assertDocLang(await page.$eval('html', (n) => n.lang));
     assert(
       (await page.$$('.token-row')).length === 2,
       'the options page renders both tokens after reload'
@@ -153,21 +195,21 @@ try {
   console.log(`opening ${TARGET_URL}`);
   await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
 
-  // Manual mode fetches nothing until asked. Flip the toggle to サイズ, press
-  // the button, check the sizes it shows, then flip back to 行数 for the
+  // Manual mode fetches nothing until asked. Flip the toggle to sizes, press
+  // the button, check the sizes it shows, then flip back to lines for the
   // checks below.
   if (MANUAL) {
     await page.waitForSelector('#ghl-summary [data-ghl-action="fetch"]:visible', { timeout: 30000 });
     assert(apiRequests.length === 0, `nothing is requested before the button is pressed (${apiRequests.length})`);
     const opening = await page.$eval('#ghl-summary [data-ghl-action="fetch"]', (b) => b.textContent);
-    assert(/行数を取得/.test(opening), `the toggle opens on 行数 (${opening})`);
+    assert(opening === msg('fetchLines'), `the toggle opens on lines (${opening})`);
     await page.click('#ghl-summary [data-ghl-metric="bytes"]');
     const label = await page.$eval('#ghl-summary [data-ghl-action="fetch"]', (b) => b.textContent);
-    assert(/サイズを取得/.test(label), `the button follows the toggle (${label})`);
-    // The segmented control's thumb slides under サイズ (the right half).
+    assert(label === msg('fetchSizes'), `the button follows the toggle (${label})`);
+    // The segmented control's thumb slides under the size half, on the right.
     await page.waitForTimeout(250);
     const thumb = await page.$eval('#ghl-summary .ghl-metric', (n) => getComputedStyle(n, '::before').transform);
-    assert(/matrix\(1, 0, 0, 1, \d+, 0\)/.test(thumb) && !/, 0, 0\)$/.test(thumb), `the thumb sits under サイズ (${thumb})`);
+    assert(/matrix\(1, 0, 0, 1, \d+, 0\)/.test(thumb) && !/, 0, 0\)$/.test(thumb), `the thumb sits under the size half (${thumb})`);
     const idlePicks = await page.$$eval('.ghl-row-pick[data-pick="on"]', (ps) =>
       ps.filter((p) => p.offsetParent !== null).length
     );
@@ -183,7 +225,7 @@ try {
     );
     assert(
       sizes.length > 0 && sizes.every((t) => /\d [KM]?B$/.test(t) || /generated|binary/.test(t)),
-      `rows show sizes after サイズを取得 (${sizes.slice(0, 3).join(', ')})`
+      `rows show sizes after the size fetch (${sizes.slice(0, 3).join(', ')})`
     );
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-sizes.png'), fullPage: false });
     await page.click('#ghl-summary [data-ghl-metric="lines"]');
@@ -199,7 +241,7 @@ try {
   await page.waitForFunction(
     () => {
       const s = document.querySelector('.ghl-summary-status');
-      return s && !/取得中|推定中|読み込み中/.test(s.textContent);
+      return s && !window.__ghlBusy.some((b) => s.textContent.includes(b));
     },
     { timeout: 45000 }
   ).catch(() => console.log('note: exact-line pass still running, continuing'));
@@ -237,7 +279,7 @@ try {
   assert(rows.every((r) => r.visible), 'the visible name cell got the bar, not just the hidden one');
   assert(rows.some((r) => /\d/.test(r.lines)), 'rows show a line count');
   assert(rows.some((r) => parseFloat(r.width) > 90), 'the largest row fills its bar');
-  assert(/行/.test(summary), 'summary strip shows a total');
+  assert(summary.includes(msg('unitLines', '').trim()), `the summary strip shows a total (${summary})`);
 
   // The metric toggle: sizes come from the tree alone, so this costs nothing.
   const requestsBeforeToggle = apiRequests.length;
@@ -245,7 +287,7 @@ try {
   const sizeNums = await page.$$eval('.ghl-cell[data-ghl-path] .ghl-num', (ns) =>
     ns.filter((n) => n.offsetParent !== null).map((n) => n.textContent)
   );
-  assert(sizeNums.some((t) => /\d [KM]?B$/.test(t)), `rows show sizes when the toggle says サイズ (${sizeNums.slice(0, 3).join(', ')})`);
+  assert(sizeNums.some((n) => /\d [KM]?B$/.test(n)), `rows show sizes when the toggle says size (${sizeNums.slice(0, 3).join(', ')})`);
   assert(apiRequests.length === requestsBeforeToggle, 'switching the metric makes no request');
   await page.screenshot({ path: path.join(OUT_DIR, 'sizes.png'), fullPage: false });
 
@@ -253,7 +295,7 @@ try {
   await page.click('#ghl-summary [data-ghl-action="treemap"]');
   await page.waitForSelector('.ghl-overlay .ghl-tm-tile', { timeout: 10000 });
   const sizeStatus = await page.$eval('.ghl-tm-status', (n) => n.textContent);
-  assert(/サイズ/.test(sizeStatus), `treemap says it measures sizes (${sizeStatus})`);
+  assert(sizeStatus === msg('tmArea', msg('metricBytes')), `the treemap says it measures sizes (${sizeStatus})`);
   assert(await page.$('.ghl-modal-foot .ghl-legend:visible') === null, 'the line-threshold legend is hidden for sizes');
   await page.screenshot({ path: path.join(OUT_DIR, 'treemap-sizes.png') });
   await page.keyboard.press('Escape');
@@ -265,7 +307,8 @@ try {
   if (rateLimited) {
     skip(`API quota exhausted — the extension reported it correctly: "${status}"`);
   } else {
-    assert(!/失敗|エラー/.test(status), `no error in the status line (${status})`);
+    const tone = await page.$eval('#ghl-summary .ghl-summary-status', (n) => n.dataset.tone);
+    assert(tone !== 'error', `no error in the status line (${status})`);
     if (!MANUAL) {
       assert(rows.some((r) => !r.lines.startsWith('~')), 'at least one exact line count landed');
     }
@@ -309,7 +352,7 @@ try {
     await page.waitForFunction(
       () => {
         const s = document.querySelector('.ghl-summary-status');
-        return s && !/取得中/.test(s.textContent);
+        return s && !window.__ghlBusy.some((b) => s.textContent.includes(b));
       },
       { timeout: 60000 }
     );
@@ -324,7 +367,7 @@ try {
     assert(spent > 0, `pressing the button fetched (${spent} requests)`);
     assert(after.some((n) => /^[\d,]+$/.test(n)), 'estimates were replaced with exact counts');
     const doneLabel = await page.$eval('#ghl-summary [data-ghl-action="fetch"]', (b) => `${b.disabled ? 'disabled ' : ''}${b.textContent}`);
-    assert(/^disabled 取得済み/.test(doneLabel), `the button stays put, disabled, as 取得済み (${doneLabel})`);
+    assert(doneLabel === `disabled ${msg('fetchDone')}`, `the button stays put, disabled, as done (${doneLabel})`);
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-mode.png') });
   }
 
@@ -344,7 +387,8 @@ try {
   );
   assert(dirColours.every((d) => /^(hsl|rgb|color)a?\(/.test(d.colour)),
     `directory bars are coloured too (${dirColours[0]?.colour})`);
-  assert(dirColours.every((d) => /最大のファイル/.test(d.tip)), 'and say which file that colour is about');
+  const maxFilePrefix = msg('tipMaxFile', '').trim();
+  assert(dirColours.every((d) => d.tip.includes(maxFilePrefix)), 'and say which file that colour is about');
 
   // Treemap
   await page.click('#ghl-summary [data-ghl-action="treemap"]');
@@ -359,7 +403,7 @@ try {
   assert(rampBars.every((b) => /linear-gradient/.test(b)), `each is the ramp itself (${rampBars[0].slice(0, 50)})`);
   assert(rampBars[0] !== rampBars[1], 'and the folder ramp is its own colour family');
   const ticks = (await page.$$('.ghl-ramp-tick')).length;
-  assert(ticks === 2, `with the 注意 threshold ticked on each (${ticks})`);
+  assert(ticks === 2, `with the warn threshold ticked on each (${ticks})`);
 
   assert(tiles.length > 0, `treemap drew tiles (${tiles.length})`);
   assert(tiles.every((t) => t.w >= 0 && t.h >= 0), 'every tile has a valid size');

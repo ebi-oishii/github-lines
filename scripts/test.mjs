@@ -97,13 +97,30 @@ async function waitFor(predicate, timeoutMs, label) {
   throw new Error(`timed out waiting for ${label}`);
 }
 
+/* The catalogue the extension would resolve to. Tests run against the default
+   locale, and assert through `msg()` rather than against literal text, so they
+   say what the UI means instead of what one translation of it reads. */
+const MESSAGES = JSON.parse(
+  fs.readFileSync(path.join(ROOT, '_locales/en/messages.json'), 'utf8')
+);
+
 globalThis.chrome = {
   storage: {
     local: { get: async () => ({}), set: async () => {}, remove: async () => {} },
     onChanged: { addListener() {} },
   },
   runtime: { sendMessage() {}, lastError: null },
+  i18n: {
+    getMessage(key, subs) {
+      const entry = MESSAGES[key];
+      if (!entry) return '';
+      const list = Array.isArray(subs) ? subs : (subs === undefined ? [] : [subs]);
+      return entry.message.replace(/\$(\d)/g, (_, i) => list[Number(i) - 1] ?? '');
+    },
+  },
 };
+
+const msg = (key, ...subs) => chrome.i18n.getMessage(key, subs.map(String));
 
 const fixtureHtml = fs.existsSync(FIXTURE) ? fs.readFileSync(FIXTURE, 'utf8') : null;
 if (JSDOM && !fixtureHtml) {
@@ -119,6 +136,7 @@ function load(rel) {
 
 for (const file of [
   'src/lib/namespace.js',
+  'src/lib/i18n.js',
   'src/lib/patterns.js',
   'src/lib/settings.js',
   'src/content/util.js',
@@ -328,6 +346,68 @@ check('allExact is false until every descendant is exact', () => {
   assertEqual(root.allExact, true, 'clears once everything is exact');
 });
 
+/* ------------------------------------------------------------ catalogues */
+
+/* The two catalogues are edited by hand and read by Chrome, which fails
+   silently: a missing key renders as an empty string, and a placeholder that
+   one locale has and the other does not drops a number out of a sentence in
+   just that language. */
+
+const LOCALES = ['en', 'ja'];
+const CATALOGUES = Object.fromEntries(LOCALES.map((l) => [
+  l, JSON.parse(fs.readFileSync(path.join(ROOT, `_locales/${l}/messages.json`), 'utf8')),
+]));
+
+const placeholdersIn = (s) => [...new Set((s.match(/\$\d/g) || []))].sort().join(',');
+
+check('every locale carries the same keys', () => {
+  const [a, b] = LOCALES;
+  const missing = Object.keys(CATALOGUES[a]).filter((k) => !CATALOGUES[b][k]);
+  const extra = Object.keys(CATALOGUES[b]).filter((k) => !CATALOGUES[a][k]);
+  assertEqual(missing.join(', '), '', `keys missing from ${b}`);
+  assertEqual(extra.join(', '), '', `keys missing from ${a}`);
+});
+
+check('no message is empty, and the placeholders line up across locales', () => {
+  for (const [key, entry] of Object.entries(CATALOGUES.en)) {
+    assert(entry.message.trim().length > 0, `${key} is empty in en`);
+    const other = CATALOGUES.ja[key];
+    assert(other && other.message.trim().length > 0, `${key} is empty in ja`);
+    assertEqual(placeholdersIn(other.message), placeholdersIn(entry.message),
+      `${key} takes different substitutions in ja`);
+  }
+});
+
+check('every key the extension asks for exists', () => {
+  const sources = [];
+  (function walk(dir) {
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name);
+      if (fs.statSync(full).isDirectory()) walk(full);
+      else if (/\.(js|html)$/.test(name)) sources.push(full);
+    }
+  })(path.join(ROOT, 'src'));
+  sources.push(path.join(ROOT, 'manifest.json'));
+
+  const asked = new Map(); // key -> where it was asked for
+  for (const file of sources) {
+    const text = fs.readFileSync(file, 'utf8');
+    const where = path.relative(ROOT, file);
+    for (const [, key] of text.matchAll(/\bt\('([A-Za-z][\w]*)'/g)) asked.set(key, where);
+    for (const [, key] of text.matchAll(/\bcount\('([A-Za-z][\w]*)'/g)) {
+      asked.set(key, where);
+      asked.set(`${key}One`, where); // count() declines by appending One
+    }
+    for (const [, key] of text.matchAll(/data-i18n(?:-\w+)?="([A-Za-z][\w]*)"/g)) asked.set(key, where);
+    for (const [, key] of text.matchAll(/__MSG_([A-Za-z][\w]*)__/g)) asked.set(key, where);
+  }
+
+  assert(asked.size > 40, `the scan found the call sites (${asked.size})`);
+  const unknown = [...asked].filter(([key]) => !CATALOGUES.en[key])
+    .map(([key, where]) => `${key} (${where})`);
+  assertEqual(unknown.join(', '), '', 'keys asked for but not in the catalogue');
+});
+
 /* --------------------------------------------------------- colour ramp */
 
 /* The light-theme tokens the ramp falls back to, as hues. */
@@ -360,17 +440,17 @@ check('the ramp lands on the tokens at zero and at each threshold', () => {
 
 check('the ramp is continuous between them and clamps above', () => {
   const mid = hueOf(inline.lineColor(250, THRESHOLDS));
-  assert(mid < HUE_OK && mid > HUE_WARN, `half way to 注意 sits between the two hues (got ${mid})`);
+  assert(mid < HUE_OK && mid > HUE_WARN, `half way to the warn threshold sits between the two hues (got ${mid})`);
   const late = hueOf(inline.lineColor(650, THRESHOLDS));
-  assert(late < HUE_WARN, `past 注意 it keeps descending towards red (got ${late})`);
+  assert(late < HUE_WARN, `past it the ramp keeps descending towards red (got ${late})`);
   assertEqual(inline.lineColor(5000, THRESHOLDS), inline.lineColor(800, THRESHOLDS),
-    'everything past 警告 is the same red');
+    'everything past the danger threshold is the same red');
 });
 
 check('the ramp follows the configured thresholds', () => {
   const tight = { warnLines: 50, dangerLines: 80 };
-  near(hueOf(inline.lineColor(50, tight)), HUE_WARN, 1, '注意 at 50 lines');
-  assertEqual(inline.lineColor(80, tight), inline.lineColor(800, THRESHOLDS), '警告 is the same red either way');
+  near(hueOf(inline.lineColor(50, tight)), HUE_WARN, 1, 'a warn threshold of 50 lines');
+  assertEqual(inline.lineColor(80, tight), inline.lineColor(800, THRESHOLDS), 'danger is the same red either way');
   // Thresholds the wrong way round must not divide by zero or go backwards.
   const inverted = { warnLines: 900, dangerLines: 100 };
   assert(/^hsl\(/.test(inline.lineColor(500, inverted)), 'an inverted pair still yields a colour');
@@ -390,7 +470,7 @@ check('directories ramp in violet, on the largest file inside them', () => {
   const some = inline.dirColor(500, THRESHOLDS);
   const bad = inline.dirColor(800, THRESHOLDS);
 
-  for (const [colour, what] of [[none, 'empty'], [some, 'at 注意'], [bad, 'at 警告']]) {
+  for (const [colour, what] of [[none, 'empty'], [some, 'at warn'], [bad, 'at danger']]) {
     const h = hueOf(colour);
     assert(h > 240 && h < 290, `a directory stays violet, never a file's hue (${what}: ${h})`);
   }
@@ -398,7 +478,7 @@ check('directories ramp in violet, on the largest file inside them', () => {
   // way, which is why the direction is not what is asserted — the distance is.
   assert(lightnessOf(none) > lightnessOf(some) && lightnessOf(some) > lightnessOf(bad),
     'and deepens with it');
-  assertEqual(inline.dirColor(99999, THRESHOLDS), bad, 'past 警告 every directory is the same');
+  assertEqual(inline.dirColor(99999, THRESHOLDS), bad, 'past danger every directory is the same');
   assertEqual(inline.dirColor(500, THRESHOLDS), inline.dirColor(50, { warnLines: 50, dangerLines: 80 }),
     'the thresholds place it, so a tighter pair shifts the same colour earlier');
 });
@@ -931,7 +1011,7 @@ await domCheckAsync('the strip shows up while the tree is still in flight', asyn
   assertEqual(renderedPaths().length, 0, 'no bars yet — the tree has not arrived');
 
   const status = document.querySelector('.ghl-summary-status').textContent;
-  assert(/読み込み中/.test(status), `status should report loading, got "${status}"`);
+  assertEqual(status, msg('statusLoading'), 'the status reports loading');
   assert(
     document.querySelector('[data-ghl-action="treemap"]').disabled,
     'treemap button is disabled until there is data'
@@ -1021,12 +1101,12 @@ const metricButton = (key) => document.querySelector(`[data-ghl-metric="${key}"]
 /* TREE requests that would hit the API — manual mode's cache-only probes do not count. */
 const treeFetches = (calls) => calls.filter((c) => c.type === 'TREE' && !c.cacheOnly);
 
-/* Manual mode from idle: fetch the tree via the サイズ reading of the button,
-   then flip the toggle to 行数 so the count button is on offer. */
+/* Manual mode from idle: fetch the tree via the size reading of the button,
+   then flip the toggle back to lines so the count button is on offer. */
 async function loadTreeViaSizes() {
   await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
   metricButton('bytes').click();
-  await waitFor(() => /サイズを取得/.test(fetchButton().textContent), 3000, 'the button to read サイズを取得');
+  await waitFor(() => fetchButton().textContent === msg('fetchSizes'), 3000, 'the button to offer sizes');
   fetchButton().click();
   await waitFor(() => renderedPaths().length > 0, 6000, 'the tree');
   metricButton('lines').click();
@@ -1064,25 +1144,26 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   const headAll = head.querySelector('[data-ghl-action="pick-all"]');
   assert(headAll && headAll.checked && !headAll.indeterminate, 'with the all-rows checkbox under it, ticked');
   assert(document.querySelector('.ghl-pick-all').hidden, "the strip's fallback all-rows toggle stays hidden while the head has one");
-  assert(!document.querySelector('.ghl-metric').hidden, 'the 行数 | サイズ toggle is up, saying what the button fetches');
-  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'it opens on 行数');
-  assert(/行数を取得/.test(fetchButton().textContent), `the button reads the toggle (${fetchButton().textContent})`);
+  assert(!document.querySelector('.ghl-metric').hidden, 'the metric toggle is up, saying what the button fetches');
+  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'it opens on lines');
+  assertEqual(fetchButton().textContent, msg('fetchLines'), 'the button reads the toggle');
   assert(fetchButton().classList.contains('ghl-btn-primary') && !fetchButton().disabled, 'primary for lines');
   assert(!/\d/.test(fetchButton().textContent), `no count before the tree is known (${fetchButton().textContent})`);
 
   metricButton('bytes').click();
-  await waitFor(() => /サイズを取得/.test(fetchButton().textContent), 3000, 'the button to follow the toggle');
+  await waitFor(() => fetchButton().textContent === msg('fetchSizes'), 3000, 'the button to follow the toggle');
   assert(!fetchButton().classList.contains('ghl-btn-primary'), 'plain for sizes');
   const status = document.querySelector('.ghl-summary-status').textContent;
-  assert(/未取得/.test(status), `status says nothing has been fetched (${status})`);
+  assertEqual(status, msg('statusIdle'), 'the status says nothing has been fetched');
 });
 
-await domCheckAsync('pressing サイズを取得 fetches the tree and shows sizes', async () => {
+await domCheckAsync('pressing the size button fetches the tree and shows sizes', async () => {
   const before = transportCalls.length;
   fetchButton().click();
   // The strip must not blink while the tree is in flight: same controls, same places.
   assert(!document.querySelector('.ghl-metric').hidden, 'the toggle stays up while loading');
-  assert(!fetchButton().hidden && /取得中/.test(fetchButton().textContent), `the button reads 取得中 (${fetchButton().textContent})`);
+  assert(!fetchButton().hidden && fetchButton().textContent === msg('fetchBusy'),
+    `the button reads as busy (${fetchButton().textContent})`);
   assert(document.querySelectorAll('.ghl-col-head').length === 2, 'the column head stays');
   await waitFor(
     () => renderedPaths().includes('source/core/options.ts'),
@@ -1093,20 +1174,20 @@ await domCheckAsync('pressing サイズを取得 fetches the tree and shows size
   assertEqual(treeFetches(transportCalls.slice(before)).length, 1, 'exactly one tree request');
   const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 0, 'no line counts fetched without being asked');
-  assert(!fetchButton().hidden && fetchButton().disabled && /取得済み/.test(fetchButton().textContent),
-    `nothing left to fetch for sizes: the button stays put, disabled, as 取得済み (${fetchButton().textContent})`);
+  assert(!fetchButton().hidden && fetchButton().disabled && fetchButton().textContent === msg('fetchDone'),
+    `nothing left to fetch for sizes: the button stays put, disabled, as done (${fetchButton().textContent})`);
 
   const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
   assertEqual(cell.querySelector('.ghl-num').textContent, '117.2 KB', 'the row shows its size');
   assertEqual(cell.dataset.severity, 'ok', 'no threshold colouring on sizes');
   assertEqual(cell.querySelector('.ghl-bar-fill').style.background, '',
     'and no ramp either — bytes have no thresholds to ramp between');
-  assertEqual(metricButton('bytes').getAttribute('aria-pressed'), 'true', 'the toggle says サイズ');
+  assertEqual(metricButton('bytes').getAttribute('aria-pressed'), 'true', 'the toggle says size');
   const stats = document.querySelector('.ghl-summary-stats').textContent;
   assert(/117\.2 KB/.test(stats), `the strip totals in bytes too (${stats})`);
 });
 
-await domCheckAsync('flipping the toggle to 行数 shows estimates and offers the count button, fetching nothing', async () => {
+await domCheckAsync('flipping the toggle to lines shows estimates and offers the count button, fetching nothing', async () => {
   const before = transportCalls.length;
   metricButton('lines').click();
   await waitFor(
@@ -1117,7 +1198,7 @@ await domCheckAsync('flipping the toggle to 行数 shows estimates and offers th
     3000,
     'the estimate to show'
   );
-  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'the toggle says 行数');
+  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'the toggle says lines');
   assertEqual(transportCalls.length, before, 'switching the view fetches nothing');
   const bar = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"] .ghl-bar-fill');
   assert(/^(hsl|rgb)a?\(/.test(bar.style.background), `the bar takes its colour from the ramp (${bar.style.background})`);
@@ -1126,8 +1207,7 @@ await domCheckAsync('flipping the toggle to 行数 shows estimates and offers th
 
   const button = fetchButton();
   assert(button && !button.hidden, 'the fetch button is offered');
-  assert(/行数を取得/.test(button.textContent), `button is labelled (${button.textContent})`);
-  assert(/1/.test(button.textContent), `button names the count (${button.textContent})`);
+  assertEqual(button.textContent, msg('fetchLinesCount', 1), 'the button is labelled with what it will fetch');
 });
 
 await domCheckAsync('pressing the button fetches, and the estimate becomes exact', async () => {
@@ -1147,15 +1227,15 @@ await domCheckAsync('pressing the button fetches, and the estimate becomes exact
   assertEqual(fetched.length, 1, 'exactly the queued file was fetched');
 
   const button = document.querySelector('[data-ghl-action="fetch"]');
-  assert(!button.hidden && button.disabled && /取得済み/.test(button.textContent),
-    `the button stays put, disabled, as 取得済み (${button.textContent})`);
+  assert(!button.hidden && button.disabled && button.textContent === msg('fetchDone'),
+    `the button stays put, disabled, as done (${button.textContent})`);
   const pick = rowPick('source/core/options.ts');
   assert(pick && pick.dataset.pick === 'on' && !pick.disabled && pick.checked, 'the checkbox stays, live');
   const headAll = document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]');
   assert(headAll && !headAll.disabled && headAll.checked, 'so does the column head');
 });
 
-await domCheckAsync('rows unticked before anything is fetched are left out of a cold-start 行数を取得', async () => {
+await domCheckAsync('rows unticked before anything is fetched are left out of a cold-start fetch', async () => {
   const before = transportCalls.length;
   navigateDom(currentDom, 'source/as-promise', [
     { name: 'index.ts', type: 'file' },
@@ -1163,7 +1243,7 @@ await domCheckAsync('rows unticked before anything is fetched are left out of a 
   ]);
   await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
   await waitFor(() => rowPick('source/as-promise/types.ts'), 3000, 'idle checkboxes');
-  assert(/行数を取得/.test(fetchButton().textContent), `a fresh view opens on 行数 (${fetchButton().textContent})`);
+  assertEqual(fetchButton().textContent, msg('fetchLines'), 'a fresh view opens on lines');
 
   tick('source/as-promise/types.ts', false);
   await waitFor(() => document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]').indeterminate, 3000, 'the all-rows box to go indeterminate');
@@ -1220,12 +1300,13 @@ await domCheckAsync('unticking a row takes its files out of the count', async ()
   );
   assertEqual(document.querySelector('.ghl-cell[data-ghl-path="source/core"]').dataset.state, 'off',
     'the unticked row loses its bar and number');
-  assert(/5 ファイル/.test(document.querySelector('.ghl-summary-stats').textContent),
+  assert(document.querySelector('.ghl-summary-stats').textContent.includes(msg('unitFiles', 5)),
     `the strip counts only the ticked rows (${document.querySelector('.ghl-summary-stats').textContent})`);
 
   tick('source/create.ts', false);
   await waitFor(() => /4/.test(fetchButton().textContent), 3000, 'the file leaving the count');
-  assert(/4 ファイル/.test(document.querySelector('.ghl-summary-stats').textContent), 'and follows the second untick');
+  assert(document.querySelector('.ghl-summary-stats').textContent.includes(msg('unitFiles', 4)),
+    'and follows the second untick');
 });
 
 await domCheckAsync('pressing the button fetches only the ticked rows', async () => {
@@ -1233,7 +1314,7 @@ await domCheckAsync('pressing the button fetches only the ticked rows', async ()
   fetchButton().click();
   await waitFor(
     () => transportCalls.slice(before).filter((c) => c.type === 'LINES').length >= 4 &&
-      !/取得中/.test(document.querySelector('.ghl-summary-status').textContent),
+      fetchButton().textContent !== msg('fetchBusy'),
     6000,
     'the fetch to finish'
   );
@@ -1248,7 +1329,8 @@ await domCheckAsync('pressing the button fetches only the ticked rows', async ()
   const done = rowPick('source/index.ts');
   assert(done.dataset.pick === 'on' && !done.disabled && done.checked, 'a fetched row keeps its checkbox, live');
   const stats = document.querySelector('.ghl-summary-stats').textContent;
-  assert(/^763 行/.test(stats) && /4 ファイル/.test(stats), `the total is over the ticked rows only, and exact (${stats})`);
+  assert(stats.startsWith(msg('unitLines', '763')) && stats.includes(msg('unitFiles', 4)),
+    `the total is over the ticked rows only, and exact (${stats})`);
 
   tick('source/core', true);
   await waitFor(() => !fetchButton().disabled, 3000, 'the button to re-enable');
@@ -1318,8 +1400,8 @@ await domCheckAsync('a commit already in the cache shows in manual mode without 
   const trees = transportCalls.slice(before).filter((c) => c.type === 'TREE');
   assert(trees.length >= 1 && trees.every((c) => c.cacheOnly), 'the tree was only ever asked for from the cache');
   assertEqual(transportCalls.slice(before).filter((c) => c.type === 'LINES').length, 0, 'and no counts were fetched');
-  assert(/行数を取得/.test(fetchButton().textContent) && /1/.test(fetchButton().textContent),
-    `the count button is on offer for what is not cached (${fetchButton().textContent})`);
+  assertEqual(fetchButton().textContent, msg('fetchLinesCount', 1),
+    'the count button is on offer for what is not cached');
   stubTreeCached = false;
 });
 
