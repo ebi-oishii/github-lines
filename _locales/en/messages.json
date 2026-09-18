@@ -25,7 +25,7 @@
     "description": "$1 is a formatted number"
   },
   "unitLinesOrMore": {
-    "message": "$1 lines or more",
+    "message": "$1 or more",
     "description": "$1 is a line count with its unit"
   },
   "metricGroup": {
@@ -431,5 +431,8 @@
   },
   "setupGuide": {
     "message": "Setup and usage guide"
+  },
+  "rampFileStartSize": {
+    "message": "File 0 B"
   }
 }

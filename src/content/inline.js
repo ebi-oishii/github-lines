@@ -118,6 +118,13 @@
     return hsl(mixHsl(lo, hi, rampPosition(maxFile, settings)), alpha);
   }
 
+  /* Sizes ramp on the same thresholds, read in bytes at a typical line's
+     length. There is no such thing as a "too many bytes" threshold to set, and
+     a second pair of numbers to configure would be worse than approximate:
+     this way a file that is amber by its lines is about amber by its size, and
+     the two readings agree with each other. */
+  const linesIn = (bytes) => (bytes || 0) / GHL.patterns.DEFAULT_BYTES_PER_LINE;
+
   /* Stops across a whole ramp, for a legend strip. Sampled rather than left to
      the browser, whose gradients interpolate in sRGB. */
   function rampStops(settings, steps = 12, colorAt = lineColor) {
@@ -152,17 +159,27 @@
       short: (n) => linesOf(n.total || 0, approxPrefix(n) + fmtCompact(n.total || 0)),
       long: (n) => linesOf(n.total || 0, approxPrefix(n) + fmt(n.total || 0)),
       fmtTotal: (v) => linesOf(v),
+      rampEnd: (settings) => t('unitLinesOrMore', linesOf(settings.dangerLines)),
       severity: (n, settings) => (n.type === 'file' ? severity(n.total || 0, settings) : 'dir'),
     },
     bytes: {
       key: 'bytes',
       get label() { return t('metricBytes'); },
+      fill: (n, settings, alpha) => {
+        if (n.type === 'dir') return dirColor(linesIn(n.maxFileBytes), settings, alpha);
+        if (n.type === 'file' && !n.excluded) return lineColor(linesIn(n.bytes), settings, alpha);
+        return '';
+      },
       value: (n) => n.bytes || 0,
       cell: (n) => util.fmtBytes(n.bytes || 0),
       short: (n) => util.fmtBytes(n.bytes || 0),
       long: (n) => util.fmtBytes(n.bytes || 0),
       fmtTotal: (v) => util.fmtBytes(v),
-      severity: (n) => (n.type === 'file' ? 'ok' : 'dir'),
+      severity: (n, settings) =>
+        (n.type === 'file' ? severity(linesIn(n.bytes), settings) : 'dir'),
+      // Where this ramp's far end sits, for the legend.
+      rampEnd: (settings) =>
+        t('unitLinesOrMore', util.fmtBytes(settings.dangerLines * GHL.patterns.DEFAULT_BYTES_PER_LINE)),
     },
   };
 
@@ -240,6 +257,7 @@
     let fileCount = 0;
     let allExact = true;
     let maxFile = 0;
+    let maxFileBytes = 0;
     for (const [name, child] of dirNode.children) {
       if (!isIncluded(state, child.path)) continue;
       children.set(name, child);
@@ -248,8 +266,9 @@
       fileCount += child.fileCount || 0;
       if (!child.allExact) allExact = false;
       if ((child.maxFile || 0) > maxFile) maxFile = child.maxFile || 0;
+      if ((child.maxFileBytes || 0) > maxFileBytes) maxFileBytes = child.maxFileBytes || 0;
     }
-    return { ...dirNode, children, total, bytes, fileCount, allExact, maxFile };
+    return { ...dirNode, children, total, bytes, fileCount, allExact, maxFile, maxFileBytes };
   }
 
   function paintCell(cell, row, node, dirTotal, maxTotal, state, included) {

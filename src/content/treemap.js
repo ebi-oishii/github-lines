@@ -112,6 +112,7 @@
       allExact: rest.every((n) => n.allExact),
       bytes: rest.reduce((s, n) => s + (n.bytes || 0), 0),
       maxFile: rest.reduce((s, n) => Math.max(s, n.maxFile || 0), 0),
+      maxFileBytes: rest.reduce((s, n) => Math.max(s, n.maxFileBytes || 0), 0),
     });
     return head;
   }
@@ -256,8 +257,14 @@
     const m = GHL.inline.metricOf(state);
     modal.stats.textContent = `${m.long(node)} · ${filesOf(node.fileCount)}`;
     modal.status.textContent = statusLine(state, m);
-    // The thresholds are line counts; the legend has nothing to say about sizes.
-    modal.legend.hidden = m.key !== 'lines';
+    // Both readings ramp, so the legend applies to both — its ends just change
+    // unit with whichever is on screen.
+    modal.legend.hidden = false;
+    for (const end of modal.legend.querySelectorAll('[data-ghl-ramp-end]')) {
+      end.textContent = m.rampEnd(state.settings);
+    }
+    modal.legend.querySelector('[data-ghl-ramp-start]').textContent =
+      t(m.key === 'lines' ? 'rampFileStart' : 'rampFileStartSize');
 
     const opts = {
       settings: state.settings,
@@ -333,14 +340,14 @@
     ]);
     const legend = el('span', { class: 'ghl-legend ghl-ramps' }, [
       el('span', { class: 'ghl-ramp' }, [
-        el('span', { class: 'ghl-ramp-end' }, [t('rampFileStart')]),
+        el('span', { class: 'ghl-ramp-end', 'data-ghl-ramp-start': '' }),
         rampBar(GHL.inline.lineColor),
-        el('span', { class: 'ghl-ramp-end' }, [t('unitLinesOrMore', fmt(state.settings.dangerLines))]),
+        el('span', { class: 'ghl-ramp-end', 'data-ghl-ramp-end': '' }),
       ]),
       el('span', { class: 'ghl-ramp' }, [
         el('span', { class: 'ghl-ramp-end' }, [t('rampDirStart')]),
         rampBar(GHL.inline.dirColor),
-        el('span', { class: 'ghl-ramp-end' }, [t('unitLinesOrMore', fmt(state.settings.dangerLines))]),
+        el('span', { class: 'ghl-ramp-end', 'data-ghl-ramp-end': '' }),
       ]),
     ]);
 

@@ -43,6 +43,9 @@ to 500 and 800, and are configurable).
 | Pale → deep violet | A directory, deepening with **the largest file inside it** |
 | Grey | Not counted |
 
+On the **Size** reading the same ramp applies, with the thresholds read in
+bytes: 500 lines is about 16 KB, 800 about 25 KB, at 32 bytes to a line.
+
 A directory's colour is not about its total. A small directory with one bloated
 file in it is dark, which is the thing worth finding; the tooltip names that
 file.
@@ -65,7 +68,10 @@ limit…`). Nothing there means every number on screen is final.
 
 **[Lines | Size]** on the left of the strip switches what the bars, the shares
 and the treemap measure. Sizes come with the tree listing, so they are always
-exact and switching to them costs no request; they carry no threshold colouring.
+exact and switching to them costs no request. They are coloured on the same
+ramp, read in bytes at a typical line's length — so a file that is amber by its
+lines is about amber by its size, and there is no second pair of thresholds to
+configure.
 
 In manual mode nothing is fetched when the page opens, and one button offers
 whatever the toggle says. (If you have seen the same commit before, its tree is

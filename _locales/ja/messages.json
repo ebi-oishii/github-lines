@@ -25,7 +25,7 @@
     "description": "$1 is a formatted number"
   },
   "unitLinesOrMore": {
-    "message": "$1 行以上",
+    "message": "$1 以上",
     "description": "$1 is a line count with its unit"
   },
   "metricGroup": {
@@ -431,5 +431,8 @@
   },
   "setupGuide": {
     "message": "セットアップと使い方"
+  },
+  "rampFileStartSize": {
+    "message": "ファイル 0 B"
   }
 }

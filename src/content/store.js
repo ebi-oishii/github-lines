@@ -92,6 +92,7 @@
       node.fileCount = node.excluded ? 0 : 1;
       node.allExact = node.excluded || node.exact;
       node.maxFile = node.total;
+      node.maxFileBytes = node.bytes;
       return;
     }
     let total = 0;
@@ -99,6 +100,7 @@
     let fileCount = 0;
     let allExact = true;
     let maxFile = 0;
+    let maxFileBytes = 0;
     for (const child of node.children.values()) {
       rollup(child);
       total += child.total;
@@ -106,12 +108,14 @@
       fileCount += child.fileCount;
       if (!child.allExact) allExact = false;
       if (child.maxFile > maxFile) maxFile = child.maxFile;
+      if (child.maxFileBytes > maxFileBytes) maxFileBytes = child.maxFileBytes;
     }
     node.total = total;
     node.bytes = bytes;
     node.fileCount = fileCount;
     node.allExact = allExact;
     node.maxFile = maxFile;
+    node.maxFileBytes = maxFileBytes;
   }
 
   function collectFiles(node, out) {

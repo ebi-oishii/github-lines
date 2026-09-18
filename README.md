@@ -88,6 +88,7 @@ If you cloned it: `git pull`, then press reload on GitHub Lines in
 | `~1,204` | An estimate; the real count has not been fetched |
 | Blue → green → amber → red | Continuous with the line count (amber at 500, red at 800 and above; both configurable) |
 | Pale → deep violet | A directory, deepening with **the largest file inside it** |
+| | On the Size reading, the same ramp with the thresholds read in bytes |
 | `generated` `binary` | Not counted |
 
 [Usage](docs/usage.md) has the rest.

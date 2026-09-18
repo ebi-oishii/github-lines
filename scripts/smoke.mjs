@@ -298,7 +298,9 @@ try {
   await page.waitForSelector('.ghl-overlay .ghl-tm-tile', { timeout: 10000 });
   const sizeStatus = await page.$eval('.ghl-tm-status', (n) => n.textContent);
   assert(sizeStatus === msg('tmArea', msg('metricBytes')), `the treemap says it measures sizes (${sizeStatus})`);
-  assert(await page.$('.ghl-modal-foot .ghl-legend:visible') === null, 'the line-threshold legend is hidden for sizes');
+  const sizeEnds = await page.$$eval('.ghl-modal-foot [data-ghl-ramp-end]', (ns) => ns.map((n) => n.textContent));
+  assert(sizeEnds.length === 2 && sizeEnds.every((e) => /B\b/.test(e)),
+    `the legend's ends are spelt in bytes here (${sizeEnds.join(' | ')})`);
   await page.screenshot({ path: path.join(OUT_DIR, 'treemap-sizes.png') });
   await page.keyboard.press('Escape');
   await page.waitForSelector('.ghl-overlay', { state: 'detached', timeout: 5000 });

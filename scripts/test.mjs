@@ -465,6 +465,25 @@ check('lineColor carries an alpha, and rampStops spans the ramp', () => {
   near(hueOf(stops[4]), HUE_DANGER, 1, 'the last stop');
 });
 
+check('sizes ramp on the same thresholds, read at a line\'s length', () => {
+  const perLine = patterns.DEFAULT_BYTES_PER_LINE;
+  const bytes = (n) => ({ type: 'file', bytes: n * perLine, excluded: false });
+
+  assertEqual(inline.METRICS.bytes.fill(bytes(0), THRESHOLDS), inline.lineColor(0, THRESHOLDS),
+    'nothing in it is the start of the ramp');
+  assertEqual(inline.METRICS.bytes.fill(bytes(500), THRESHOLDS), inline.lineColor(500, THRESHOLDS),
+    'a file that is amber by its lines is amber by its size');
+  assertEqual(inline.METRICS.bytes.fill(bytes(900), THRESHOLDS), inline.lineColor(800, THRESHOLDS),
+    'and past danger it is the same red');
+  assertEqual(inline.METRICS.bytes.severity(bytes(900), THRESHOLDS), 'danger', 'the number is flagged too');
+
+  const dir = { type: 'dir', maxFileBytes: 500 * perLine };
+  assertEqual(inline.METRICS.bytes.fill(dir, THRESHOLDS), inline.dirColor(500, THRESHOLDS),
+    'a directory goes by the largest file inside it, in bytes');
+  assertEqual(inline.METRICS.bytes.fill({ type: 'file', bytes: 999, excluded: true }, THRESHOLDS), '',
+    'an excluded file is left to CSS, as in the lines view');
+});
+
 check('directories ramp in violet, on the largest file inside them', () => {
   const none = inline.dirColor(0, THRESHOLDS);
   const some = inline.dirColor(500, THRESHOLDS);
@@ -1241,9 +1260,10 @@ await domCheckAsync('pressing the size button fetches the tree and shows sizes',
 
   const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
   assertEqual(cell.querySelector('.ghl-num').textContent, '117.2 KB', 'the row shows its size');
-  assertEqual(cell.dataset.severity, 'ok', 'no threshold colouring on sizes');
-  assertEqual(cell.querySelector('.ghl-bar-fill').style.background, '',
-    'and no ramp either — bytes have no thresholds to ramp between');
+  // 120,000 bytes is far past the danger threshold read at a line's length.
+  assertEqual(cell.dataset.severity, 'danger', 'sizes ramp on the same thresholds, read in bytes');
+  assert(/^(hsl|rgb)a?\(/.test(cell.querySelector('.ghl-bar-fill').style.background),
+    'so the bar is coloured here too');
   assertEqual(metricButton('bytes').getAttribute('aria-pressed'), 'true', 'the toggle says size');
   const stats = document.querySelector('.ghl-summary-stats').textContent;
   assert(/117\.2 KB/.test(stats), `the strip totals in bytes too (${stats})`);
