@@ -241,7 +241,7 @@
     // Manual mode's checkboxes filter the directory on screen; drilling into a
     // subdirectory shows all of it.
     const node = raw && state.settings.exactLinesMode === 'manual' && path === state.ctx.path
-      ? GHL.inline.viewOf(raw, state)
+      ? GHL.inline.viewOf(raw, state, GHL.inline.droppedChildren(raw, GHL.page.findRows(state.ctx), state))
       : raw;
     const canvas = modal.canvas;
     canvas.textContent = '';

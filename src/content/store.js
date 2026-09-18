@@ -186,10 +186,18 @@
     let candidates = [];   // fetchable files under the visible directory, largest-first
     let running = null;    // in-flight exact pass, so a double click is harmless
 
-    /* Manual mode's checkboxes sit on the rows on screen, so a file is keyed
-       by the row it appears under: itself if it is a direct child of the
-       visible directory, otherwise the top-level directory containing it. */
+    /* Manual mode's checkboxes sit on the rows on screen, so a file is keyed by
+       the row it appears under. Which paths those rows have is the UI's to know:
+       GitHub folds a chain of single-child directories into one row, so a row is
+       not always one segment below the directory being shown. Until the UI has
+       said (`setRows`), fall back to that assumption, which is right for every
+       row that was not folded. */
+    let rowPaths = [];
+
     function rowKey(path) {
+      for (const row of rowPaths) {
+        if (path === row || path.startsWith(`${row}/`)) return row;
+      }
       const rest = ctx.path ? path.slice(ctx.path.length + 1) : path;
       const slash = rest.indexOf('/');
       if (slash === -1) return path;
@@ -451,6 +459,15 @@
           })
           .finally(() => { running = null; });
         return running;
+      },
+      /* The rows on screen, longest first so the deepest one wins. Called from
+         the render pass, which is why it settles without emitting: the pass
+         that called it goes on to read what it settled. */
+      setRows(paths) {
+        const next = [...paths].sort((a, b) => b.length - a.length);
+        if (next.length === rowPaths.length && next.every((p, i) => p === rowPaths[i])) return;
+        rowPaths = next;
+        if (state.index && (state.status === 'pending' || state.status === 'ready')) settle();
       },
       /* Manual mode: fetch the tree and show sizes. The status leaves idle
          synchronously, so a double click is harmless. */

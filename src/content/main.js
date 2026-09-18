@@ -28,6 +28,9 @@
     onMetric(metric) {
       if (current && current.handle) current.handle.setMetric(metric);
     },
+    onRows(paths) {
+      if (current && current.handle) current.handle.setRows(paths);
+    },
     onPick(path, checked) {
       if (current && current.handle) current.handle.setSelected(path, checked);
     },
@@ -93,8 +96,12 @@
     observer.observe(document.body, { childList: true, subtree: true });
 
     util.onNavigate(() => {
-      // The new file list is not in the DOM yet at navigation time.
-      teardown();
+      /* The new file list is not in the DOM yet at navigation time — but
+         GitHub dispatches its navigation events more than once, and for the
+         view already on screen. Tearing down then would cancel a fetch in
+         flight and lose which rows were ticked, so the context decides. */
+      const ctx = GHL.page.getContext();
+      if (!current || !ctx || current.key !== contextKey(ctx)) teardown();
       setTimeout(tick, 60);
       setTimeout(tick, 400);
     });

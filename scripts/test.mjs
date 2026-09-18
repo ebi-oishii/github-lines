@@ -624,6 +624,17 @@ check('settings: the exact-lines boolean migrates, and only it', () => {
   assertEqual(settings.normalise(undefined).exactLinesMode, 'manual', 'nothing stored at all');
 });
 
+check('settings: a number the options page could not read is left alone', () => {
+  // `Number('')` is 0, which passed the old guard — the options page now writes
+  // nothing for an emptied field, so the stored value survives being retyped.
+  const stored = { warnLines: 500, dangerLines: 800, maxExactFetch: 300 };
+  for (const key of Object.keys(stored)) {
+    assertEqual(settings.normalise({ ...stored })[key], stored[key], `${key} round-trips`);
+  }
+  assertEqual(settings.normalise({ ...stored, warnLines: 0 }).warnLines, 0,
+    'a zero someone actually typed is still theirs to set');
+});
+
 check('settings: an unknown exact-lines mode falls back to the default', () => {
   assertEqual(settings.normalise({ exactLinesMode: 'nonsense' }).exactLinesMode, 'manual');
   for (const mode of ['auto', 'manual', 'off']) {
@@ -1525,6 +1536,42 @@ await domCheckAsync('off mode never fetches and offers no button', async () => {
   assert(!document.querySelector('.ghl-row-pick:not([data-pick="none"])'), 'no checkboxes outside manual mode');
 
   await settings.set({ exactLinesMode: 'auto' });
+});
+
+await domCheckAsync('a collapsed row takes the files it stands for with it', async () => {
+  /* GitHub folds a chain of single-child directories into one row, so a row is
+     not always one segment below the directory being shown — and what the row
+     stands for has to follow the row, not that assumption. */
+  await settings.set({ exactLinesMode: 'manual' });
+  STUB_TREE.push({ path: 'source/core/utils/deep/buried.ts', type: 'file', size: 4000, sha: 'sha-buried' });
+  navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+
+  const tbody = document.querySelector('table[aria-labelledby="folders-and-files"] tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="react-directory-row-name-cell-large-screen">
+      <div class="react-directory-filename-column">
+        <a title="This path skips through empty directories" class="Link--primary"
+           href="/sindresorhus/got/tree/main/source/core/utils/deep">utils/deep</a>
+      </div>
+    </td>`;
+  tbody.appendChild(tr);
+
+  await loadTreeViaSizes();
+  await waitFor(() => /2/.test(fetchButton().textContent), 6000,
+    () => `both files counted on the button (${fetchButton().textContent})`);
+
+  tick('source/core/utils/deep', false);
+  await waitFor(() => /1/.test(fetchButton().textContent), 3000,
+    () => `unticking the collapsed row drops its file (${fetchButton().textContent})`);
+  const stats = document.querySelector('.ghl-summary-stats').textContent;
+  assert(stats.includes(msg('unitFilesOne', 1)), `and drops it from the totals too (${stats})`);
+
+  tick('source/core/utils/deep', true);
+  await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'ticking it brings the file back');
+
+  STUB_TREE.pop();
+  tr.remove();
 });
 
 await domCheckAsync('leaving the file list tears the UI down', async () => {

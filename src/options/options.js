@@ -236,10 +236,15 @@ function collect() {
   const mode = document.querySelector('input[name="exactLinesMode"]:checked');
   if (mode) patch.exactLinesMode = mode.value;
   for (const id of NUMBERS) {
-    const n = Number($(id).value);
-    if (Number.isFinite(n) && n >= 0) patch[id] = n;
+    // An emptied field is someone mid-edit, not a zero — and `Number('')` is 0,
+    // which would autosave a threshold of nothing and colour every file.
+    const raw = $(id).value.trim();
+    const n = Number(raw);
+    if (raw && Number.isFinite(n) && n >= 0) patch[id] = n;
   }
-  patch.concurrency = Math.min(16, Math.max(1, patch.concurrency || 8));
+  if (patch.concurrency !== undefined) {
+    patch.concurrency = Math.min(16, Math.max(1, patch.concurrency || 1));
+  }
   patch.excludePatterns = $('excludePatterns').value
     .split('\n')
     .map((l) => l.trim())

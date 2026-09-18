@@ -130,7 +130,7 @@ try {
         const s = document.querySelector('.token-row:nth-child(1) .token-status');
         return s && s.textContent && s.textContent !== window.__ghlVerifying;
       },
-      { timeout: 20000 }
+      null, { timeout: 20000 }
     );
     const verdict = await page.$eval('.token-row:nth-child(1) .token-status', (n) => `${n.dataset.tone}|${n.textContent}`);
     const discovered = await page.$eval('.token-row:nth-child(1) .token-owners', (n) => n.value);
@@ -150,9 +150,6 @@ try {
     await page.fill('.token-row:nth-child(2) .token-value', 'not-a-real-token-routing-probe');
     await page.fill('.token-row:nth-child(2) .token-label', 'bad-default');
     await page.check('.token-row:nth-child(2) .token-default');
-
-    // Manual is the default, so it is the automatic run that has to say so.
-    await page.check(`input[name="exactLinesMode"][value="${MANUAL ? 'manual' : 'auto'}"]`);
 
     // No Save button: the page writes as you go. Blur the last field so the
     // pending write lands, then wait for it to say so.
@@ -177,6 +174,23 @@ try {
     );
     console.log(`configured 2 tokens — real one scoped to "${owner}", invalid one as default\n`);
   }
+
+  /* The mode is what a run is about, so it is pinned either way — manual is the
+     default now, and an automatic run that did not say so would sit waiting for
+     bars that are never fetched. Checking a radio that is already checked fires
+     nothing, and the page only writes on a change, so there is nothing to wait
+     for in that case. */
+  const wantedMode = MANUAL ? 'manual' : 'auto';
+  await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
+  const modeAlready = await page.$eval(
+    `input[name="exactLinesMode"][value="${wantedMode}"]`, (n) => n.checked
+  );
+  if (!modeAlready) {
+    await page.check(`input[name="exactLinesMode"][value="${wantedMode}"]`);
+    await page.click('h1');
+    await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
+  }
+  console.log(`mode: ${wantedMode}${modeAlready ? ' (already set)' : ''}`);
 
   const consoleErrors = [];
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -245,7 +259,7 @@ try {
       const s = document.querySelector('.ghl-summary-status');
       return s && !window.__ghlBusy.some((b) => s.textContent.includes(b));
     },
-    { timeout: 45000 }
+    null, { timeout: 45000 }
   ).catch(() => console.log('note: exact-line pass still running, continuing'));
 
   const summary = await page.$eval('#ghl-summary .ghl-summary-stats', (n) => n.textContent.trim());
@@ -358,7 +372,7 @@ try {
         const s = document.querySelector('.ghl-summary-status');
         return s && !window.__ghlBusy.some((b) => s.textContent.includes(b));
       },
-      { timeout: 60000 }
+      null, { timeout: 60000 }
     );
 
     const after = await page.$$eval('.ghl-cell[data-ghl-path]', (cells) =>

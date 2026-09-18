@@ -247,10 +247,25 @@
     pick.title = left ? t('pickRowLeft', filesOf(left)) : t('pickRow');
   }
 
+  /* Which of a directory's own children an unticked row stands for. A row is
+     usually one of them, but a folded-up chain ("deep/nested") is a row for the
+     child it starts at. */
+  function droppedChildren(dirNode, rows, state) {
+    const out = new Set();
+    for (const row of rows) {
+      if (isIncluded(state, row.path)) continue;
+      const base = dirNode.path ? `${dirNode.path}/` : '';
+      const rest = row.path.startsWith(base) ? row.path.slice(base.length) : row.path;
+      const slash = rest.indexOf('/');
+      out.add(base + (slash === -1 ? rest : rest.slice(0, slash)));
+    }
+    return out;
+  }
+
   /* Manual mode's view of the directory: the unticked rows dropped, totals
      recomputed over what is left. Feeds the strip, the percentages and the
      treemap alike. */
-  function viewOf(dirNode, state) {
+  function viewOf(dirNode, state, dropped) {
     const children = new Map();
     let total = 0;
     let bytes = 0;
@@ -259,7 +274,7 @@
     let maxFile = 0;
     let maxFileBytes = 0;
     for (const [name, child] of dirNode.children) {
-      if (!isIncluded(state, child.path)) continue;
+      if (dropped ? dropped.has(child.path) : !isIncluded(state, child.path)) continue;
       children.set(name, child);
       total += child.total || 0;
       bytes += child.bytes || 0;
@@ -708,6 +723,9 @@
     // on screen.
     const manual = settings.showInlineBars && settings.exactLinesMode === 'manual';
     const pickKeys = manual ? rows.map((r) => r.path) : [];
+    // What the rows on screen are is the store's to know as well: it decides
+    // which files an unticked row takes with it.
+    if (manual && handlers.onRows) handlers.onRows(pickKeys);
     const headPlaced = renderColumnHead(state, handlers, pickKeys, manual);
     if (manual) {
       for (const r of rows) {
@@ -727,7 +745,7 @@
 
     // What the strip and the percentages are computed over: in manual mode,
     // the ticked rows only.
-    const view = manual ? viewOf(dirNode, state) : dirNode;
+    const view = manual ? viewOf(dirNode, state, droppedChildren(dirNode, rows, state)) : dirNode;
     renderSummary(state, view, handlers, pickKeys, headPlaced);
 
     if (!settings.showInlineBars) {
@@ -751,6 +769,6 @@
 
   GHL.inline = {
     render, clearRows, removeSummary, severity, errorText,
-    METRICS, metricOf, viewOf, lineColor, dirColor, rampStops, SUMMARY_ID,
+    METRICS, metricOf, viewOf, droppedChildren, lineColor, dirColor, rampStops, SUMMARY_ID,
   };
 })(globalThis.GHL);

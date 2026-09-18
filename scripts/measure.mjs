@@ -78,7 +78,7 @@ try {
         const s = document.querySelector('.ghl-summary-status');
         return s && !s.textContent.trim();
       },
-      { timeout: 180000 }
+      null, { timeout: 180000 }
     );
     // Let any trailing requests land before we stop counting.
     await page.waitForTimeout(1500);
