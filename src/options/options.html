@@ -15,7 +15,6 @@
     <section class="card">
       <h2 data-i18n="optTokens"></h2>
       <p class="hint" data-i18n-html="optTokensHint1"></p>
-      <p class="hint" data-i18n-html="optTokensHint2"></p>
 
       <div id="token-list"></div>
       <button class="btn" id="add-token" type="button" data-i18n="optAddToken"></button>
@@ -55,7 +54,32 @@
     </template>
 
     <section class="card">
-      <h2 data-i18n="optThresholds"></h2>
+      <h2 data-i18n="optCounting"></h2>
+      <label class="check">
+        <input type="radio" name="exactLinesMode" value="auto">
+        <span data-i18n-html="optModeAuto"></span>
+      </label>
+      <label class="check">
+        <input type="radio" name="exactLinesMode" value="manual">
+        <span data-i18n-html="optModeManual"></span>
+      </label>
+      <label class="check">
+        <input type="radio" name="exactLinesMode" value="off">
+        <span data-i18n-html="optModeOff"></span>
+      </label>
+      <p class="hint" data-i18n="optModeHint"></p>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="optDisplay"></h2>
+      <label class="check">
+        <input id="showInlineBars" type="checkbox">
+        <span data-i18n="optShowBars"></span>
+      </label>
+      <label class="check">
+        <input id="showTreemapButton" type="checkbox">
+        <span data-i18n="optShowTreemap"></span>
+      </label>
       <p class="hint" data-i18n="optThresholdsHint"></p>
       <div class="row">
         <label class="field narrow">
@@ -69,76 +93,48 @@
       </div>
     </section>
 
-    <section class="card">
-      <h2 data-i18n="optDisplay"></h2>
-      <label class="check">
-        <input id="showInlineBars" type="checkbox">
-        <span data-i18n="optShowBars"></span>
-      </label>
-      <label class="check">
-        <input id="showTreemapButton" type="checkbox">
-        <span data-i18n="optShowTreemap"></span>
-      </label>
-    </section>
+    <details class="card fold">
+      <summary data-i18n="optAdvanced"></summary>
 
-    <section class="card">
-      <h2 data-i18n="optCounting"></h2>
-      <div class="field">
-        <span class="label" data-i18n="optModeLabel"></span>
+      <div class="fold-body">
         <label class="check">
-          <input type="radio" name="exactLinesMode" value="auto">
-          <span data-i18n-html="optModeAuto"></span>
+          <input id="respectGitattributes" type="checkbox">
+          <span data-i18n-html="optRespectGitattributes"></span>
         </label>
         <label class="check">
-          <input type="radio" name="exactLinesMode" value="manual">
-          <span data-i18n-html="optModeManual"></span>
+          <input id="excludeGenerated" type="checkbox">
+          <span data-i18n="optExcludeGenerated"></span>
         </label>
-        <label class="check">
-          <input type="radio" name="exactLinesMode" value="off">
-          <span data-i18n-html="optModeOff"></span>
+        <label class="field">
+          <span class="label" data-i18n="optPatterns"></span>
+          <textarea id="excludePatterns" rows="10" spellcheck="false"></textarea>
         </label>
+        <p class="hint" data-i18n="optPatternsHint"></p>
+
+        <div class="row">
+          <label class="field narrow">
+            <span class="label" data-i18n="optMaxFetch"></span>
+            <input id="maxExactFetch" type="number" min="0" step="50">
+          </label>
+          <label class="field narrow">
+            <span class="label" data-i18n="optConcurrency"></span>
+            <input id="concurrency" type="number" min="1" max="16" step="1">
+          </label>
+        </div>
+        <p class="hint" data-i18n="optCacheHint"></p>
+
+        <div class="row cache-row">
+          <button class="btn" id="clear-cache" type="button" data-i18n="optClearCache"></button>
+          <span class="hint" id="cache-stats">…</span>
+        </div>
       </div>
-      <p class="hint" data-i18n="optModeHint"></p>
-      <div class="row">
-        <label class="field narrow">
-          <span class="label" data-i18n="optMaxFetch"></span>
-          <input id="maxExactFetch" type="number" min="0" step="50">
-        </label>
-        <label class="field narrow">
-          <span class="label" data-i18n="optConcurrency"></span>
-          <input id="concurrency" type="number" min="1" max="16" step="1">
-        </label>
-      </div>
-      <p class="hint" data-i18n="optCacheHint"></p>
-    </section>
-
-    <section class="card">
-      <h2 data-i18n="optExclusions"></h2>
-      <label class="check">
-        <input id="respectGitattributes" type="checkbox">
-        <span data-i18n-html="optRespectGitattributes"></span>
-      </label>
-      <label class="check">
-        <input id="excludeGenerated" type="checkbox">
-        <span data-i18n="optExcludeGenerated"></span>
-      </label>
-      <label class="field">
-        <span class="label" data-i18n="optPatterns"></span>
-        <textarea id="excludePatterns" rows="12" spellcheck="false"></textarea>
-      </label>
-      <p class="hint" data-i18n="optPatternsHint"></p>
-    </section>
-
-    <section class="card">
-      <h2 data-i18n="optCache"></h2>
-      <p class="hint" id="cache-stats">…</p>
-      <button class="btn" id="clear-cache" type="button" data-i18n="optClearCache"></button>
-    </section>
+    </details>
 
     <footer class="foot">
-      <button class="btn primary" id="save" type="button" data-i18n="optSave"></button>
-      <button class="btn" id="reset" type="button" data-i18n="optReset"></button>
+      <span class="hint" data-i18n="optAutosave"></span>
       <span class="status" id="save-status" data-tone="idle"></span>
+      <span class="spacer"></span>
+      <button class="btn quiet" id="reset" type="button" data-i18n="optReset"></button>
     </footer>
   </main>
 

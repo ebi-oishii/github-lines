@@ -36,6 +36,7 @@ function addTokenRow(entry) {
     row.remove();
     ensureOneRow();
     ensureDefaultChecked();
+    saveNow();
   });
   row.querySelector('.token-verify').addEventListener('click', () => verifyRow(row));
 
@@ -175,6 +176,7 @@ async function verifyRow(row) {
     if (!row.querySelector('.token-label').value.trim()) {
       row.querySelector('.token-label').value = [...discovered][0] || login || '';
     }
+    saveNow(); // filled in by us, so nothing fired an input event
 
     const found = [...discovered];
     const shown = found.slice(0, 4).join(', ');
@@ -247,12 +249,26 @@ function collect() {
   return patch;
 }
 
-async function save() {
-  const patch = collect();
-  await GHL.settings.set(patch);
-  await fill();
-  const n = patch.tokens.length;
-  flash(n ? t('optSaved', n) : t('optSavedNone'), 'ok');
+/* Saving is automatic: there is no button to forget. Typing is debounced into
+   one write; anything discrete — a checkbox, a radio, leaving a field — writes
+   at once, so closing the page never loses the last edit.
+
+   What is deliberately missing is a re-render. Reading the form back would
+   move the cursor out from under whoever is typing, and the form is already
+   what was just saved. */
+const WRITE_DELAY = 400;
+let pendingWrite = null;
+
+function scheduleSave() {
+  clearTimeout(pendingWrite);
+  pendingWrite = setTimeout(saveNow, WRITE_DELAY);
+}
+
+async function saveNow() {
+  clearTimeout(pendingWrite);
+  pendingWrite = null;
+  await GHL.settings.set(collect());
+  flash(t('optSaved'), 'ok');
 }
 
 async function refreshCacheStats() {
@@ -272,6 +288,8 @@ async function clearCache() {
 }
 
 async function reset() {
+  clearTimeout(pendingWrite);
+  pendingWrite = null;
   await GHL.settings.reset();
   await fill();
   flash(t('optResetDone'), 'ok');
@@ -281,15 +299,23 @@ $('add-token').addEventListener('click', () => {
   addTokenRow({});
   ensureDefaultChecked();
 });
-$('save').addEventListener('click', save);
 $('reset').addEventListener('click', reset);
 $('clear-cache').addEventListener('click', clearCache);
 
+document.addEventListener('input', scheduleSave);
+document.addEventListener('change', saveNow);
+
+// Ctrl/Cmd-S is muscle memory; honour it by flushing rather than by ignoring it.
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') {
     e.preventDefault();
-    save();
+    saveNow();
   }
+});
+
+// A page closing or backgrounding takes its timers with it.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && pendingWrite) saveNow();
 });
 
 GHL.i18n.applyDom();

@@ -239,16 +239,13 @@
     "message": "GitHub Lines options"
   },
   "optLede": {
-    "message": "Shows a proportion bar and a treemap for the line counts inside a directory, on GitHub's file list."
+    "message": "Visualises line counts on GitHub's file list, so bloated files stand out."
   },
   "optTokens": {
     "message": "Access tokens"
   },
   "optTokensHint1": {
-    "message": "It works on public repositories without one, but the GitHub API rate limit is then <strong>60 requests an hour</strong>. A token raises that to <strong>5,000 an hour</strong> and reaches private repositories."
-  },
-  "optTokensHint2": {
-    "message": "With more than one account, register several tokens and assign them <strong>per owner (a user or an organization)</strong>. One account's token cannot read another account's private repositories."
+    "message": "Without one, public repositories work at <strong>60 requests an hour</strong>. A token raises that to <strong>5,000</strong> and reaches private repositories. With several accounts, add one per <strong>owner</strong> — a token cannot read another account's private repositories."
   },
   "optAddToken": {
     "message": "＋ Add a token"
@@ -257,7 +254,7 @@
     "message": "Create a fine-grained token"
   },
   "optTokensHint3": {
-    "message": "— the only permission it needs is <code>Repository permissions → Contents: Read-only</code>. Tokens are kept in this machine's <code>chrome.storage.local</code> and are sent nowhere but <code>api.github.com</code>."
+    "message": "— it needs only <code>Contents: Read-only</code>. Tokens stay in this machine's <code>chrome.storage.local</code> and go nowhere but <code>api.github.com</code>."
   },
   "optTokenDefaultTitle": {
     "message": "The token to use when no owner matches"
@@ -401,11 +398,7 @@
     "description": "$1 login, $2 what it reaches, $3/$4 requests left, $5 a note about its kind"
   },
   "optSaved": {
-    "message": "Saved ($1 tokens)",
-    "description": "$1 is how many tokens were saved"
-  },
-  "optSavedNone": {
-    "message": "Saved (no tokens)"
+    "message": "Saved"
   },
   "optCacheStats": {
     "message": "$1 line counts / $2 trees / $3 texts",
@@ -423,5 +416,11 @@
   "optLang": {
     "message": "en",
     "description": "The BCP 47 tag for this catalogue, for the options page's lang attribute"
+  },
+  "optAdvanced": {
+    "message": "Advanced"
+  },
+  "optAutosave": {
+    "message": "Changes are saved as you make them."
   }
 }

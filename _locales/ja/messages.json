@@ -239,16 +239,13 @@
     "message": "GitHub Lines の設定"
   },
   "optLede": {
-    "message": "GitHub のファイル一覧に、ディレクトリ内での行数の割合バーとツリーマップを表示します。"
+    "message": "GitHub のファイル一覧で行数を可視化し、肥大化したファイルを一目で見つけます。"
   },
   "optTokens": {
     "message": "アクセストークン"
   },
   "optTokensHint1": {
-    "message": "未設定でも public リポジトリでは動作しますが、GitHub API のレート制限が <strong>60 回/時</strong> になります。トークンを登録すると <strong>5,000 回/時</strong> になり、private リポジトリでも使えます。"
-  },
-  "optTokensHint2": {
-    "message": "複数のアカウントを使い分けている場合は、トークンを複数登録して <strong>オーナー（ユーザー名 / Organization 名）ごとに</strong>割り当てられます。あるアカウントのトークンで別アカウントの private リポジトリは読めないためです。"
+    "message": "未設定でも public リポジトリでは動きますが、<strong>60 回/時</strong> の制限がかかります。トークンを登録すると <strong>5,000 回/時</strong> になり、private リポジトリも読めます。複数アカウントを使い分けるなら<strong>オーナーごと</strong>に登録してください（別アカウントの private は読めないため）。"
   },
   "optAddToken": {
     "message": "＋ トークンを追加"
@@ -257,7 +254,7 @@
     "message": "Fine-grained token を作成"
   },
   "optTokensHint3": {
-    "message": "— 必要な権限は <code>Repository permissions → Contents: Read-only</code> のみです。トークンはこの端末の <code>chrome.storage.local</code> にのみ保存され、<code>api.github.com</code> 以外には送信しません。"
+    "message": "— 必要な権限は <code>Contents: Read-only</code> のみ。トークンはこの端末の <code>chrome.storage.local</code> にのみ保存され、<code>api.github.com</code> 以外には送信しません。"
   },
   "optTokenDefaultTitle": {
     "message": "どのオーナーにも一致しないときに使うトークン"
@@ -290,7 +287,7 @@
     "message": "閾値"
   },
   "optThresholdsHint": {
-    "message": "1 ファイルの行数がこの値を超えたら色を変えて警告します。"
+    "message": "1 ファイルの行数がこの値を超えたら警告色にします。"
   },
   "optWarn": {
     "message": "注意 (黄)"
@@ -401,11 +398,7 @@
     "description": "$1 login, $2 what it reaches, $3/$4 requests left, $5 a note about its kind"
   },
   "optSaved": {
-    "message": "保存しました（トークン $1 件）",
-    "description": "$1 is how many tokens were saved"
-  },
-  "optSavedNone": {
-    "message": "保存しました（トークンなし）"
+    "message": "保存しました"
   },
   "optCacheStats": {
     "message": "行数 $1 件 / ツリー $2 件 / テキスト $3 件",
@@ -423,5 +416,11 @@
   "optLang": {
     "message": "ja",
     "description": "The BCP 47 tag for this catalogue, for the options page's lang attribute"
+  },
+  "optAdvanced": {
+    "message": "詳細設定"
+  },
+  "optAutosave": {
+    "message": "変更はその場で保存されます。"
   }
 }

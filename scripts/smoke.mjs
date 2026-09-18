@@ -155,11 +155,13 @@ try {
       await page.check('input[name="exactLinesMode"][value="manual"]');
     }
 
-    await page.click('#save');
+    // No Save button: the page writes as you go. Blur the last field so the
+    // pending write lands, then wait for it to say so.
+    await page.click('h1');
     await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
 
     const saved = await page.$eval('#save-status', (n) => n.textContent);
-    assert(saved === msg('optSaved', 2), `both tokens saved (${saved})`);
+    assert(saved === msg('optSaved'), `the page saved on its own (${saved})`);
 
     // Every label on the options page comes from the catalogue; a key that is
     // missing or misspelt renders as an empty element rather than failing.
@@ -169,9 +171,10 @@ try {
     );
     assert(blank.length === 0, `every label on the options page resolved${blank.length ? `: ${blank.join(', ')} did not` : ''}`);
     assertDocLang(await page.$eval('html', (n) => n.lang));
+    await page.reload();
     assert(
       (await page.$$('.token-row')).length === 2,
-      'the options page renders both tokens after reload'
+      'both tokens are there after a reload, so the write really landed'
     );
     console.log(`configured 2 tokens — real one scoped to "${owner}", invalid one as default\n`);
   }
