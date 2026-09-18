@@ -175,6 +175,7 @@
       progress: { done: 0, total: 0 },
       metric: 'lines',     // what the UI measures by: 'lines' | 'bytes'
       pending: 0,          // files a manual fetch would request
+      rate: null,          // what is left of the API budget, once anything is spent
       pickable: new Map(), // row path -> files still to fetch under it (manual mode's checkboxes)
       deselected: new Set(), // row paths the user has unticked
       settings: null,
@@ -242,6 +243,16 @@
     function refresh() {
       applyEstimates(state.index, state.learner);
       rollup(state.root);
+    }
+
+    /* The budget is the service worker's to know — it reads it off the response
+       headers. Asking costs no request, so it is asked after anything that
+       spends one. */
+    async function refreshRate() {
+      const res = await util.send({ type: 'RATE', owner: ctx.owner });
+      if (cancelled || !res || !res.ok || res.limit == null) return;
+      state.rate = res;
+      emitNow();
     }
 
     /* Fills in everything already in the cache. Costs no API requests, so it
@@ -314,6 +325,7 @@
 
       settle();
       emitNow();
+      refreshRate();
     }
 
     /* Everything from the tree request on: one API request, then estimates,
@@ -371,6 +383,7 @@
       const built = buildTree(entries);
       state.root = built.root;
       state.index = built.index;
+      if (!res.cached) refreshRate();
 
       const isExcluded = settings.excludeGenerated
         ? patterns.compileExcludes(settings.excludePatterns)

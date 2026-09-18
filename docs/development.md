@@ -5,7 +5,7 @@ dependencies (jsdom, playwright-core).
 
 ```bash
 npm install
-npm test             # logic and DOM tests (86 of them, no network)
+npm test             # logic and DOM tests (87 of them, no network)
 npm run smoke        # load it into a real Chrome and drive github.com
 npm run measure      # count the API requests
 npm run icons        # regenerate icons/*.png
@@ -95,7 +95,7 @@ the service worker's `LOCALE` handler).
 
 ## Tests
 
-### `scripts/test.mjs` (86, no network)
+### `scripts/test.mjs` (87, no network)
 
 - Pure logic: globs, `.gitattributes`, line estimation, rollups, the treemap
   layout algorithm

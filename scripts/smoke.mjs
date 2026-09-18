@@ -389,6 +389,18 @@ try {
     await page.screenshot({ path: path.join(OUT_DIR, 'manual-mode.png') });
   }
 
+  // What is left of the budget, read off the response headers by the worker.
+  const rate = await page.$eval('#ghl-summary .ghl-rate', (n) => `${n.hidden}|${n.textContent}|${n.title}`)
+    .catch(() => 'missing');
+  if (rateLimited) {
+    skip(`API budget — already exhausted (${rate.split('|')[1]})`);
+  } else {
+    const [hidden, text, title] = rate.split('|');
+    assert(hidden === 'false' && /\d[\d,]*\s*\/\s*[\d,]+/.test(text),
+      `the strip reports what is left of the API budget (${text})`);
+    assert(title.trim().length > 0, 'with a tooltip saying whose budget it is');
+  }
+
   // The ramp: every row's bar is coloured by its own line count, so a
   // directory of differently sized files shows more than one colour.
   const barColours = await page.$$eval('.ghl-cell[data-ghl-path]', (cells) =>

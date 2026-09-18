@@ -1030,6 +1030,9 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
         return { ok: true, entries: STUB_TREE, truncated: false };
       case 'CACHED_LINES':
         return { ok: true, lines: {} };
+      case 'RATE':
+        return { ok: true, limit: 5000, remaining: 4987, reset: Date.now() + 1800000,
+                 authenticated: true, label: 'scoped' };
       case 'LOCALE': {
         const file = path.join(ROOT, `_locales/${msg.locale}/messages.json`);
         if (!fs.existsSync(file)) return { ok: false, error: 'unknown_locale' };
@@ -1536,6 +1539,26 @@ await domCheckAsync('off mode never fetches and offers no button', async () => {
   assert(!document.querySelector('.ghl-row-pick:not([data-pick="none"])'), 'no checkboxes outside manual mode');
 
   await settings.set({ exactLinesMode: 'auto' });
+});
+
+await domCheckAsync('the strip reports what is left of the API budget', async () => {
+  await settings.set({ exactLinesMode: 'auto' });
+  navigateDom(currentDom, 'source/as-promise', [
+    { name: 'index.ts', type: 'file' },
+    { name: 'types.ts', type: 'file' },
+  ]);
+  await waitFor(
+    () => { const n = document.querySelector('.ghl-rate'); return n && !n.hidden; },
+    6000,
+    'the budget to appear once something has been spent'
+  );
+
+  const rate = document.querySelector('.ghl-rate');
+  assertEqual(rate.textContent, msg('apiLeft', '4,987', '5,000'), 'it reads remaining out of the limit');
+  assertEqual(rate.dataset.tone, 'ok', 'with plenty left, it is quiet');
+  assert(rate.title.includes('scoped'), `the tooltip names the account it belongs to (${rate.title})`);
+  assert(/\d+/.test(rate.title.split('\n').pop()), 'and says when it comes back');
+  await settings.set({ exactLinesMode: 'manual' });
 });
 
 await domCheckAsync('a collapsed row takes the files it stands for with it', async () => {

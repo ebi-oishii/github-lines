@@ -66,6 +66,11 @@ row and flash it.
 The right-hand side carries the status (`Counting lines 42/120`, `API rate
 limit…`). Nothing there means every number on screen is final.
 
+Under the right-hand end of the bar is what is left of the API budget —
+`API 4,981/5,000` — once something has been fetched, read off the last response
+rather than counted here. It goes amber near the end and red at zero; its
+tooltip names the account the budget belongs to and when it comes back.
+
 **[Lines | Size]** on the left of the strip switches what the bars, the shares
 and the treemap measure. Sizes come with the tree listing, so they are always
 exact and switching to them costs no request. They are coloured on the same

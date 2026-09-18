@@ -434,5 +434,17 @@
   },
   "rampFileStartSize": {
     "message": "File 0 B"
+  },
+  "apiLeft": {
+    "message": "API $1/$2"
+  },
+  "apiLeftTitleAnon": {
+    "message": "$1 of $2 requests left this hour, for this IP.\nA token in the options raises it to 5,000, per account.$3"
+  },
+  "apiLeftTitle": {
+    "message": "$1 of $2 requests left this hour, on the account behind $4.\nThe limit is per account, so anything else signed in as you shares it.$3"
+  },
+  "apiResetsIn": {
+    "message": "\nResets in about $1 min."
   }
 }

@@ -481,13 +481,23 @@ const HANDLERS = {
   LINES: getLines,
   CACHED_LINES: getCachedLines,
   BLOB_TEXT: getBlobText,
-  RATE: async () => ({
-    ok: true,
-    identities: [...identities.values()].map((s) => ({
-      id: s.id, label: s.label, limit: s.limit, remaining: s.remaining,
-      reset: s.reset, pausedUntil: s.pausedUntil,
-    })),
-  }),
+  /* What is left of the budget the given owner's requests come out of. Limits
+     are per account, so which account that is depends on the owner. The numbers
+     come from the last response's headers — before any request, there are
+     none, and `limit` is null. */
+  RATE: async ({ owner } = {}) => {
+    const [entry] = await tokenCandidates(owner, false);
+    const state = identity(entry ? entry.id : ANON);
+    return {
+      ok: true,
+      limit: state.limit,
+      remaining: state.remaining,
+      reset: state.reset,
+      pausedUntil: state.pausedUntil,
+      authenticated: !!entry,
+      label: describe(entry),
+    };
+  },
   CLEAR_CACHE: clearCache,
   CACHE_STATS: cacheStats,
   PING: async () => ({ ok: true }),

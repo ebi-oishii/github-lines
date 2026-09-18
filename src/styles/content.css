@@ -413,6 +413,26 @@ th:has(> .ghl-col-head)::after {
 .ghl-seg-clickable { cursor: pointer; }
 .ghl-seg-clickable:hover { filter: brightness(1.45); }
 
+.ghl-summary-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* What is left of the API budget, under the right-hand end of the bar. */
+.ghl-rate {
+  flex: 0 0 auto;
+  margin-top: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ghl-fg-muted);
+  white-space: nowrap;
+  cursor: help;
+}
+.ghl-rate[hidden] { display: none; }
+.ghl-rate[data-tone='warn'] { color: var(--ghl-warn); }
+.ghl-rate[data-tone='error'] { color: var(--ghl-danger); }
+
 .ghl-legend {
   display: flex;
   flex-wrap: wrap;

@@ -500,7 +500,12 @@
         el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [t('treemap')]),
       ]),
       el('div', { class: 'ghl-stack' }),
-      el('div', { class: 'ghl-legend' }),
+      el('div', { class: 'ghl-summary-foot' }, [
+        el('div', { class: 'ghl-legend' }),
+        el('span', { class: 'ghl-spacer' }),
+        // What is left of the budget these bars were drawn out of.
+        el('span', { class: 'ghl-rate' }),
+      ]),
     ]);
   }
 
@@ -591,6 +596,8 @@
     pickAll.hidden = !manual || headPlaced;
     if (!pickAll.hidden) syncAllRowsBox(pickAll.querySelector('input'), pickKeys, state);
 
+    renderRate(node.querySelector('.ghl-rate'), state);
+
     const stats = node.querySelector('.ghl-summary-stats');
     const status = node.querySelector('.ghl-summary-status');
     const stack = node.querySelector('.ghl-stack');
@@ -650,6 +657,29 @@
         );
       }
     }
+  }
+
+  /* Nothing until something has been spent: before the first request there are
+     no headers to read a budget off, and a made-up number would be worse than
+     none. */
+  function renderRate(node, state) {
+    const rate = state.rate;
+    if (!rate || rate.limit == null || rate.remaining == null) {
+      node.textContent = '';
+      node.hidden = true;
+      return;
+    }
+    node.hidden = false;
+    node.textContent = t('apiLeft', fmt(rate.remaining), fmt(rate.limit));
+    node.dataset.tone = rate.remaining === 0 ? 'error'
+      : rate.remaining <= Math.max(5, rate.limit * 0.1) ? 'warn' : 'ok';
+
+    const resets = rate.reset && rate.reset > Date.now()
+      ? t('apiResetsIn', Math.ceil((rate.reset - Date.now()) / 60000))
+      : '';
+    node.title = rate.authenticated
+      ? t('apiLeftTitle', fmt(rate.remaining), fmt(rate.limit), resets, rate.label)
+      : t('apiLeftTitleAnon', fmt(rate.remaining), fmt(rate.limit), resets);
   }
 
   function cssEscape(value) {

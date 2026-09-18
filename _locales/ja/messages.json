@@ -434,5 +434,17 @@
   },
   "rampFileStartSize": {
     "message": "ファイル 0 B"
+  },
+  "apiLeft": {
+    "message": "API $1/$2"
+  },
+  "apiLeftTitleAnon": {
+    "message": "この IP の残り $1/$2 回（1 時間あたり）。\n設定でトークンを登録すると、アカウント単位で 5,000 回/時になります。$3"
+  },
+  "apiLeftTitle": {
+    "message": "$4 のアカウントの残り $1/$2 回（1 時間あたり）。\n制限はアカウント単位なので、同じアカウントの他のツールと共有します。$3"
+  },
+  "apiResetsIn": {
+    "message": "\nあと約 $1 分で回復します。"
   }
 }
