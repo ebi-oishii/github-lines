@@ -151,9 +151,8 @@ try {
     await page.fill('.token-row:nth-child(2) .token-label', 'bad-default');
     await page.check('.token-row:nth-child(2) .token-default');
 
-    if (MANUAL) {
-      await page.check('input[name="exactLinesMode"][value="manual"]');
-    }
+    // Manual is the default, so it is the automatic run that has to say so.
+    await page.check(`input[name="exactLinesMode"][value="${MANUAL ? 'manual' : 'auto'}"]`);
 
     // No Save button: the page writes as you go. Blur the last field so the
     // pending write lands, then wait for it to say so.

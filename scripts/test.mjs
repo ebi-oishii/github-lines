@@ -593,16 +593,20 @@ check('settings: a dangling defaultTokenId falls back to the first token', () =>
   assertEqual(s.defaultTokenId, 'a');
 });
 
-check('settings: the exact-lines boolean migrates to a mode', () => {
+check('settings: the exact-lines boolean migrates, and only it', () => {
   assertEqual(settings.normalise({ fetchExactLines: false }).exactLinesMode, 'off');
-  assertEqual(settings.normalise({ fetchExactLines: true }).exactLinesMode, 'auto');
-  assertEqual(settings.normalise({}).exactLinesMode, 'auto', 'never configured');
+  assertEqual(settings.normalise({ fetchExactLines: true }).exactLinesMode, 'auto',
+    'someone who had it on keeps the fetching they had');
   assertEqual(settings.normalise({ fetchExactLines: false }).fetchExactLines, undefined,
     'the old field is dropped');
+
+  // A config carrying neither key is a new install, not a migration.
+  assertEqual(settings.normalise({}).exactLinesMode, 'manual', 'never configured');
+  assertEqual(settings.normalise(undefined).exactLinesMode, 'manual', 'nothing stored at all');
 });
 
-check('settings: an unknown exact-lines mode falls back to auto', () => {
-  assertEqual(settings.normalise({ exactLinesMode: 'nonsense' }).exactLinesMode, 'auto');
+check('settings: an unknown exact-lines mode falls back to the default', () => {
+  assertEqual(settings.normalise({ exactLinesMode: 'nonsense' }).exactLinesMode, 'manual');
   for (const mode of ['auto', 'manual', 'off']) {
     assertEqual(settings.normalise({ exactLinesMode: mode }).exactLinesMode, mode);
   }
@@ -1007,9 +1011,13 @@ function renderedPaths() {
   )].sort();
 }
 
+/* These are about the render path, so they run in the mode that fetches
+   without being asked. Manual — the default, and what most of the rest of this
+   file exercises — comes after them. */
 await domCheckAsync('the strip shows up while the tree is still in flight', async () => {
   installDom(fixtureHtml, FIXTURE_URL);
   stubTransport({ treeDelayMs: 700 });
+  await settings.set({ exactLinesMode: 'auto' });
   load('src/content/main.js');
 
   await waitFor(() => document.getElementById(inline.SUMMARY_ID), 3000, 'summary strip');
@@ -1127,6 +1135,7 @@ function tick(path, on) {
 
 await domCheckAsync('manual mode fetches nothing — not even the tree — until asked', async () => {
   await settings.set({ exactLinesMode: 'manual' });
+  assertEqual(settings.DEFAULTS.exactLinesMode, 'manual', 'which is what a new install gets');
   const before = transportCalls.length;
 
   navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);

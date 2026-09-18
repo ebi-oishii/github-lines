@@ -428,5 +428,8 @@
   },
   "languageAuto": {
     "message": "Follow the browser"
+  },
+  "setupGuide": {
+    "message": "Setup and usage guide"
   }
 }

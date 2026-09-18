@@ -28,9 +28,13 @@
     respectGitattributes: true,
     excludePatterns: GHL.patterns.DEFAULT_EXCLUDES.slice(),
 
-    // Exact line counting: 'auto' fetches as soon as the page opens, 'manual'
-    // waits for a button press, 'off' never fetches and leaves the estimates.
-    exactLinesMode: 'auto',
+    /* Exact line counting: 'manual' fetches nothing until asked, 'auto' as
+       soon as the page opens, 'off' never.
+
+       Manual is the default because the other two spend a reader's API budget
+       on a page they may only be passing through — and the budget is 60 an
+       hour until they set up a token. */
+    exactLinesMode: 'manual',
     maxExactFetch: 300,   // per directory view
     concurrency: 8,
     maxBlobBytes: 2 * 1024 * 1024, // above this, keep the estimate
@@ -69,13 +73,20 @@
     }
     delete s.token;
 
-    // Migration: the mode used to be a boolean. Check what was actually stored
-    // rather than the merged value, which always has the default in place.
+    /* Migration: the mode used to be a boolean. What was actually stored is
+       what decides — the merged value always has the default in place, so
+       reading that would hand every install the default and undo the
+       migration. An install that has neither key is a new one, and gets the
+       default like anything else. */
     const storedMode = stored && stored.exactLinesMode;
     if (EXACT_MODES.has(storedMode)) {
       s.exactLinesMode = storedMode;
+    } else if (stored && 'fetchExactLines' in stored) {
+      // The boolean had no third state: false meant off, and true meant the
+      // automatic fetching it was switched on for.
+      s.exactLinesMode = stored.fetchExactLines === false ? 'off' : 'auto';
     } else {
-      s.exactLinesMode = (stored && stored.fetchExactLines) === false ? 'off' : 'auto';
+      s.exactLinesMode = DEFAULTS.exactLinesMode;
     }
     delete s.fetchExactLines;
 

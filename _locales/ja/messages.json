@@ -428,5 +428,8 @@
   },
   "languageAuto": {
     "message": "ブラウザの設定に従う"
+  },
+  "setupGuide": {
+    "message": "セットアップと使い方"
   }
 }
