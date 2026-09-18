@@ -9,8 +9,9 @@ see it happen. This makes it obvious in the browser, without cloning anything.
 
 ![The file list](docs/screenshot-file-list.png)
 
-That `core/` holds 90% of the directory, and that `create.ts` runs to 409 lines,
-are both there the moment the page opens.
+That `apiSetupHelpers.ts` is nearing the warning threshold at 573 lines, and
+that `compat/` and `components/` carry 13% of the directory each, are both there
+the moment the page opens. (The pictures are Vue's `runtime-core` package.)
 
 The "Treemap" button switches to a view where **area is line count**. Click a
 directory to drill into it.
