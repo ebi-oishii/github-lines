@@ -11,6 +11,17 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/* The wordings that mean "still working", in whichever language the extension
+   resolved to. Asking it is the only way to know: chrome.i18n follows the
+   browser's UI language, which no flag overrides. */
+let MESSAGES = JSON.parse(fs.readFileSync(path.join(ROOT, '_locales/en/messages.json'), 'utf8'));
+const msg = (key, ...subs) =>
+  (MESSAGES[key] ? MESSAGES[key].message : key).replace(/\$(\d)/g, (_, i) => subs[Number(i) - 1] ?? '');
+const busyPrefixes = () => ['fetchBusy', 'statusLoading', 'statusEstimating', 'statusRefining']
+  .map((key) => msg(key, '', '').replace(/[\s/…]+$/, '').trim())
+  .filter(Boolean);
+
 const TOKEN = process.env.GITHUB_TOKEN || '';
 const REPO = process.argv[2] || 'sindresorhus/got';
 
@@ -56,6 +67,12 @@ try {
   const worker = context.serviceWorkers()[0] || (await context.waitForEvent('serviceworker'));
   const extensionId = new URL(worker.url()).host;
 
+  const locale = await worker.evaluate(() => chrome.i18n.getMessage('lang'));
+  if (locale && locale !== 'en') {
+    MESSAGES = JSON.parse(fs.readFileSync(path.join(ROOT, `_locales/${locale}/messages.json`), 'utf8'));
+  }
+  const BUSY = busyPrefixes();
+
   /* What is being measured is what a page costs when it counts on its own, so
      the mode is pinned rather than left at the default, which fetches nothing
      until asked. */
@@ -72,13 +89,15 @@ try {
 
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#ghl-summary', { state: 'attached', timeout: 60000 });
-    // A resting view says nothing in its status line, in any language.
+    /* A resting view is one that has stopped working — not one with nothing
+       to say. "Repository too large — partly estimated" and any warning are
+       both final, and waiting for them to clear would wait forever. */
     await page.waitForFunction(
-      () => {
+      (busy) => {
         const s = document.querySelector('.ghl-summary-status');
-        return s && !s.textContent.trim();
+        return s && !busy.some((b) => s.textContent.includes(b));
       },
-      null, { timeout: 180000 }
+      BUSY, { timeout: 180000 }
     );
     // Let any trailing requests land before we stop counting.
     await page.waitForTimeout(1500);

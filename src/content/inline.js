@@ -223,7 +223,9 @@
   /* A row has one name cell per breakpoint; paint every one of them. */
   function renderRow(row, node, dirTotal, maxTotal, state, handlers, manual, included) {
     for (const host of row.hosts) {
-      paintPick(pickIn(host, handlers), row.path, state, manual);
+      // Only manual mode has checkboxes; building one everywhere else would be
+      // an input and two listeners per row, for CSS to hide.
+      if (manual) paintPick(pickIn(host, handlers), row.path, state, manual);
       paintCell(cellIn(host), row, node, dirTotal, maxTotal, state, included);
     }
   }
@@ -534,9 +536,11 @@
         .addEventListener('click', () => handlers.onFetch && handlers.onFetch());
       node.querySelector('.ghl-pick-all').insertBefore(allRowsBox(handlers), node.querySelector('.ghl-pick-all').lastChild);
     }
-    if (node.previousElementSibling !== anchor && node.parentElement !== anchor.parentElement) {
-      anchor.parentElement.insertBefore(node, anchor);
-    } else if (!node.isConnected) {
+    // The strip sits immediately before the file list. Anything else — a node
+    // GitHub inserted between them, a re-parent, a detach — puts it back.
+    if (!node.isConnected
+        || node.parentElement !== anchor.parentElement
+        || node.nextElementSibling !== anchor) {
       anchor.parentElement.insertBefore(node, anchor);
     }
 

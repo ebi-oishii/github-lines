@@ -56,7 +56,10 @@
         size: e.size || 0,
         sha: e.sha,
         lines: 0,
-        exact: false,
+        /* Nothing fetches a zero-byte file — every path that could filters on
+           `size > 0` — so if it were not exact here it would sit at its
+           estimate forever, and hold the whole directory's `~` with it. */
+        exact: e.size === 0,
         excluded: false,
         binary: false,
       };
@@ -130,7 +133,7 @@
     return !node.excluded && !node.exact && node.size > 0 && node.size <= maxBytes;
   }
 
-  async function loadGitattributes(ctx, index, settings, cacheOnly) {
+  async function loadGitattributes(ctx, index, settings, cacheOnly, isCancelled) {
     if (!settings.respectGitattributes) return [];
 
     const files = [];
@@ -144,6 +147,7 @@
 
     const rules = [];
     for (const node of files.slice(0, 20)) {
+      if (isCancelled()) return rules;
       const res = await util.send({
         type: 'BLOB_TEXT', owner: ctx.owner, repo: ctx.repo, sha: node.sha, cacheOnly,
       });
@@ -395,7 +399,7 @@
       emitNow();
 
       // --- linguist attributes -----------------------------------------
-      const rules = await loadGitattributes(ctx, state.index, settings, cacheOnly);
+      const rules = await loadGitattributes(ctx, state.index, settings, cacheOnly, () => cancelled);
       if (cancelled) return;
       if (rules.length) {
         classify(state.index, isExcluded, patterns.makeLinguistMatcher(rules));

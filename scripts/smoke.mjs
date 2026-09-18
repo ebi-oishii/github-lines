@@ -520,11 +520,11 @@ try {
   // `/rate_limit` is asked once per view when a page draws without spending
   // anything; GitHub does not count it against the budget it reports, and
   // repeating it is the point rather than waste.
-  const seen_ = apiRequests.filter((r) => !r.url.includes('/rate_limit'));
-  const duplicates = seen_.filter((r) => (seen.has(r.url) ? true : (seen.add(r.url), false)));
+  const charged = apiRequests.filter((r) => !r.url.includes('/rate_limit'));
+  const duplicates = charged.filter((r) => (seen.has(r.url) ? true : (seen.add(r.url), false)));
   assert(
     duplicates.length === 0,
-    `no API request is made twice (${apiRequests.length} total)` +
+    `no API request is made twice (${charged.length} checked)` +
       (duplicates.length ? ` — repeated: ${duplicates[0].url}` : '')
   );
 

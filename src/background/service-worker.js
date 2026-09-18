@@ -506,8 +506,13 @@ const HANDLERS = {
     const [entry] = await tokenCandidates(owner, false);
     const state = identity(entry ? entry.id : ANON);
 
-    const stale = state.limit == null || state.reset < Date.now();
-    if (stale && Date.now() - state.askedAt > 60000) {
+    /* Asking is free, so the cooldown is only there to keep a quiet tab from
+       asking on every view. A window that has already reset is worth asking
+       about whatever the cooldown says: what is held is not stale, it is
+       wrong — it would report a spent budget that has since come back. */
+    const expired = state.reset != null && state.reset < Date.now();
+    const unknown = state.limit == null;
+    if (expired || (unknown && Date.now() - state.askedAt > 60000)) {
       state.askedAt = Date.now();
       // Best effort: a budget nobody could ask about is not worth an error.
       await askRateLimit(entry, state).catch(() => {});

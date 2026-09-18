@@ -286,6 +286,20 @@ check('buildTree creates implicit parent directories', () => {
   assertEqual(index.get('src/ui/Button.tsx').name, 'Button.tsx');
 });
 
+check('a zero-byte file is exact at zero, not an estimate of one', () => {
+  const { root, index } = store.buildTree([
+    { path: 'a/.gitkeep', type: 'file', size: 0, sha: 's0' },
+    { path: 'a/real.ts', type: 'file', size: 320, sha: 's1' },
+  ]);
+  const empty = index.get('a/.gitkeep');
+  assert(empty.exact, 'nothing will ever fetch it, so it is exact as built');
+  index.get('a/real.ts').lines = 10;
+  index.get('a/real.ts').exact = true;
+  store.rollup(root);
+  assertEqual(index.get('a').total, 10, 'and contributes nothing to the total');
+  assert(index.get('a').allExact, 'so the directory is not marked approximate forever');
+});
+
 check('rollup carries the largest file up the tree', () => {
   const { root, index } = store.buildTree([
     { path: 'a/small.ts', type: 'file', size: 100, sha: 's1' },
@@ -1567,37 +1581,42 @@ await domCheckAsync('the strip reports what is left of the API budget', async ()
 await domCheckAsync('a collapsed row takes the files it stands for with it', async () => {
   /* GitHub folds a chain of single-child directories into one row, so a row is
      not always one segment below the directory being shown — and what the row
-     stands for has to follow the row, not that assumption. */
-  await settings.set({ exactLinesMode: 'manual' });
-  STUB_TREE.push({ path: 'source/core/utils/deep/buried.ts', type: 'file', size: 4000, sha: 'sha-buried' });
-  navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+     stands for has to follow the row, not that assumption.
 
+     The stub tree and the document are shared with every test after this one,
+     so what this one adds, it takes back — failure or not. */
   const tbody = document.querySelector('table[aria-labelledby="folders-and-files"] tbody');
   const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td class="react-directory-row-name-cell-large-screen">
-      <div class="react-directory-filename-column">
-        <a title="This path skips through empty directories" class="Link--primary"
-           href="/sindresorhus/got/tree/main/source/core/utils/deep">utils/deep</a>
-      </div>
-    </td>`;
-  tbody.appendChild(tr);
+  STUB_TREE.push({ path: 'source/core/utils/deep/buried.ts', type: 'file', size: 4000, sha: 'sha-buried' });
+  try {
+    await settings.set({ exactLinesMode: 'manual' });
+    navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
 
-  await loadTreeViaSizes();
-  await waitFor(() => /2/.test(fetchButton().textContent), 6000,
-    () => `both files counted on the button (${fetchButton().textContent})`);
+    tr.innerHTML = `
+      <td class="react-directory-row-name-cell-large-screen">
+        <div class="react-directory-filename-column">
+          <a title="This path skips through empty directories" class="Link--primary"
+             href="/sindresorhus/got/tree/main/source/core/utils/deep">utils/deep</a>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
 
-  tick('source/core/utils/deep', false);
-  await waitFor(() => /1/.test(fetchButton().textContent), 3000,
-    () => `unticking the collapsed row drops its file (${fetchButton().textContent})`);
-  const stats = document.querySelector('.ghl-summary-stats').textContent;
-  assert(stats.includes(msg('unitFilesOne', 1)), `and drops it from the totals too (${stats})`);
+    await loadTreeViaSizes();
+    await waitFor(() => /2/.test(fetchButton().textContent), 6000,
+      () => `both files counted on the button (${fetchButton().textContent})`);
 
-  tick('source/core/utils/deep', true);
-  await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'ticking it brings the file back');
+    tick('source/core/utils/deep', false);
+    await waitFor(() => /1/.test(fetchButton().textContent), 3000,
+      () => `unticking the collapsed row drops its file (${fetchButton().textContent})`);
+    const stats = document.querySelector('.ghl-summary-stats').textContent;
+    assert(stats.includes(msg('unitFilesOne', 1)), `and drops it from the totals too (${stats})`);
 
-  STUB_TREE.pop();
-  tr.remove();
+    tick('source/core/utils/deep', true);
+    await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'ticking it brings the file back');
+  } finally {
+    STUB_TREE.pop();
+    tr.remove();
+  }
 });
 
 await domCheckAsync('leaving the file list tears the UI down', async () => {
