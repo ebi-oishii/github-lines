@@ -1,10 +1,10 @@
-# 使い方
+# Usage
 
-## 表示の読み方
+## Reading the display
 
-### ファイル一覧のバー
+### The bars on the file list
 
-各行の右側に、そのディレクトリ内での位置づけが出ます。
+Each row gains, on its right, where it stands in that directory.
 
 ```
 core           ███████████████████  10,081  90%
@@ -14,189 +14,207 @@ index.ts                                27
 types.ts       ▌                       342   3%
 ```
 
-| 表示 | 意味 |
+| What you see | What it means |
 |---|---|
-| バーの長さ | **そのディレクトリで最大の項目に対する相対値** |
-| 右の数字 | 行数 |
-| `%` | ディレクトリ合計に占める割合（0.5% 未満は非表示） |
-| `~1,204` | 推定値。まだ実行数を取得していない |
-| `generated` | 生成物としてカウント対象外 |
-| `binary` | バイナリのためカウント対象外 |
-| `–` | 情報を取得できなかった（サブモジュール等） |
+| Bar length | **Relative to the largest entry in that directory** |
+| The number | Its line count |
+| `%` | Its share of the directory's total (hidden below 0.5%) |
+| `~1,204` | An estimate; the real count has not been fetched |
+| `generated` | Not counted — a generated file |
+| `binary` | Not counted — binary |
+| `–` | Nothing could be read for it (a submodule, perhaps) |
 
-バーを「合計に対する割合」で描くと、30 ファイルあるディレクトリでは全部が 3% の細い線になり、
-肝心の外れ値が見えなくなります。そのため**バーは最大値基準**、**数値は実際の割合**にしています。
+Drawing the bar as a share of the total would make every row of a 30-file
+directory a 3% sliver, hiding the very outlier this is for. So **the bar is
+scaled to the largest entry** and **the number is the true share**.
 
-行にカーソルを合わせると、フルパス・行数・割合・ファイル数・バイト数がツールチップに出ます。
+Hovering a row shows its full path, line count, share, file count and byte size.
 
-### 色
+### Colour
 
-ファイルの色は行数で連続的に変わります（閾値の既定値は 500 / 800 行、変更可）。
+A file's colour moves continuously with its line count (the thresholds default
+to 500 and 800, and are configurable).
 
-| 色 | 意味 |
+| Colour | Meaning |
 |---|---|
-| 青 → 緑 | 通常（0 行から注意の閾値まで） |
-| 黄 | 注意（既定 500 行） |
-| 橙 → 赤 | 警告へ（既定 800 行以上は赤で固定） |
-| 薄紫 → 濃紫 | ディレクトリ。**中で一番大きいファイルの行数**で濃くなります |
-| グレー | カウント対象外 |
+| Blue → green | Ordinary — from zero up to the warn threshold |
+| Amber | The warn threshold (500 by default) |
+| Orange → red | On towards danger; 800 and above is all the same red |
+| Pale → deep violet | A directory, deepening with **the largest file inside it** |
+| Grey | Not counted |
 
-ディレクトリの色は合計行数ではありません。小さなディレクトリでも、中に肥大化した
-ファイルが 1 つあれば濃くなります。ツールチップに「最大のファイル」が出ます。
+A directory's colour is not about its total. A small directory with one bloated
+file in it is dark, which is the thing worth finding; the tooltip names that
+file.
 
-### サマリー行
+### The summary strip
 
-一覧の上に出る帯です。
+The band above the listing.
 
 ```
-GitHub Lines   11,220 行 · 25 ファイル · 最大: core/ 10k 行 (90%)      [ツリーマップ]
+GitHub Lines   11,220 lines · 25 files · biggest: core/ 10k lines (90%)   [Treemap]
 ███████████████████████████████████████████████▏▍▏▎
 ■ core/ 90%
 ```
 
-積み上げバーは、そのディレクトリの子要素の内訳です。セグメントをクリックすると
-該当する行までスクロールしてハイライトします。
+The stacked bar is the directory's children. Click a segment to scroll to that
+row and flash it.
 
-右側にはステータスが出ます（`実行数を取得中 42/120`、`API レート制限…` など）。
-何も出ていなければ全部の値が確定している状態です。
+The right-hand side carries the status (`Counting lines 42/120`, `API rate
+limit…`). Nothing there means every number on screen is final.
 
-帯の左の **[行数 | サイズ]** で、バー・割合・ツリーマップが何を測るかを切り替えられます。
-サイズは tree に含まれているので常に実測値で、切り替えに API は使いません。
-サイズ表示では閾値の色分け（黄・赤）は付きません。
+**[Lines | Size]** on the left of the strip switches what the bars, the shares
+and the treemap measure. Sizes come with the tree listing, so they are always
+exact and switching to them costs no request; they carry no threshold colouring.
 
-手動モードでは、ページを開いた時点では何も取得せず、**[行数 | サイズ]** で選んだ方を
-取りに行くボタンが 1 つ出ます。ただし同じ commit を以前に見ていて tree がキャッシュにあれば、
-API を使わずに開いた時点で表示されます（行数もキャッシュにある分は実測値、無い分は推定値）。**行数** ならボタンは **「行数を取得」** で、tree の取得から
-実際の行数の取得まで続けて行います。**サイズ** に切り替えるとボタンは **「サイズを取得」**
-（tree を 1 リクエスト）になります。tree を取った後は **「行数を取得（124）」** のように
-取得するファイル数（＝消費する API リクエスト数）が付きます。取るものが無くなるとボタンは
-**「取得済み」**（無効）になり、位置は変わりません。
-各行の行頭には開いた直後からチェックボックスが付いています。列の上（見出し行の「Name」の左。
-見出し行の無いリポジトリ直下では最新コミット欄の左端）には拡張のアイコンと全行分の
-チェックボックスがあり、縦線で区切られます。チェックは「表示と取得に含める」
-の意味で、外した行はバー・割合・合計・ツリーマップから消え、「行数を取得（N）」の数からも
-外れます（ディレクトリならその配下すべて）。列の上のチェックボックスで一括で付け外しできます。
+In manual mode nothing is fetched when the page opens, and one button offers
+whatever the toggle says. (If you have seen the same commit before, its tree is
+in the cache and the view is drawn on open without a request — counts too, where
+they are cached, and estimates where they are not.) On **Lines** the button
+reads **"Fetch line counts"** and goes from the tree listing all the way to the
+counts; switch to **Size** and it reads **"Fetch sizes"**, which is the one tree
+request. Once the tree is in, the button names its price — **"Fetch line counts
+(124)"**, one request per file. With nothing left to fetch it stays where it is,
+disabled, reading **"Fetched"**.
 
-### ツリーマップ
+Every row carries a checkbox at its head from the moment the page opens. Above
+the column — to the left of the "Name" header, or in the latest-commit box on a
+repository root, which has no header row — sit the extension's icon and a
+checkbox for every row, with a rule down the column. A ticked row is included:
+untick it and it leaves the bars, the shares, the total, the treemap and the
+count on the button (a directory takes everything inside it). The checkbox above
+the column ticks or unticks them all.
 
-「ツリーマップ」ボタンで開きます。**面積が行数**です。
+### The treemap
 
-- ディレクトリ名の帯をクリック → その中へドリルダウン
-- ファイルをクリック → GitHub のそのファイルへ移動
-- 上部のパンくずをクリック → 上の階層へ戻る
-- `Esc` または背景クリック → 閉じる
+Opened with the "Treemap" button. **Area is line count.**
 
-## 設定
+- Click a directory's header — drill into it
+- Click a file — go to it on GitHub
+- Click the breadcrumb — back up
+- `Esc`, or click the backdrop — close
 
-拡張のアイコンを右クリック →「オプション」、または `chrome://extensions` の
-「拡張機能のオプション」から開きます。
+## Settings
 
-| 項目 | 既定値 | 説明 |
+Right-click the extension's icon → "Options", or "Extension options" under
+`chrome://extensions`.
+
+| Setting | Default | What it is |
 |---|---|---|
-| アクセストークン | なし | [設定方法](token.md)。private リポジトリと 5,000 回/時に必要。複数登録してオーナーごとに使い分けられます |
-| 注意 / 警告の閾値 | 500 / 800 行 | 色の基準となる行数 |
-| 言語 | ブラウザの設定に従う | 日本語 / English を明示的に選べます |
-| 割合バーを表示 | オン | 一覧のバー |
-| ツリーマップのボタンを表示 | オン | サマリー行のボタン |
-| 実際の行数の取得 | 手動 | 自動 / 手動 / 取得しない。下記参照 |
-| 1 画面あたりの取得上限 | 300 ファイル | 実行数を取りにいく最大数 |
-| 並列数 | 8 | 同時リクエスト数 |
-| `.gitattributes` を尊重 | オン | `linguist-generated` / `linguist-vendored` を除外 |
-| 除外パターン | 下記 | glob。1 行に 1 つ |
+| Access tokens | none | [How to set one up](token.md). Needed for private repositories and for 5,000 requests an hour. Several can be registered and routed per owner |
+| Warn / danger thresholds | 500 / 800 lines | Where the colour ramp is anchored |
+| Language | follow the browser | English or Japanese, if you would rather pin one |
+| Show proportion bars | on | The bars on the listing |
+| Show the treemap button | on | The button on the summary strip |
+| Fetching exact line counts | manual | Automatic / manual / off — see below |
+| Fetch limit per view | 300 files | The most it will count in one view |
+| Parallel requests | 8 | How many at a time |
+| Respect `.gitattributes` | on | Excludes `linguist-generated` / `linguist-vendored` |
+| Exclude patterns | see below | Globs, one per line |
 
-設定は変更した時点で保存され、開いている GitHub のタブにも即座に反映されます。
+Settings are saved as you change them, and reach any open GitHub tab at once.
 
-## 行数を取得するタイミング
+## When it counts
 
-オプション画面の「実際の行数の取得」で 3 つから選べます。
+"Fetching exact line counts", in the options, offers three.
 
-| モード | 挙動 | 1 画面あたりの API 消費 |
+| Mode | What it does | API requests per view |
 |---|---|---|
-| **手動**（既定） | ページを開いても取得しない。[行数 \| サイズ] で選んだ方をボタンで取得。行のチェックで対象を絞れる | 0（サイズで +1、行数で +N） |
-| **自動** | ページを開いた時点で取得を始める | tree 1 + 未取得ファイル数 |
-| **取得しない** | 常に推定値のみ | tree 1 |
+| **Manual** (default) | Fetches nothing on open. The button fetches whatever [Lines \| Size] says; the row checkboxes narrow it | 0 (+1 for sizes, +N for counts) |
+| **Automatic** | Starts counting as soon as the page opens | 1 tree + files not yet counted |
+| **Off** | Estimates, always | 1 tree |
 
-**どのモードでも、キャッシュ済みのファイルは API を使わずに実測値で表示されます。**
-一度見たディレクトリを開き直した場合は、手動モードでもボタンが出ません（取得するものが無いため）。
+**In every mode, a file counted before shows its real value from the cache,
+without a request.** Reopen a directory you have already seen and manual mode
+offers no button, because there is nothing left to fetch.
 
-手動モードが向いているのは:
+Manual suits you if:
 
-- API の消費を自分で制御したい（未認証の 60 回/時で使っている、巨大なモノレポを見ている）
-- 普段は割合だけ分かれば十分で、詳しく見たいときだけ正確な行数が欲しい
+- you want to decide what the API budget goes on — you are on the
+  unauthenticated 60 an hour, or looking at an enormous monorepo
+- the proportions are usually enough, and you want exact numbers only when you
+  go looking
 
-レート制限などで途中で止まった場合、ボタンは残り件数を表示したまま出続けるので、
-枠が回復してから押し直せます。
+If a rate limit cuts a pass short, the button stays up with what is left on it,
+to press again once the quota returns.
 
-## 除外されるもの
+## What is excluded
 
-3 段階で除外します。除外されたファイルは行数 0 として扱われ、一覧では
-`generated` / `binary` と表示されます。
+Three passes. An excluded file counts as zero lines and shows as `generated` or
+`binary` on the listing.
 
-1. **バイナリ** — 画像・フォント・アーカイブ・コンパイル済みファイルなど。
-   拡張子で判定し、設定に関係なく常に除外されます
-2. **`.gitattributes`** — リポジトリが `linguist-generated=true` や `linguist-vendored` を
-   宣言しているファイル。リポジトリ自身の宣言なので、glob より正確です
-3. **除外パターン** — 既定では `node_modules/`、`dist/`、`build/`、`vendor/`、
-   `coverage/`、各種 lockfile、`*.min.js`、`*.map`、`*.svg`、`*.pb.go`、`*.g.dart` など。
-   オプション画面で自由に編集できます
+1. **Binaries** — images, fonts, archives, compiled output. Recognised by
+   extension and always excluded, whatever the settings say
+2. **`.gitattributes`** — files the repository itself declares
+   `linguist-generated=true` or `linguist-vendored`. Its own declaration, so
+   more accurate than any glob
+3. **Exclude patterns** — by default `node_modules/`, `dist/`, `build/`,
+   `vendor/`, `coverage/`, the usual lockfiles, `*.min.js`, `*.map`, `*.svg`,
+   `*.pb.go`, `*.g.dart` and the like. Edit them in the options
 
-`*` はスラッシュを跨ぎません。`**/` は任意の深さにマッチします。
+`*` does not cross a slash; `**/` matches at any depth.
 
-## 行数の求め方
+## How the counts are arrived at
 
-GitHub API には「ファイルの行数」を返すエンドポイントがありません。そこで 2 段階で処理します。
+The GitHub API has no endpoint for "how many lines is this file", so it takes
+two passes.
 
-1. **Tree API を 1 回**呼んで、リポジトリ全ファイルのバイト数を取得。
-   言語ごとのバイト/行の係数で推定し、即座にバーを描画します（`~` 付き）
-2. 表示中ディレクトリのファイルを**並列で取得して実際に `\n` を数え**、推定値と置き換えます
-   （`~` が外れる）。同時に「このリポジトリの実際のバイト/行」を学習するので、
-   まだ取得していないファイルの推定値も精度が上がっていきます
+1. **One Tree API request** gives every file's byte size. A per-language
+   bytes-per-line ratio turns that into an estimate, and the bars are drawn
+   immediately, marked `~`
+2. The files in the directory on screen are **fetched in parallel and their
+   `\n`s counted**, replacing the estimates as they land (the `~` goes). Each
+   one also teaches the extension this repository's real bytes-per-line, so the
+   files still estimated converge too
 
-つまり、バーは 1 リクエストで即出て、そのあと数秒かけて正確な値に収束します。
+So the bars are there after one request, and sharpen over the next few seconds.
 
-## キャッシュと API 消費量
+## The cache, and what it spends
 
-### キャッシュの効き方
+### What is cached
 
-| データ | キー | 有効期間 |
+| Data | Key | Kept |
 |---|---|---|
-| 行数 | blob SHA | 永続 |
-| ツリー | コミット SHA | 永続（直近 40 件） |
-| `.gitattributes` | blob SHA | 永続 |
+| Line counts | blob SHA | Indefinitely |
+| Trees | commit SHA | Indefinitely (the last 40) |
+| `.gitattributes` | blob SHA | Indefinitely |
 
-git の blob SHA は**内容のハッシュ**です。同じ内容のファイルは、ブランチが違っても、
-コミットが進んでも、別のリポジトリにあっても、二度と取得しません。
+A git blob SHA is **a hash of the content**. A file whose content has not
+changed is never fetched twice — not on another branch, not after a later
+commit, not in a different repository.
 
-### ブランチにコミットが入ったとき
+### When a branch gets a commit
 
-**再取得します。** ツリーのキャッシュキーはコミット SHA なので、ブランチに push が入って
-コミットが変われば別のキーになり、キャッシュミスして取り直します。
+**It refetches.** A tree is cached under the commit SHA, so a push makes a new
+key, which misses.
 
-このとき**変わったファイルだけ**を取り直します。行数は blob SHA キーなので、
-1 ファイルだけ変わったコミットなら、消費はツリー 1 + blob 1 の計 2 リクエストです。
+Only **what changed** is fetched again: counts are keyed by blob SHA, so a
+commit touching one file costs one tree request plus one blob — two in total.
 
-ただし**ポーリングはしません**。新しいコミットに気づくのはページを読み込み直したときです。
-タブを開いたまま放置している間に push があっても、リロード（F5）するまでは
-読み込んだ時点のコミットの値を表示し続けます。
+It does **not poll**. A new commit is noticed when the page is loaded again.
+Leave a tab open while someone pushes and it goes on showing the commit it
+loaded until you refresh.
 
-### 実測値
+### Measured
 
-`npm run measure` で計測できます。`sindresorhus/got`（カウント対象 123 ファイル）の場合:
+`npm run measure` takes the numbers. On `sindresorhus/got` (123 countable
+files):
 
-| 操作 | リクエスト数 | 時間 |
+| Action | Requests | Time |
 |---|---|---|
-| リポジトリ直下を初めて開く | **125**（tree 1 + blob 124） | 8.5 秒 |
-| 同じリポジトリを開き直す | **0** | 1.9 秒 |
-| サブディレクトリへ移動 | **0** | 2.2 秒 |
+| Opening the repository root, first time | **125** (1 tree + 124 blobs) | 8.5 s |
+| Opening the same repository again | **0** | 1.9 s |
+| Into a subdirectory | **0** | 2.2 s |
 
-規模別の目安は「カウント対象ファイル数 + 1」です。ただし実行数の取得は
-**1 画面あたり 300 ファイルが上限**なので、それを超える規模では直下で全部は取らず、
-実際に開いたディレクトリのぶんだけ追加取得します。1 万ファイルのモノレポでも、
-ツリーは 1 リクエストのままです。
+The rule of thumb is "countable files + 1". But counting stops at **300 files
+per view**, so beyond that it does not take everything at the root — it fetches
+what the directory you actually opened needs. The tree stays one request even
+for a monorepo of ten thousand files.
 
-レート制限は未認証 60 回/時（IP 単位）、トークンあり 5,000 回/時（**トークンではなく
-ユーザーアカウント**単位で、`gh` CLI など同じアカウントの他のツールと共有）です。
-詳しくは [API 利用と規約](api-usage-and-terms.md) を参照してください。
+The rate limit is 60 an hour unauthenticated (per IP) and 5,000 with a token —
+**per user account, not per token**, so it is shared with anything else signed
+in as you, the `gh` CLI included. [API use and terms](api-usage-and-terms.md)
+has the detail.
 
-「実際の行数の取得」を**手動**または**取得しない**にすると、ページを開いたときの消費は
-tree の **1 リクエストだけ**になります。
+Set "Fetching exact line counts" to **manual** or **off** and opening a page
+costs **the one tree request**.

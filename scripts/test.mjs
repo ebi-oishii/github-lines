@@ -615,8 +615,8 @@ check('settings: an unknown exact-lines mode falls back to the default', () => {
 function twoAccounts() {
   return settings.normalise({
     tokens: [
-      { id: 'personal', label: '個人', token: 'ghp_personal', owners: ['ebi-oishii'] },
-      { id: 'work', label: '仕事', token: 'ghp_work', owners: ['Acme-Corp', 'acme-labs'] },
+      { id: 'personal', label: 'personal', token: 'ghp_personal', owners: ['ebi-oishii'] },
+      { id: 'work', label: 'work', token: 'ghp_work', owners: ['Acme-Corp', 'acme-labs'] },
     ],
     defaultTokenId: 'personal',
   });

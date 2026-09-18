@@ -37,7 +37,8 @@ const context = await chromium.launchPersistentContext(profile, {
 let counter = null;
 context.on('request', (req) => {
   const url = req.url();
-  if (!counter || !url.startsWith('https://api.github.com/')) return;
+  // `/_private/browser/stats` is github.com's own telemetry, not ours.
+  if (!counter || !url.startsWith('https://api.github.com/') || url.includes('/_private/')) return;
   const kind =
     /\/git\/trees\//.test(url) ? 'tree' :
     /\/git\/blobs\//.test(url) ? 'blob' :
@@ -55,15 +56,15 @@ try {
   const worker = context.serviceWorkers()[0] || (await context.waitForEvent('serviceworker'));
   const extensionId = new URL(worker.url()).host;
 
-  if (TOKEN) {
-    await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
-    await page.fill('.token-row:nth-child(1) .token-value', TOKEN);
-    await page.click('h1'); // the page saves on its own; blur to flush it
-    await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
-    console.log('token configured\n');
-  } else {
-    console.log('no GITHUB_TOKEN — measuring unauthenticated (60/hr)\n');
-  }
+  /* What is being measured is what a page costs when it counts on its own, so
+     the mode is pinned rather than left at the default, which fetches nothing
+     until asked. */
+  await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
+  if (TOKEN) await page.fill('.token-row:nth-child(1) .token-value', TOKEN);
+  await page.check('input[name="exactLinesMode"][value="auto"]');
+  await page.click('h1'); // the page saves on its own; blur to flush it
+  await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
+  console.log(TOKEN ? 'token configured\n' : 'no GITHUB_TOKEN — measuring unauthenticated (60/hr)\n');
 
   async function visit(label, url) {
     counter = { total: 0, byKind: {}, notable: [] };
@@ -71,10 +72,11 @@ try {
 
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#ghl-summary', { state: 'attached', timeout: 60000 });
+    // A resting view says nothing in its status line, in any language.
     await page.waitForFunction(
       () => {
         const s = document.querySelector('.ghl-summary-status');
-        return s && !/取得中|推定中|読み込み中/.test(s.textContent);
+        return s && !s.textContent.trim();
       },
       { timeout: 180000 }
     );
@@ -98,8 +100,8 @@ try {
     console.log('');
   }
 
-  await visit(`${REPO} 直下 — 初回`, `https://github.com/${REPO}`);
-  await visit(`${REPO} 直下 — 2回目（同一プロファイル、キャッシュあり）`, `https://github.com/${REPO}`);
+  await visit(`${REPO} root — first time`, `https://github.com/${REPO}`);
+  await visit(`${REPO} root — again, same profile, warm cache`, `https://github.com/${REPO}`);
 
   // A directory whose files were not covered by the root view's fetch budget.
   const sub = await page.$(
@@ -107,7 +109,7 @@ try {
   );
   if (sub) {
     const href = await sub.getAttribute('href');
-    await visit(`${href.split('/').slice(5).join('/')}/ へ移動`, `https://github.com${href}`);
+    await visit(`into ${href.split('/').slice(5).join('/')}/`, `https://github.com${href}`);
   }
 } finally {
   await context.close();

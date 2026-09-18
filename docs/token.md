@@ -1,219 +1,227 @@
-# トークンの設定
+# Tokens
 
-未設定でも public リポジトリでは動きますが、GitHub API のレート制限が **60 回/時**（IP 単位）です。
-トークンを登録すると **5,000 回/時** になり、private リポジトリでも使えるようになります。
+It works on public repositories without one, but the GitHub API allows
+**60 requests an hour** unauthenticated, counted per IP. A token raises that to
+**5,000 an hour** and reaches private repositories.
 
-## 0. どちらの種類を使うか
+## 0. Which kind to make
 
-**Organization のリポジトリも見たいかどうかで変わります。** ここを間違えると
-「private だけ出ない」「org のリポジトリだけ出ない」という状態になります。
+**It turns on whether you want to see an organization's repositories.** Get this
+wrong and you end up with "only the private ones are missing" or "only the org's
+are missing".
 
 | | Fine-grained token | Classic token |
 |---|---|---|
-| 対象にできる範囲 | **1 トークンにつき所有者 1 つだけ**（自分 *または* 1 つの org） | 自分のリポジトリ + **所属する全 org**（`repo` scope） |
-| 個人 + org を見たい | **org ごとにトークンが必要** → この拡張に複数登録する | 1 つで足りる |
-| org 側の許可 | 必要なことが多い（承認待ちになる） | org が classic を禁止していなければ不要 |
-| SAML SSO | 認可が必要 | 認可が必要 |
-| 権限の絞り込み | 細かい（Contents: Read-only だけにできる） | 粗い（`repo` は書き込みも含む） |
+| What one can cover | **A single owner** — you *or* one organization | Your repositories **and every org you belong to** (`repo` scope) |
+| Personal + an org | **One token per org**, all registered here | One is enough |
+| The org's permission | Often needed, and may sit pending | Not needed unless the org bans classic tokens |
+| SAML SSO | Needs authorising | Needs authorising |
+| How fine the permissions go | Fine — `Contents: Read-only` alone | Coarse — `repo` includes write |
 
-- **所属 org がない、または個人リポジトリだけでいい** → Fine-grained（推奨。権限を最小にできる）
-- **複数の org のリポジトリを横断して見たい** → Classic が手っ取り早い。
-  ただし `repo` scope は書き込み権限も含むので、会社のポリシーで禁止されていることがあります
-- **会社の org を見たい** → まず org のポリシーを確認してください。
-  fine-grained のみ許可、classic のみ許可、どちらも承認制、というパターンがあります
+- **No organizations, or personal repositories only** → fine-grained
+  (recommended; the permissions can be minimal)
+- **Across several organizations** → classic is quicker, but `repo` grants write
+  access, which some company policies forbid
+- **A company org** → check its policy first. Some allow only fine-grained, some
+  only classic, some put both behind approval
 
-> GitHub の仕様上、fine-grained token は
-> [「Each token is limited to access resources owned by a single user or organization」](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
-> です。この拡張が複数トークンに対応しているのは、まさにこの制約のためです。
+> By GitHub's design, a fine-grained token is
+> [limited to "resources owned by a single user or organization"](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
+> That constraint is exactly why this extension takes more than one token.
 
-### 読み取り専用にできるのは fine-grained だけ
+### Only fine-grained tokens can be read-only
 
-Classic token には**リポジトリの内容を読み取り専用にする scope が存在しません**。
-`repo` は "read and write access to code"、`public_repo` も public に対する read/write で、
-どちらも書き込みを含みます（[scope 一覧](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)）。
-読み取り専用トークンは GitHub に長年 feature request が出ていますが、classic には実装されていません。
+A classic token **has no scope for read-only access to repository contents**.
+`repo` is "read and write access to code", and `public_repo` is read/write on
+public ones ([the scope list](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)).
+A read-only scope has been requested of GitHub for years and does not exist for
+classic tokens.
 
-| やりたいこと | 方法 |
+| What you want | How |
 |---|---|
-| 読み取り専用にする | **fine-grained token（`Contents: Read-only`）一択。** org ごとに作って拡張に複数登録 |
-| org を横断して 1 つで済ませる | classic（`repo`）。ただし**書き込み権限も渡すことになる** |
+| Read-only | **A fine-grained token with `Contents: Read-only`, and nothing else.** One per org, all registered here |
+| One token across orgs | Classic, with `repo` — which **hands over write access too** |
 
-トレードオフはこの 2 つだけです。「org 横断」と「読み取り専用」は、
-GitHub の仕様上どちらか一方しか選べません。
+Those are the only two. "Across organizations" and "read-only" cannot both be
+had, by GitHub's design rather than this extension's.
 
-**この拡張自体は GET しか発行しません。** 書き込み権限を持つトークンを渡しても、
-拡張がリポジトリを変更することはありません。これは思想ではなく検証済みの事実で、
-スモークテストが「全 API リクエストが GET であること」を毎回確認しています
-（`scripts/smoke.mjs`）。
+**This extension only ever issues GETs.** Give it a token that can write and it
+still will not change anything. That is not a promise but a checked fact: the
+smoke run asserts every API request was a GET, on every run
+(`scripts/smoke.mjs`).
 
-また、オプション画面で「検証してオーナーを自動取得」を押すと、書き込み権限を含むトークンには
-`⚠ 書き込み権限を含みます（repo, workflow）` と警告が出ます。
+Press "Verify and fill in the owners" in the options and a token that carries
+write access says so: `⚠ includes write access (repo, workflow)`.
 
-## 1. GitHub でトークンを作る
+## 1. Create the token on GitHub
 
-### Fine-grained token の場合
+### Fine-grained
 
 https://github.com/settings/personal-access-tokens/new
 
-| 項目 | 設定 |
+| Field | Set it to |
 |---|---|
-| Token name | 何でも可（例: `github-lines`） |
-| Expiration | 任意 |
-| **Resource owner** | **ここが最重要。** 自分のアカウント、または対象の **Organization** を選ぶ |
-| Repository access | `All repositories` か `Only select repositories` |
-| **Permissions → Repository permissions → Contents** | **`Read-only`** ← これだけ |
+| Token name | Anything (`github-lines`, say) |
+| Expiration | As you like |
+| **Resource owner** | **The one that matters.** Your account, or the **organization** you are after |
+| Repository access | `All repositories`, or `Only select repositories` |
+| **Permissions → Repository permissions → Contents** | **`Read-only`** — and nothing else |
 
-`Metadata: Read-only` は自動で付きます。他の権限は不要です。
+`Metadata: Read-only` comes along automatically. Nothing else is needed.
 
-**Resource owner に org を選ぶと**、その org のリポジトリ用のトークンになります。
-自分の個人リポジトリは対象外になるので、両方見たい場合は**トークンを 2 つ作って**
-拡張に両方登録します（[複数アカウントを使い分ける](#複数アカウントを使い分ける)）。
+**Choosing an organization as the resource owner** makes a token for that org's
+repositories; your own are then out of its reach. To see both, **make two
+tokens** and register both here
+([Using several accounts](#using-several-accounts)).
 
-Resource owner のドロップダウンに org が出てこない場合は、その org が fine-grained token を
-許可していません。org の管理者に確認するか、Classic token を使ってください。
+If an org does not appear in the resource owner dropdown, that org does not
+allow fine-grained tokens. Ask its administrators, or use a classic token.
 
-org が承認制の場合、作成したトークンは **`pending`（承認待ち）** になり、
-org のオーナーが承認するまで private リポジトリにはアクセスできません。
-（自分が org のオーナーなら自動承認されます。）
+Where an org requires approval, the token is created **`pending`** and cannot
+reach private repositories until an owner approves it. (If you are an owner of
+that org, it is approved for you.)
 
-### Classic token の場合
+### Classic
 
 https://github.com/settings/tokens/new
 
-| 項目 | 設定 |
+| Field | Set it to |
 |---|---|
-| scope | `repo`（public だけでよければ `public_repo`） |
+| Scope | `repo` (or `public_repo`, for public repositories only) |
 
-これ 1 つで、自分のリポジトリと**所属する全 org** のリポジトリにアクセスできます。
-SAML SSO を使っている org がある場合は、作成後にトークン一覧で
-**「Configure SSO」→ 対象 org を Authorize** してください。これを忘れると 404 になります。
+That one token reaches your repositories and those of **every org you belong
+to**. If any of them use SAML SSO, open the token list afterwards and
+**"Configure SSO" → Authorize** each org. Forget this and you get 404s.
 
 ---
 
-「Generate token」を押すとトークンが表示されるのでコピーします。
-画面を離れると二度と表示されません。
+"Generate token" shows it once. Copy it — leave the page and it is gone.
 
-## 2. 拡張に登録する
+## 2. Register it here
 
-1. `chrome://extensions` を開く
-2. **GitHub Lines** の「詳細」→ **拡張機能のオプション**
-   （ツールバーのアイコンを右クリック →「オプション」でも開けます）
-3. **Personal Access Token** の欄に貼り付ける
-4. **「検証してオーナーを自動取得」** を押す
-   → `ebi-oishii として有効 — 対象: ebi-oishii, my-org` のように出れば OK。
-   このトークンで見えるオーナーが自動で入ります
-5. **「保存」** を押す ← 検証しただけでは保存されません
+1. Open `chrome://extensions`
+2. Under **GitHub Lines**, "Details" → **Extension options**
+   (or right-click the toolbar icon → "Options")
+3. Paste it into **Personal access token**
+4. Press **"Verify and fill in the owners"** — something like
+   `valid as your-name — reaches: your-name, my-org` means it worked, and the
+   owners that token can see are filled in for you
 
-2 つ目以降のトークンは「＋ トークンを追加」で行を増やして同じことをします。
+Settings save themselves; there is no Save button.
 
-保存すると、開いている GitHub のタブにも即座に反映されます。
+For a second token, press "+ Add a token" and do the same on the new row.
 
-## 3. 効いているか確認する
+Saving reaches any open GitHub tab at once.
 
-private リポジトリを開いてバーが出れば成功です。
+## 3. Check it took
 
-public でしか試せない場合は、サマリー行の右端に出ていた
-「API レート制限（未認証 60回/時）」の警告が消えることで判断できます。
+Open a private repository and see the bars.
 
-## 複数アカウントを使い分ける
+If you can only try a public one, watch the right of the summary strip: the
+`API rate limit (60/hour unauthenticated)` warning stops appearing.
 
-個人用と仕事用のように複数の GitHub アカウントを持っている場合、**トークンを複数登録して
-オーナー（ユーザー名 / Organization 名）ごとに割り当てられます**。
+## Using several accounts
 
-あるアカウントで発行したトークンでは、別アカウントの private リポジトリは読めません。
-そのため「どのリポジトリならどのトークンか」を決める必要があります。
+With more than one GitHub account — personal and work, say — **register a token
+each and route them per owner** (a username or an organization name).
 
-### 設定
+A token issued by one account cannot read another account's private
+repositories, so which token goes with which repository has to be decided.
 
-オプション画面で「＋ トークンを追加」を押すと行が増えます。各行に:
+### Setting it up
 
-| 欄 | 内容 |
+"+ Add a token" adds a row. On each:
+
+| Field | What goes in it |
 |---|---|
-| ラベル | 識別用の名前（例: `個人`、`仕事`）。エラー表示にも使われます |
-| Personal Access Token | そのアカウントで発行したトークン |
-| このトークンを使うオーナー | カンマ区切り（例: `ebi-oishii, my-org`） |
-| 既定 | どのオーナーにも一致しないときに使う 1 つ |
+| Label | A name to recognise it by (`personal`, `work`). Error messages use it |
+| Personal access token | The token that account issued |
+| Owners this token is for | Comma separated (`your-name, my-org`) |
+| Default | The one to use when no owner matches |
 
-**「検証してオーナーを自動取得」**を押すと、**そのトークンで実際に見えるリポジトリの所有者**を
-GitHub に問い合わせて欄を埋めます。発行者のアカウント名ではなく実際の到達範囲を見るので、
-org を Resource owner にした fine-grained token でも正しく org 名が入ります。
+**"Verify and fill in the owners"** asks GitHub which repositories that token can
+actually see and fills the field from their owners. It reads the token's real
+reach rather than who issued it, so a fine-grained token made for an
+organization gets that organization's name, not yours.
 
-> 見えるリポジトリが 100 件を超える場合、最初の 100 件（最終更新順）からオーナーを拾います。
-> 足りなければ手で追記してください。
+> Past 100 visible repositories it takes the owners from the first 100, most
+> recently pushed. Add any others by hand.
 
-### 選ばれ方
+### How one is picked
 
-1. リポジトリのオーナーが、どれかのトークンの「オーナー」欄に一致すればそれを使う
-2. 一致しなければ「既定」のトークン
-3. 既定が未設定なら先頭のトークン
-4. トークンが 1 つも無ければ未認証
+1. The repository's owner matches some token's "owners" field — use that one
+2. No match — the "default" token
+3. No default — the first token
+4. No tokens — unauthenticated
 
-オーナー名の大文字小文字は区別しません。
+Owner names are matched case-insensitively.
 
-### 見つからなかった場合の自動探索
+### Searching, when nothing matches
 
-「オーナー」欄が空のトークンしか無い状態でも、リポジトリが 404（＝そのトークンでは見えない）に
-なったときは、登録済みの他のトークンを順に試します。成功したトークンはそのオーナー用として
-記憶するので、探索は 1 オーナーにつき 1 回だけです。
+If only tokens with an empty "owners" field are registered and a repository
+comes back 404 — invisible to the one that was tried — the others are tried in
+turn. The one that works is remembered for that owner, so the search happens
+once per owner.
 
-ただし**そのオーナー用だと明示的に設定されているトークンが失敗した場合は、他を試しません**。
-明示設定はユーザーの意思表示なので、勝手に別アカウントを使わない方が安全だからです。
-この場合は `リポジトリにアクセスできません（仕事 の権限を確認）` のように、
-どのトークンで失敗したかがラベル付きで表示されます。
+But **a token explicitly set for that owner is not followed by a search**. An
+explicit setting is a statement of intent, and quietly reaching for another
+account would be the wrong thing to do with it. You get
+`Cannot reach the repository (check work's permissions)` instead, naming the
+token that failed.
 
-### レート制限について
+### About rate limits
 
-レート制限はアカウント単位なので、アカウントが分かれていれば枠も分かれます。
-ただしこの拡張は**オーナーごとに使うトークンを固定**します。
-同じリポジトリに対してトークンを回して枠を稼ぐようなことはしません
-（[規約上の理由](api-usage-and-terms.md#複数トークンの扱い)）。
+Rate limits are per account, so separate accounts have separate budgets. But
+this extension **fixes one token per owner**: it will not rotate tokens against
+the same repository to stretch a limit
+([why, in terms](api-usage-and-terms.md#several-tokens)).
 
-## Organization のリポジトリが出ないとき
+## When an organization's repositories do not show
 
-チェック順です。
+In order:
 
-### 1. トークンの種類と Resource owner
+### 1. The kind of token, and its resource owner
 
-| 症状 | 原因 | 対処 |
+| What you see | Why | What to do |
 |---|---|---|
-| org のリポジトリだけ出ない（個人のは出る） | fine-grained token の Resource owner が自分になっている | その org を Resource owner にしたトークンを別途作り、拡張に追加する |
-| Resource owner に org が出てこない | その org が fine-grained token を許可していない | org 管理者に確認、または Classic token（`repo`）を使う |
-| どの org のも出ない | Classic token の SSO 未認可 | トークン一覧で「Configure SSO」→ 対象 org を Authorize |
+| Only the org's are missing; yours appear | The fine-grained token's resource owner is you | Make another with that org as the resource owner and add it here |
+| The org is not in the resource owner dropdown | That org does not allow fine-grained tokens | Ask its administrators, or use a classic token with `repo` |
+| No org's repositories appear at all | A classic token without SSO authorisation | Token list → "Configure SSO" → Authorize the org |
 
-fine-grained token は 1 つにつき所有者 1 つだけなので、
-**個人 + org(A) + org(B) を見たいならトークンは 3 つ**必要です。
-それぞれ拡張に登録し、「このトークンを使うオーナー」欄に対応する名前を入れてください
-（[複数アカウントを使い分ける](#複数アカウントを使い分ける)）。
+A fine-grained token covers one owner, so **personal + org A + org B needs three
+tokens**. Register each and put the matching names in its "owners" field
+([Using several accounts](#using-several-accounts)).
 
-### 2. 承認待ちになっていないか
+### 2. Is it pending approval?
 
-org が承認制の場合、作ったトークンは `pending` のまま使えません。
-https://github.com/settings/personal-access-tokens で状態を確認してください。
-`Pending` と出ていれば、org のオーナーの承認待ちです。
+Where an org requires approval, a new token stays `pending` and unusable. Check
+at https://github.com/settings/personal-access-tokens — `Pending` means an owner
+of that org has yet to approve it.
 
-### 3. org のポリシーで禁止されていないか
+### 3. Does the org's policy forbid it?
 
-org 側の Settings → Third-party Access / Personal access tokens で、
-fine-grained や classic が制限されていることがあります。会社の org ではよくあります。
+Under the org's Settings → Third-party Access / Personal access tokens,
+fine-grained or classic tokens may be restricted. Company orgs often do this.
 
-### 拡張側の表示
+### What the extension says
 
-| 表示 | 原因 |
+| Message | Why |
 |---|---|
-| `private リポジトリ — 設定でトークンを登録してください` | トークン未設定 |
-| `リポジトリにアクセスできません（〇〇 の権限を確認）` | 括弧内のラベルのトークンで見えなかった。権限不足・org 未許可・承認待ち・SSO 未認可のいずれか |
-| `トークンが無効です — 設定を確認してください` | 期限切れ、失効、貼り間違い |
+| `Private repository — add a token in the options` | No token registered |
+| `Cannot reach the repository (check X's permissions)` | The token labelled X could not see it: too few permissions, the org has not allowed it, approval pending, or SSO not authorised |
+| `X is not valid — check the options` | Expired, revoked, or pasted wrong |
 
-括弧内が意図と違うトークンなら、そのリポジトリのオーナー名を正しいトークンの
-「このトークンを使うオーナー」欄に足してください。
+If the token named is not the one you meant, add that repository's owner to the
+right token's "owners" field.
 
-## 保存場所とセキュリティ
+## Where they are kept, and what that means
 
-- トークンは `chrome.storage.local` に保存されます。**この端末のみ**です
-- `chrome.storage.sync` は使っていないので、Google アカウント経由で他端末に同期されません
-- 送信先は `api.github.com` だけです。他のサーバーには一切送信しません
-  （拡張の `host_permissions` も `github.com` と `api.github.com` に限定しています）
-- 削除するにはオプション画面でトークン欄を空にして保存するか、「初期設定に戻す」を押します
+- Tokens live in `chrome.storage.local` — **this machine only**
+- `chrome.storage.sync` is not used, so nothing travels to your other machines
+  through your Google account
+- They are sent to `api.github.com` and nowhere else (the extension's
+  `host_permissions` are `github.com` and `api.github.com`)
+- To remove one, clear its token field, or press "Restore defaults"
 
-必要な権限を `Contents: Read-only` だけに絞っておけば、万一漏れても
-読めるのはあなたが指定したリポジトリのファイル内容だけで、書き込みはできません。
+Keep the permission to `Contents: Read-only` and a leaked token exposes the file
+contents of the repositories you named, and cannot write to any of them.

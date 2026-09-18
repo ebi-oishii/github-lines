@@ -1,106 +1,116 @@
-# 困ったときは
+# Troubleshooting
 
-まずサマリー行（一覧の上の帯）の右端のステータスを見てください。たいていの原因はそこに出ます。
+Start with the status at the right of the summary strip, above the listing. Most
+of the answers are there.
 
-## バーも帯も何も出ない
+## No bars, no strip, nothing
 
-| 確認 | 対処 |
+| Check | Do |
 |---|---|
-| `chrome://extensions` で拡張が有効か | 有効化する |
-| GitHub のファイル一覧のあるページか | 対応するのはリポジトリ直下と `/tree/` 配下です。Issues や PR、単体ファイルの `/blob/` ページでは出ません |
-| GitHub の HTML 構造が変わった | 下記「GitHub の変更で壊れた場合」を参照 |
+| Is the extension enabled in `chrome://extensions`? | Enable it |
+| Is this a page with a file list? | It works on a repository root and under `/tree/`. Not on issues, pull requests, or a single file's `/blob/` page |
+| Has GitHub's markup changed? | See "When a GitHub change breaks it", below |
 
-拡張を再読み込みした直後は、開いていたタブとの接続が切れます。ページをリロードしてください。
+Right after reloading the extension, tabs that were already open have lost their
+connection to it. Refresh the page.
 
-## `バックグラウンドが応答しません`
+## `The background is not responding`
 
-Chrome が拡張のバックグラウンド（service worker）を停止させた状態です。
-ページをリロードすれば復帰します。頻発する場合は `chrome://extensions` で
-拡張を一度オフ→オンしてください。
+Chrome has stopped the extension's service worker. Refreshing the page brings it
+back. If it keeps happening, toggle the extension off and on in
+`chrome://extensions`.
 
-## `API レート制限（未認証 60回/時）`
+## `API rate limit (60/hour unauthenticated)`
 
-未認証だと 1 時間に 60 リクエストまでです。[トークンを設定](token.md)すると 5,000 回/時になります。
+Unauthenticated, GitHub allows 60 requests an hour. [Add a token](token.md) and
+it becomes 5,000.
 
-トークンを設定済みでこれが出る場合は、同じアカウントの他のツール（`gh` CLI、CI、他の拡張）と
-枠を共有しているためです。制限はトークン単位ではなく**ユーザーアカウント単位**です。
+Seeing this *with* a token registered means the budget is shared with everything
+else signed in as you — the `gh` CLI, CI, other extensions. The limit is **per
+user account**, not per token.
 
-## `GitHub の二次レート制限により一時停止中` / `短時間に取得しすぎたため待機中`
+## `Paused by GitHub's secondary rate limit` / `Fetched too fast — waiting`
 
-短時間に大量のディレクトリを開いたときに出ます。拡張が自主的に待機しているだけなので、
-少し待てば自動的に再開します。何もしなくて構いません。
+This appears after opening a lot of directories in quick succession. The
+extension is holding back on its own and will resume by itself; there is nothing
+to do.
 
-恒常的に出る場合は、オプションの「実際の行数の取得」を**手動**にしてください。
-ページを開いただけでは取得せず、ボタンを押したときだけ取得するようになります。
-「1 画面あたりの取得上限」を下げるのも有効です。
+If it is constant, set "Fetching exact line counts" to **manual** in the
+options — nothing is fetched until you press the button. Lowering "Fetch limit
+per view" helps too.
 
-## private リポジトリで出ない / `リポジトリにアクセスできません（〇〇 の権限を確認）`
+## Nothing on a private repository / `Cannot reach the repository (check X's permissions)`
 
-括弧の中は、実際に使われたトークンのラベルです。まずそこを見てください。
+X is the label of the token that was actually used. Start there.
 
-- **意図と違うトークンが使われている** → そのリポジトリのオーナー名を、
-  正しいトークンの「このトークンを使うオーナー」欄に追加してください
-  （[複数アカウントの設定](token.md#複数アカウントを使い分ける)）
-- **正しいトークンで失敗している** → 権限不足です。org の許可や SAML SSO の認可が
-  必要なことがあります。[Organization の節](token.md#organization-のリポジトリを見る場合)を確認してください
+- **The wrong token was used** — add that repository's owner to the right
+  token's "owners" field
+  ([Using several accounts](token.md#using-several-accounts))
+- **The right token failed** — its permissions are not enough. The org may need
+  to allow it, or SAML SSO to be authorised; see
+  [When an organization's repositories do not show](token.md#when-an-organizations-repositories-do-not-show)
 
-トークンを 1 つしか登録していない場合は、単純に権限不足です。
+With only one token registered, it is simply a matter of permissions.
 
-## 複数アカウントで、意図しないトークンが使われる
+## The wrong token keeps being used
 
-オーナー欄が空だと「既定」のトークンが使われます。オプション画面で該当トークンの
-「検証してオーナーを自動取得」を押すと、アカウント名と所属 org が自動で入ります。
+A token with an empty "owners" field is only reached as the "default". Press
+"Verify and fill in the owners" on it in the options and its account and
+organizations are filled in.
 
-なお、あるオーナー用だと明示設定したトークンが失敗した場合、拡張は他のトークンを試しません。
-明示設定を勝手に上書きしないためです。設定を直してください。
+Note that a token explicitly set for an owner is not followed by a search
+through the others if it fails — an explicit setting is not something to
+override quietly. Correct the setting instead.
 
-## 行数が `~` 付きのまま確定しない
+## The counts stay marked `~`
 
-`~` はバイト数からの推定値です。次のいずれかです。
+`~` is an estimate from the byte size. One of these:
 
-- まだ取得中（ステータスに `実行数を取得中 42/120` と出ます）
-- **「実際の行数の取得」が「手動」になっている** — 一覧の上の「行数を取得（N）」ボタンを押してください
-- 「取得しない」になっている — 設定を変えてください
-- 1 画面あたりの取得上限（既定 300 ファイル）を超えている
-- 2 MB を超えるファイル（取得しない設定になっています）
-- レート制限で途中で止まった
+- Still counting — the status says `Counting lines 42/120`
+- **"Fetching exact line counts" is set to manual** — press "Fetch line counts
+  (N)" above the listing
+- It is set to off — change it
+- The view is past the fetch limit (300 files by default)
+- The file is over 2 MB, which is not fetched
+- A rate limit cut the pass short
 
-ディレクトリの合計値は、配下に 1 つでも推定値があると `~` が付きます。
+A directory's total is marked `~` if anything below it still is.
 
-## 行数が GitHub の表示と合わない
+## The counts disagree with GitHub
 
-- **`wc -l` 相当**です。空行もコメントも数えます
-- 生成物・バイナリは除外されています。除外対象は一覧に `generated` / `binary` と表示されます
-- ディレクトリの値は配下の全ファイルの合計です
+- They are **what `wc -l` counts** — blank lines and comments included
+- Generated files and binaries are excluded, and say so on the listing as
+  `generated` / `binary`
+- A directory's number is the sum of every file below it
 
-## 新しいコミットが反映されない
+## A new commit is not showing
 
-**ページをリロード**してください。拡張はポーリングをしないので、タブを開いたままだと
-読み込んだ時点のコミットの値を表示し続けます。リロードすれば新しいコミットで取り直します
-（変わったファイルだけを取得するので安価です）。
+**Refresh the page.** The extension does not poll, so a tab left open goes on
+showing the commit it loaded. A refresh refetches against the new commit, and
+costs little — only the files that changed.
 
-## 表示が崩れる / バーが変な位置に出る
+## The layout looks wrong, or a bar is in an odd place
 
-GitHub 側の HTML が変わった可能性があります。Issue を立ててもらえれば直します。
+GitHub's markup has probably changed. Open an issue and it will be fixed.
 
-## GitHub の変更で壊れた場合（開発者向け）
+## When a GitHub change breaks it (for developers)
 
-GitHub は数ヶ月おきに markup を作り変えます。手元で直す場合:
+GitHub reworks its markup every few months. To fix it locally:
 
 ```bash
 npm install
-npm run fixture   # 最新の GitHub の HTML を取り込む
-npm test          # どの前提が壊れたかが FAIL で分かる
+npm run fixture   # take in GitHub's current HTML
+npm test          # the failures say which assumptions broke
 ```
 
-SSR されない（クライアント描画のみの）レスポンスが返る場合は、
-ブラウザで保存した HTML を渡してください:
+If the response comes back without server-side rendering, hand it a page saved
+from the browser instead:
 
 ```bash
 node scripts/capture-fixture.mjs ./saved.html
 ```
 
-## キャッシュを消したい
+## Clearing the cache
 
-オプション画面の一番下に「キャッシュを削除」があります。
-行数・ツリー・テキストのキャッシュがすべて消え、次回アクセス時に取り直します。
+"Clear the cache", under "Advanced" in the options. Counts, trees and texts all
+go, and are fetched again next time.

@@ -315,7 +315,7 @@
     const crumbs = el('div', { class: 'ghl-tm-crumbs' });
     const stats = el('span', { class: 'ghl-tm-stats' });
     const status = el('span', { class: 'ghl-tm-status' });
-    // The ramps themselves, with the 注意 threshold ticked on each.
+    // The ramps themselves, with the warn threshold ticked on each.
     const rampBar = (colorAt) => el('span', {
       class: 'ghl-ramp-bar',
       style: {

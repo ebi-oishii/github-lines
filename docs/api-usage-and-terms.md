@@ -1,17 +1,18 @@
-# API 利用と規約
+# API use and terms
 
-この拡張が GitHub の利用規約に照らしてどうなのかを整理したものです。
-**法的助言ではありません**が、根拠となる条文と、それに対する実装上の対応を明示します。
+Where this extension stands against GitHub's terms. **This is not legal
+advice**, but it names the clauses and what was implemented against each.
 
-## 結論
+## In short
 
-GitHub の規約は **API 経由の情報取得を明示的に許可**しており、この拡張の使い方は
-その範囲に収まっています。禁止されているのは主に「レート制限の回避」「過剰なリクエスト」
-「スパム目的・個人情報の売買」で、いずれにも該当しません。
+GitHub's terms **explicitly permit collecting information through the API**, and
+what this extension does sits inside that. What they forbid is chiefly evading
+rate limits, making excessive requests, and spamming or selling personal
+information. None of it applies here.
 
-## 根拠
+## The clauses
 
-### スクレイピングと API は明確に区別されている
+### Scraping and the API are distinguished
 
 [GitHub Acceptable Use Policies §7](https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies):
 
@@ -19,120 +20,124 @@ GitHub の規約は **API 経由の情報取得を明示的に許可**してお�
 > such as a bot or webcrawler. **Scraping does not refer to the collection of information
 > through our API.**
 
-この拡張はファイル一覧とファイル内容を、すべて**公式の REST API**（`/git/trees`、`/git/blobs`）
-から取得します。HTML をパースして中身を取り出す処理はしていません。
+The file listing and the file contents both come from the **official REST API**
+(`/git/trees`, `/git/blobs`). Nothing is lifted out of the HTML.
 
-ページの DOM を読んではいますが、読むのは「いまどのリポジトリ・どのブランチ・どのディレクトリを
-開いているか」だけです。ユーザー自身が開いたページを、そのユーザーのブラウザ上で読むだけなので、
-bot や webcrawler による自動巡回とは性質が異なります。
+The page's DOM is read, but only for which repository, branch and directory you
+have open. That is reading a page you opened yourself, in your own browser —
+not a bot walking the site.
 
-### 禁止事項と、それに対する実装
+### What is forbidden, and what was built against it
 
 [GitHub Terms of Service §H (API Terms)](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service):
 
-| 規約の要求 | この拡張の対応 |
+| The term | What this does |
 |---|---|
-| "You may not share API tokens to exceed GitHub's rate limitations." | トークンは各ユーザーが自分の端末の `chrome.storage.local` に保存。共有もプロキシもしません。中継サーバーは存在せず、通信はブラウザから `api.github.com` へ直接だけです |
-| "Abuse or excessively frequent requests to GitHub via the API may result in … suspension." | 下記の「過剰リクエストを避けるための実装」を参照 |
-| "You may not use the API to download data or Content from GitHub for spamming purposes, including for the purposes of selling GitHub users' personal information." | 取得するのはファイルのバイト数と行数だけです。個人情報を扱わず、どこにも送信・保存・販売しません |
+| "You may not share API tokens to exceed GitHub's rate limitations." | Each person's tokens stay in their own machine's `chrome.storage.local`. Nothing is shared or proxied: there is no server in the middle, only the browser talking to `api.github.com` |
+| "Abuse or excessively frequent requests to GitHub via the API may result in … suspension." | See "Not asking too often", below |
+| "You may not use the API to download data or Content from GitHub for spamming purposes, including for the purposes of selling GitHub users' personal information." | What is taken is byte sizes and line counts. No personal information is touched, sent, stored or sold |
 
-### 過剰リクエストを避けるための実装
+### Not asking too often
 
-[GitHub のレート制限のドキュメント](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)と
-[REST API のベストプラクティス](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api)に
-対応させています。
+Built against [GitHub's rate limit documentation](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)
+and its [REST API best practices](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api).
 
-| GitHub の基準 | 実装 |
+| GitHub's guidance | What this does |
 |---|---|
-| 同時リクエストは 100 まで | 既定 **8**（設定で最大 16） |
-| REST GET は 900 points/分まで | 自主的に **600 リクエスト/分**で頭打ちにする（service worker 内のトークンバケット） |
-| `retry-after` があれば、その秒数が経つまで再送しない | 403 / 429 に `retry-after` があれば**全リクエストを停止**し、その時刻まで待つ |
-| `x-ratelimit-remaining` が 0 なら `x-ratelimit-reset` まで送らない | reset まで停止し、UI に残り時間を表示 |
-| 二次レート制限に当たったら最低 1 分待つ | `retry-after` がない場合は 60 秒停止 |
+| No more than 100 concurrent requests | **8** by default, 16 at most |
+| REST GETs up to 900 points a minute | Caps itself at **600 requests a minute** (a token bucket in the service worker) |
+| Honour `retry-after` before sending again | A 403 or 429 carrying `retry-after` **stops every request** until that moment |
+| Send nothing while `x-ratelimit-remaining` is 0 | Stops until `x-ratelimit-reset`, with the time left shown in the UI |
+| Wait at least a minute on a secondary rate limit | 60 seconds, where no `retry-after` is given |
 
-### 読み取りしかしない
+### It only reads
 
-この拡張が発行するのは **GET だけ**です。書き込み・削除系のエンドポイントは一切呼びません。
-classic token には読み取り専用の scope が無いため、やむを得ず書き込み権限を含むトークンを
-設定する人がいます。その担保として、スモークテストが毎回
-「全 API リクエストが GET であること」を検証しています。
+Every request is a **GET**. No writing or deleting endpoint is ever called.
+Because classic tokens have no read-only scope for contents, some people have no
+choice but to configure a token that can write; as an assurance, the smoke run
+asserts on every run that every API request was a GET.
 
-GitHub のベストプラクティスにある「`POST`/`PATCH`/`PUT`/`DELETE` を大量に送る場合は
-1 秒以上空ける」という条項は、そもそも該当しません。
+The best-practice clause about spacing `POST`/`PATCH`/`PUT`/`DELETE` a second
+apart simply does not arise.
 
-加えて、そもそもリクエストを出さないための仕組みがあります。
+Beyond that, most of the design is about not making the request at all.
 
-- **ツリーはリポジトリ全体で 1 リクエスト**（`?recursive=1`）。ディレクトリごとに叩きません
-- **blob SHA をキーにした永続キャッシュ**。git の blob SHA は内容のハッシュなので、
-  一度数えたファイルは二度と取得しません
-- **同一リクエストの集約**。同じ URL への並行リクエストは 1 本にまとめます
-- **1 画面あたり 300 ファイルの上限**。巨大リポジトリでも一気に数千は叩きません
+- **One tree request for the whole repository** (`?recursive=1`), not one per
+  directory
+- **A permanent cache keyed by blob SHA.** A git blob SHA is a hash of the
+  content, so a file counted once is never fetched again
+- **Identical requests collapse.** Concurrent requests for the same URL become
+  one
+- **A ceiling of 300 files per view**, so a huge repository never turns into
+  thousands of requests at once
 
-実測では、123 ファイルのリポジトリを初めて開いて 125 リクエスト、2 回目以降は 0 です
-（`npm run measure` で計測できます）。
+Measured: a 123-file repository costs 125 requests the first time and 0 after
+that (`npm run measure`).
 
-## 複数トークンの扱い
+## Several tokens
 
-複数のアカウントのトークンを登録できますが、これが規約に触れないよう設計上の線を引いています。
+Several accounts' tokens can be registered, and there is a line drawn in the
+design so that this stays within the terms.
 
-規約の該当箇所は次の一文です。
+The clause at issue:
 
 > You may not share API tokens to exceed GitHub's rate limitations.
 
-**問題になるのは「レート制限を超えるためにトークンを使い回すこと」**です。
-一方、複数アカウントのトークンを登録すること自体は、回避策ではなく**必要**です。
-アカウント A で発行したトークンでは、アカウント B の private リポジトリは技術的に読めないためです。
+**What that forbids is cycling tokens to get past a limit.** Registering several
+accounts' tokens is not a way around anything — it is a necessity: a token
+issued by account A technically cannot read account B's private repositories.
 
-そこで実装はこうしています。
+So:
 
 | | |
 |---|---|
-| **やること** | リポジトリのオーナーごとに、使うトークンを**決定的に固定**する |
-| **やらないこと** | 同じリポジトリに対してトークンを順番に回して枠を稼ぐ（ラウンドロビン） |
+| **What it does** | Fix, deterministically, one token per repository owner |
+| **What it will not do** | Rotate tokens against the same repository to win more budget |
 
-同じオーナーに対しては常に同じトークンが選ばれます。枠が尽きたときに別のトークンへ
-切り替えることもしません（レート制限に当たったら、そのアカウントの枠が回復するまで待ちます）。
+The same owner always resolves to the same token. Nor does it switch tokens when
+a budget runs out: it waits for that account's window to reset.
 
-トークンが見つからないとき（404）に他のトークンを試す動作はありますが、これは
-「どのアカウントならこのリポジトリが見えるか」を一度だけ調べるためのもので、
-結果は記憶され、以降は固定されます。枠を増やす目的では使われません。
+There is a search through the other tokens when a repository comes back 404, but
+that is to work out once which account can see it. The answer is remembered and
+fixed from then on; it is never used to add up budgets.
 
-また、トークンは各ユーザーが自分の端末に保存するだけで、他人と共有する経路はありません
-（中継サーバーが存在せず、通信はブラウザから `api.github.com` へ直接だけです）。
+Tokens are also only ever stored on their owner's own machine, with no path to
+anyone else's — there is no server in the middle, only the browser talking to
+`api.github.com`.
 
-## レート制限の単位
+## What a rate limit counts
 
-| | 単位 | 上限 |
+| | Counted per | Limit |
 |---|---|---|
-| 未認証 | 送信元 IP | 60 回/時 |
-| Personal Access Token | **ユーザーアカウント** | 5,000 回/時 |
+| Unauthenticated | Source IP | 60 an hour |
+| Personal access token | **User account** | 5,000 an hour |
 
-トークン単位ではなくアカウント単位なので、`gh` CLI や CI など同じアカウントの
-他のツールと枠を共有します。
+Per account rather than per token, so the budget is shared with anything else
+signed in as you — the `gh` CLI, CI, and the rest.
 
-なお GitHub の REST API に**従量課金はありません**。上限を超えても請求は発生せず、
-ウィンドウがリセットされるまで待つだけです。
+There is **no metered billing** on GitHub's REST API. Exceeding a limit costs
+nothing; it means waiting for the window to reset.
 
-## ブラウザ拡張が GitHub のページを書き換えること
+## A browser extension changing GitHub's pages
 
-GitHub の規約に、ユーザーが自分のブラウザで表示を変更することを禁じる条項はありません。
-[Refined GitHub](https://github.com/refined-github/refined-github) をはじめ、
-GitHub 自身が[公式に紹介しているリスト](https://github.com/stefanbuck/awesome-browser-extensions-for-github)に
-載っている拡張の多くが同じことをしています。
+Nothing in GitHub's terms forbids changing what your own browser shows you.
+[Refined GitHub](https://github.com/refined-github/refined-github) and much of
+the [list GitHub itself points to](https://github.com/stefanbuck/awesome-browser-extensions-for-github)
+do exactly this.
 
-## 気をつけるべきこと
+## Worth keeping in mind
 
-- **これは法的助言ではありません。** 規約は変わります。判断は最終的に GitHub が行います
-- **勤務先の GitHub を対象にする場合**は、会社側のポリシー（PAT の発行可否、
-  ソースコードを扱うツールの持ち込み基準など）が別途あるはずなので、そちらを確認してください。
-  この拡張はソースコードの内容を API 経由で取得します（行数を数えるため）。
-  取得した内容はメモリ上で行数に変換されるだけで、**ファイル内容そのものは保存も送信もしません**
-  （キャッシュに残るのは行数の整数値だけです）
-- **Chrome ウェブストアで公開する場合**は Google 側のポリシー
-  （Limited Use、権限の最小化、プライバシーポリシーの掲示など）が別途適用されます。
-  「パッケージ化されていない拡張機能を読み込む」で使う分には関係ありません
+- **This is not legal advice.** Terms change, and the judgement is GitHub's
+- **Pointing it at an employer's GitHub** brings your company's own policies —
+  whether PATs may be issued, what tools may touch source code. Check those.
+  This extension does fetch file contents through the API, to count their
+  lines. Those contents are turned into a number in memory and **never stored or
+  sent anywhere**; what the cache keeps is the integer
+- **Publishing on the Chrome Web Store** brings Google's policies as well
+  (Limited Use, minimal permissions, a posted privacy policy). None of that
+  applies to loading it unpacked
 
-## 参照
+## References
 
 - [GitHub Acceptable Use Policies](https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies)
 - [GitHub Terms of Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service)
