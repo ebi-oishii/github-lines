@@ -379,11 +379,14 @@ th:has(> .ghl-col-head)::after {
 .ghl-btn-primary:hover { filter: brightness(1.1); background: var(--ghl-ok); }
 .ghl-btn:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
 
-/* The fetch button's label changes with the toggle and gains a count; a
-   fixed footprint keeps the strip from reflowing on every flip. Wide enough
-   for the longest label the button takes. */
+/* The fetch button's label changes with the toggle and gains a count; a fixed
+   footprint keeps the strip from reflowing on every flip. The floor has to
+   clear the longest label in *any* language — English runs about 20% wider
+   than Japanese here — or the button grows when the count appears and shoves
+   its neighbours along. */
 .ghl-btn-fetch {
-  min-width: 124px;
+  min-width: 156px;
+  white-space: nowrap;
   text-align: center;
 }
 
