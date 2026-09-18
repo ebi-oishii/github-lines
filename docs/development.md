@@ -5,7 +5,7 @@ dependencies (jsdom, playwright-core).
 
 ```bash
 npm install
-npm test             # logic and DOM tests (92 of them, no network)
+npm test             # logic and DOM tests (95 of them, no network)
 npm run smoke        # load it into a real Chrome and drive github.com
 npm run measure      # count the API requests
 npm run icons        # regenerate icons/*.png
@@ -36,7 +36,8 @@ src/
   content/
     util.js           DOM helpers, parallelism, talking to the service worker
     page.js           reading GitHub's page (repository / ref / path / rows)
-    store.js          orchestration — estimates converging on real counts
+    store.js          orchestration — estimates converging on real counts,
+                      and what pressing the fetch button does (`state.press`)
     inline.js         the row bars and the summary strip
     treemap.js        a squarified treemap
     main.js           navigation and lifecycle
@@ -95,7 +96,7 @@ the service worker's `LOCALE` handler).
 
 ## Tests
 
-### `scripts/test.mjs` (92, no network)
+### `scripts/test.mjs` (95, no network)
 
 - Pure logic: globs, `.gitattributes`, line estimation, rollups, the treemap
   layout algorithm
@@ -113,7 +114,12 @@ the service worker's `LOCALE` handler).
   leaving the fetch, and the checkbox above the column taking them all — which
   moves to the strip on a page with no header row
 - Recovering from a failure: a failed fetch leaves a button that starts over,
-  and an exclusion rule that went unread is read again on the next press
+  an exclusion rule that went unread is read again on the next press, and a
+  press does what the button offered — a failed size fetch never turns into a
+  file-per-row count
+- What came back not covering the view: a directory a truncated tree left out
+  counts nothing rather than counting the repository, and does not follow the
+  reader to the next directory
 - Localisation: both catalogues carrying the same keys and the same `$1`
   substitutions, and every key the code asks for existing
 

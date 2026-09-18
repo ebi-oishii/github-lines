@@ -15,6 +15,14 @@ const NUMBERS = ['warnLines', 'dangerLines', 'maxExactFetch', 'concurrency'];
 // A threshold of zero would put every file past it, so zero is not an answer —
 // unlike a fetch limit of zero, which is a way of saying "fetch nothing".
 const LEAST = { warnLines: 1, dangerLines: 1, concurrency: 1, maxExactFetch: 0 };
+const MOST = { concurrency: 16 };
+
+/* What a field may hold, in one place: the value saved and the value written
+   back to the form are the same answer. */
+function clamp(id, n) {
+  const low = Math.max(LEAST[id], n);
+  return MOST[id] === undefined ? low : Math.min(MOST[id], low);
+}
 const SELECTS = ['locale'];
 
 function setStatus(node, text, tone) {
@@ -247,10 +255,7 @@ function collect() {
     // Clamped rather than dropped: dropping it would save nothing while the
     // page said "Saved", leaving the field showing a number that is not in
     // effect. `reflect()` puts the clamped value back once the field is done.
-    if (raw && Number.isFinite(n)) patch[id] = Math.max(LEAST[id], n);
-  }
-  if (patch.concurrency !== undefined) {
-    patch.concurrency = Math.min(16, Math.max(1, patch.concurrency || 1));
+    if (raw && Number.isFinite(n)) patch[id] = clamp(id, n);
   }
   patch.excludePatterns = $('excludePatterns').value
     .split('\n')
@@ -282,18 +287,23 @@ function scheduleSave() {
 async function saveNow() {
   clearTimeout(pendingWrite);
   pendingWrite = null;
-  const saved = await GHL.settings.set(collect());
+  await GHL.settings.set(collect());
   flash(t('saved'), 'ok');
-  return saved;
 }
 
-/* The one thing read back into the form: a number that was clamped on the way
-   in. Only fields nobody is typing in are touched, so the cursor stays put. */
-function reflect(saved) {
+/* The one thing read back into the form: a field holding a number outside what
+   it may hold. Each field is compared against its own clamp — never against
+   what was saved, which may have come from the warn/danger swap and would move
+   a number the reader just typed into the other field. Only fields nobody is
+   typing in are touched, so the cursor stays put. */
+function reflect() {
   for (const id of NUMBERS) {
     const field = $(id);
     if (field === document.activeElement) continue;
-    if (String(saved[id]) !== field.value.trim()) field.value = saved[id];
+    const raw = field.value.trim();
+    const n = Number(raw);
+    if (!raw || !Number.isFinite(n)) continue;
+    if (clamp(id, n) !== n) field.value = clamp(id, n);
   }
 }
 

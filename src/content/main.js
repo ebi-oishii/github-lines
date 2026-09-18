@@ -20,10 +20,9 @@
     },
     /* The one fetch button does whatever the Lines | Size toggle says. */
     onFetch() {
-      if (!current || !current.handle) return;
-      const s = current.state;
-      if (s && s.status === 'idle' && s.metric === 'bytes') current.handle.fetchSizes();
-      else current.handle.fetchExact();
+      // What a press does is the store's to decide — the button's label reads
+      // the same answer, so the two cannot drift apart.
+      if (current && current.handle) current.handle.fetch();
     },
     onMetric(metric) {
       if (current && current.handle) current.handle.setMetric(metric);

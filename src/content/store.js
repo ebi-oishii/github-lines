@@ -121,6 +121,14 @@
     node.maxFileBytes = maxFileBytes;
   }
 
+  /* The node for the directory on screen, or null when what came back does not
+     contain it. The repository root is not a stand-in: totals for the wrong
+     directory are worse than no totals. */
+  function dirNodeOf(state) {
+    if (!state.index) return null;
+    return state.index.get(state.ctx.path) || (state.ctx.path ? null : state.root);
+  }
+
   function collectFiles(node, out) {
     out = out || [];
     if (!node) return out;
@@ -150,7 +158,9 @@
     files.sort((a, b) => a.path.split('/').length - b.path.split('/').length);
 
     const rules = [];
-    let complete = files.length <= 20;
+    // Being over the cap is not an unread rule — reading again would stop at
+    // the same twenty. It is worth saying, and nothing to come back for.
+    let complete = true;
     let error = files.length > 20 ? { error: 'attributes_limit' } : null;
 
     for (const node of files.slice(0, 20)) {
@@ -185,17 +195,24 @@
       //   pending = manual mode, waiting for the user to ask for exact counts
       status: 'loading',
       error: null,
-      warning: null,
+      warning: null,      // what the counting pass ran into
+      metaWarning: null,  // what the tree pass could not read; outlives the counts
       truncated: false,
       root: null,
       index: null,
       learner: patterns.createRatioLearner(),
       progress: { done: 0, total: 0 },
       metric: 'lines',     // what the UI measures by: 'lines' | 'bytes'
-      /* Something the view is built on could not be read: an exclusion rule, or
-         the listing of the directory on screen. The next press re-reads it
-         rather than counting on top of a picture known to be wrong. */
+      /* What pressing the fetch button would do now: 'tree' | 'counts' | null.
+         The one place that decides it — the label, the click and the pass that
+         runs all read this, so they cannot disagree. */
+      press: null,
+      /* Something the view is built on could not be read, and reading again
+         could fix it: an exclusion rule, or the listing of a truncated tree's
+         directory. A press re-reads it rather than counting on a picture known
+         to be wrong. Recomputed by every pass. */
       needsMetadata: false,
+      // The directory on screen is not in what came back. Recomputed likewise.
       missingDirectory: false,
       pending: 0,          // files a manual fetch would request
       rate: null,          // what is left of the API budget, once anything is spent
@@ -204,7 +221,22 @@
       settings: null,
     };
 
-    const emitNow = () => { if (!cancelled) onUpdate(state); };
+    /* Manual mode only: nothing else has a button. From nothing, an error or
+       something unread, a press reads the tree; with the tree in, only the
+       lines reading has anything left to fetch, since sizes came with it. */
+    function pressOf() {
+      if (!state.settings || state.settings.exactLinesMode !== 'manual') return null;
+      if (state.status === 'idle' || state.status === 'error'
+        || state.needsMetadata || !state.index) return 'tree';
+      if (state.metric !== 'lines') return null;
+      return remaining().length ? 'counts' : null;
+    }
+
+    const emitNow = () => {
+      if (cancelled) return;
+      state.press = pressOf();
+      onUpdate(state);
+    };
     const emit = util.throttle(emitNow, 140);
 
     let candidates = [];   // fetchable files under the visible directory, largest-first
@@ -252,6 +284,7 @@
       }
       state.pending = selectedQueue().length;
       state.status = state.settings.exactLinesMode === 'manual' && left.length ? 'pending' : 'ready';
+      state.press = pressOf();
     }
 
     function reselect(mutate) {
@@ -364,6 +397,9 @@
       state.status = 'loading';
       state.error = null;
       state.warning = null;
+      state.metaWarning = null;
+      state.needsMetadata = false;
+      state.missingDirectory = false;
       emitNow();
 
       const res = await util.send(
@@ -386,6 +422,9 @@
 
       let entries = res.entries;
       state.truncated = res.truncated;
+      // A directory the truncated tree left out, which asking again could fill
+      // in — unlike a directory that is simply not in the repository.
+      let unreadDirectory = false;
 
       // Very large repos come back truncated. Top up with a non-recursive
       // listing of the directory actually on screen so at least those rows are
@@ -407,7 +446,7 @@
           if (extra.length) entries = entries.concat(extra);
         } else {
           // Without it, nothing describes the directory on screen.
-          state.missingDirectory = true;
+          unreadDirectory = true;
         }
       }
 
@@ -432,12 +471,21 @@
         classify(state.index, isExcluded, patterns.makeLinguistMatcher(attributes.rules));
         refresh();
       }
-      state.needsMetadata = !attributes.complete || state.missingDirectory;
-      state.warning = attributes.error || state.warning;
+      state.needsMetadata = !attributes.complete || unreadDirectory;
+      state.metaWarning = attributes.error;
       emitNow();
 
       // --- exact counts ---------------------------------------------------
-      const dirNode = state.index.get(ctx.path) || state.root;
+      const dirNode = dirNodeOf(state);
+      state.missingDirectory = !dirNode;
+      if (!dirNode) {
+        // Nothing on screen to count. Saying so beats counting the repository.
+        candidates = [];
+        state.pending = 0;
+        state.status = 'ready';
+        emitNow();
+        return;
+      }
       const subtree = collectFiles(dirNode).filter((n) => !n.excluded && n.size > 0);
       subtree.sort((a, b) => b.size - a.size);
 
@@ -491,19 +539,19 @@
 
     return {
       cancel() { cancelled = true; },
-      /* Manual mode: run the exact pass now. From idle it fetches the tree
-         first, in the same press. Safe to call repeatedly. */
-      fetchExact() {
+      /* The fetch button, whatever it currently says. What a press does is
+         `state.press`, decided in one place and read by the label too, so the
+         button cannot promise one thing and do another. Safe to call
+         repeatedly. */
+      fetch() {
         if (cancelled || running) return running;
-        /* A press authorises the whole picture, not just the counts: anything
-           the view could not read — the listing, an exclusion rule — is read
-           again first, and an earlier failure is simply tried again. */
-        const fromScratch = state.status === 'idle' || state.status === 'error'
-          || state.needsMetadata || !state.index;
-        const pass = fromScratch ? loadTree(true, false) : runExactPass();
-        if (!pass) return null;
-        // Asking for line counts is asking to see them.
-        state.metric = 'lines';
+        const press = state.press;
+        if (!press) return null;
+        // On the lines reading a press goes all the way to the counts; on
+        // sizes the tree is the whole job.
+        const pass = press === 'tree'
+          ? loadTree(state.metric === 'lines', false)
+          : runExactPass();
         running = pass
           .catch((err) => {
             state.warning = { error: 'exception', message: String(err && err.message || err) };
@@ -520,13 +568,6 @@
         if (next.length === rowPaths.length && next.every((p, i) => p === rowPaths[i])) return;
         rowPaths = next;
         if (state.index && (state.status === 'pending' || state.status === 'ready')) settle();
-      },
-      /* Manual mode: fetch the tree and show sizes. The status leaves idle
-         synchronously, so a double click is harmless. */
-      fetchSizes() {
-        if (cancelled || (state.status !== 'idle' && state.status !== 'error')) return;
-        state.metric = 'bytes';
-        loadTree(false, false).catch(fail);
       },
       /* Which quantity the UI shows. Costs nothing: both come from what is
          already loaded. */
@@ -553,5 +594,5 @@
     };
   }
 
-  GHL.store = { load, collectFiles, rollup, buildTree };
+  GHL.store = { load, dirNodeOf, collectFiles, rollup, buildTree };
 })(globalThis.GHL);

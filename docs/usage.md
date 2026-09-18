@@ -139,8 +139,9 @@ Settings are saved as you change them, and reach any open GitHub tab at once.
 | **Off** | Estimates, always | 1 tree |
 
 **In every mode, a file counted before shows its real value from the cache,
-without a request.** Reopen a directory you have already seen and manual mode
-offers no button, because there is nothing left to fetch.
+without a request.** Reopen a directory you have already seen and the button
+sits there disabled, reading "Fetched", because there is nothing left to
+fetch.
 
 Manual suits you if:
 

@@ -1048,6 +1048,7 @@ let transportCalls = [];
 let stubTreeCached = false; // whether a cache-only TREE probe hits
 let stubTreeFails = null;   // an error every TREE request answers with, while set
 let stubAttributes = null;  // what BLOB_TEXT answers, when the tree has one
+let stubTreeTruncated = false; // the tree comes back cut short, and the top-up fails
 
 function stubTransport({ treeDelayMs = 0 } = {}) {
   const calls = [];
@@ -1058,8 +1059,10 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
       case 'TREE':
         if (stubTreeFails) return { ok: false, error: stubTreeFails };
         if (msg.cacheOnly && !stubTreeCached) return { ok: false, error: 'not_cached' };
+        // The non-recursive top-up, asked for only when the tree was truncated.
+        if (msg.recursive === false) return { ok: false, error: 'not_found' };
         if (treeDelayMs) await sleep(treeDelayMs);
-        return { ok: true, entries: STUB_TREE, truncated: false };
+        return { ok: true, entries: STUB_TREE, truncated: stubTreeTruncated };
       case 'CACHED_LINES':
         return { ok: true, lines: {} };
       case 'RATE':
@@ -1605,18 +1608,24 @@ await domCheckAsync('a failed fetch leaves something to press, and pressing it s
   navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
   await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
 
-  stubTreeFails = 'rate_limit';
-  fetchButton().click();
-  await waitFor(
-    () => document.querySelector('.ghl-summary-status').dataset.tone === 'error',
-    6000,
-    'the failure to be reported'
-  );
-  const button = fetchButton();
-  assert(!button.hidden && !button.disabled, 'the button is still there to press');
-  assert(!/\d/.test(button.textContent), `and offers the whole thing again (${button.textContent})`);
+  // Every test after this one shares the stub, so the failure is taken back
+  // whatever happens here.
+  try {
+    stubTreeFails = 'rate_limit';
+    fetchButton().click();
+    await waitFor(
+      () => document.querySelector('.ghl-summary-status').dataset.tone === 'error',
+      6000,
+      'the failure to be reported'
+    );
+    const button = fetchButton();
+    assert(!button.hidden && !button.disabled, 'the button is still there to press');
+    assert(!/\d/.test(button.textContent), `and offers the whole thing again (${button.textContent})`);
+  } finally {
+    stubTreeFails = null;
+  }
 
-  stubTreeFails = null;
+  const button = fetchButton();
   const before = transportCalls.length;
   button.click();
   await waitFor(() => renderedPaths().includes('source/core/options.ts'), 6000, 'the retry to land');
@@ -1701,6 +1710,100 @@ await domCheckAsync('a collapsed row takes the files it stands for with it', asy
     STUB_TREE.pop();
     tr.remove();
   }
+});
+
+await domCheckAsync('a size fetch that failed offers sizes again, not a line count', async () => {
+  /* The button says what a press will do; the press has to do that. Decided in
+     two places they drift, and a press offering one request spends three
+     hundred on the other reading. */
+  await settings.set({ exactLinesMode: 'manual' });
+  navigateDom(currentDom, 'source/as-promise', [
+    { name: 'index.ts', type: 'file' },
+    { name: 'types.ts', type: 'file' },
+  ]);
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+  metricButton('bytes').click();
+  await waitFor(() => fetchButton().textContent === msg('fetchSizes'), 3000, 'the button to offer sizes');
+
+  try {
+    stubTreeFails = 'rate_limit';
+    fetchButton().click();
+    await waitFor(
+      () => document.querySelector('.ghl-summary-status').dataset.tone === 'error',
+      6000,
+      'the failure to be reported'
+    );
+    assertEqual(fetchButton().textContent, msg('fetchSizes'), 'it still offers sizes');
+  } finally {
+    stubTreeFails = null;
+  }
+
+  const before = transportCalls.length;
+  fetchButton().click();
+  await waitFor(() => renderedPaths().includes('source/as-promise/index.ts'), 6000, 'the retry to land');
+  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'LINES').length, 0,
+    'and it bought the one tree request it offered, not a file per row');
+  assertEqual(metricButton('bytes').getAttribute('aria-pressed'), 'true', 'the reading stays on sizes');
+  assertEqual(fetchButton().textContent, msg('fetchDone'), 'with nothing left on it');
+});
+
+await domCheckAsync('a repository with more exclusion files than it reads still settles', async () => {
+  /* Stopping at twenty is this extension's own limit, not something reading
+     again would get past — so it is said once and done with, not turned into a
+     button that offers to read for ever. */
+  const added = [];
+  for (let i = 0; i < 21; i++) {
+    added.push({ path: `source/pkg${i}/.gitattributes`, type: 'file', size: 20, sha: `sha-attr-${i}` });
+  }
+  STUB_TREE.push(...added);
+  try {
+    stubAttributes = { ok: true, text: '' };
+    await settings.set({ exactLinesMode: 'manual' });
+    navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(() => fetchButton().textContent === msg('fetchDone'), 8000, 'the button to settle');
+    assert(fetchButton().disabled, 'with nothing left to press');
+    assertEqual(document.querySelector('.ghl-summary-status').textContent, msg('errAttributes'),
+      'while the strip still says the rules were cut short');
+  } finally {
+    stubAttributes = null;
+    STUB_TREE.length -= added.length;
+  }
+});
+
+await domCheckAsync('a directory the tree left out counts nothing, and does not stick', async () => {
+  /* A truncated tree may not carry the directory on screen. The repository
+     root is not a stand-in for it: its totals are the wrong ones, and fetching
+     its files spends the budget on rows nobody is looking at. */
+  await settings.set({ exactLinesMode: 'manual' });
+  try {
+    stubTreeTruncated = true;
+    navigateDom(currentDom, 'source/missing', [{ name: 'ghost.ts', type: 'file' }]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    const before = transportCalls.length;
+    fetchButton().click();
+    await waitFor(
+      () => document.querySelector('.ghl-summary-status').textContent === msg('statusNoDirectory'),
+      6000,
+      'the strip to say the directory is not in what came back'
+    );
+    assertEqual(transportCalls.slice(before).filter((c) => c.type === 'LINES').length, 0,
+      'and nothing from the rest of the repository was fetched');
+    assert(document.querySelector('[data-ghl-action="treemap"]').disabled,
+      'with no treemap to open on it');
+  } finally {
+    stubTreeTruncated = false;
+  }
+
+  navigateDom(currentDom, 'source', [{ name: 'create.ts', type: 'file' }]);
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+  fetchButton().click();
+  await waitFor(() => renderedPaths().includes('source/create.ts'), 6000, 'the next directory to draw');
+  assert(!document.querySelector('[data-ghl-action="treemap"]').disabled,
+    'the treemap comes back with it');
+  assertEqual(document.querySelector('.ghl-summary-status').textContent, '',
+    'and the message does not follow the reader around');
 });
 
 await domCheckAsync('leaving the file list tears the UI down', async () => {

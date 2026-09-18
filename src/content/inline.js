@@ -564,12 +564,9 @@
     const settings = state.settings;
     const treemapButton = node.querySelector('[data-ghl-action="treemap"]');
     treemapButton.hidden = !settings.showTreemapButton;
-    treemapButton.disabled = !state.index;
+    treemapButton.disabled = !GHL.store.dirNodeOf(state);
 
     const m = metricOf(state);
-    /* An error, or a view built on something that could not be read, offers
-       the same thing an untouched one does: press it and it is read again. */
-    const idle = state.status === 'idle' || state.status === 'error' || state.needsMetadata;
 
     // Lines | Size. With a tree in, it says what the bars measure; in manual
     // mode it is up from the start and stays put through the fetch, since it
@@ -594,21 +591,24 @@
     let title = t(wantsLines ? 'fetchDoneLinesTitle' : 'fetchDoneSizesTitle');
     let disabled = true;
     let primary = false;
-    if (idle && !wantsLines) {
+    // What a press would do is the store's answer, not a second guess at it.
+    // Busy comes first: a pass already running is what the button says.
+    if (busy) {
+      label = t('fetchBusy');
+      title = '';
+    } else if (state.press === 'tree' && !wantsLines) {
       label = t('fetchSizes');
       title = t('fetchSizesTitle');
       disabled = false;
-    } else if (idle) {
+    } else if (state.press === 'tree') {
       label = t('fetchLines');
       primary = true;
       disabled = none;
       title = none ? t('fetchNothingTicked') : t('fetchLinesTitle');
-    } else if (busy) {
-      label = t('fetchBusy');
-      title = '';
-    } else if (state.status === 'pending' && wantsLines) {
+    } else if (state.press === 'counts') {
       label = t('fetchLinesCount', fmt(state.pending));
       primary = true;
+      // Every row unticked: there is something to fetch, and nothing asked for.
       disabled = state.pending === 0;
       title = state.pending ? t('fetchLinesCountTitle', fmt(state.pending)) : t('fetchNothingTicked');
     }
@@ -649,7 +649,8 @@
     }
 
     status.textContent = statusText(state, m);
-    status.dataset.tone = state.status === 'error' ? 'error' : (state.warning ? 'warn' : 'ok');
+    status.dataset.tone = state.status === 'error' ? 'error'
+      : (state.warning || state.metaWarning || state.missingDirectory) ? 'warn' : 'ok';
 
     // Stacked proportion bar
     stack.textContent = '';
@@ -725,6 +726,7 @@
       return t('statusRefining', state.progress.done, state.progress.total);
     }
     if (state.missingDirectory) return t('statusNoDirectory');
+    if (state.metaWarning) return errorText(state.metaWarning);
     // Estimates only exist for lines; sizes are exact from the start.
     if (m && m.key === 'bytes') return state.truncated ? t('statusTruncatedSizes') : '';
     if (state.status === 'estimated') return t('statusEstimating');
@@ -779,7 +781,7 @@
     if (!settings) return;
 
     const ctx = state.ctx;
-    const dirNode = state.index && (state.index.get(ctx.path) || (ctx.path ? null : state.root));
+    const dirNode = GHL.store.dirNodeOf(state);
     const rows = GHL.page.findRows(ctx);
     // Manual mode's checkbox column is up for the whole view, one box per row
     // on screen.

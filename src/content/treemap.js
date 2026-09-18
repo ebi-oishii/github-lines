@@ -237,7 +237,9 @@
   function draw() {
     if (!modal) return;
     const { state, path } = modal;
-    const raw = state.index && (state.index.get(path) || state.root);
+    /* Only what came back for this path. The repository root standing in for a
+       directory that is missing would label the whole repository as it. */
+    const raw = state.index && (state.index.get(path) || (path ? null : state.root));
     // Manual mode's checkboxes filter the directory on screen; drilling into a
     // subdirectory shows all of it.
     const node = raw && state.settings.exactLinesMode === 'manual' && path === state.ctx.path
