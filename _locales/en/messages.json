@@ -235,192 +235,192 @@
     "message": "Warn $1",
     "description": "$1 is a line count with its unit"
   },
-  "optTitle": {
+  "title": {
     "message": "GitHub Lines options"
   },
-  "optLede": {
+  "lede": {
     "message": "Visualises line counts on GitHub's file list, so bloated files stand out."
   },
-  "optTokens": {
+  "tokens": {
     "message": "Access tokens"
   },
-  "optTokensHint1": {
+  "tokensHint1": {
     "message": "Without one, public repositories work at <strong>60 requests an hour</strong>. A token raises that to <strong>5,000</strong> and reaches private repositories. With several accounts, add one per <strong>owner</strong> — a token cannot read another account's private repositories."
   },
-  "optAddToken": {
+  "addToken": {
     "message": "＋ Add a token"
   },
-  "optTokenLink": {
+  "tokenLink": {
     "message": "Create a fine-grained token"
   },
-  "optTokensHint3": {
+  "tokensHint3": {
     "message": "— it needs only <code>Contents: Read-only</code>. Tokens stay in this machine's <code>chrome.storage.local</code> and go nowhere but <code>api.github.com</code>."
   },
-  "optTokenDefaultTitle": {
+  "tokenDefaultTitle": {
     "message": "The token to use when no owner matches"
   },
-  "optTokenDefault": {
+  "tokenDefault": {
     "message": "Default"
   },
-  "optTokenLabelPlaceholder": {
+  "tokenLabelPlaceholder": {
     "message": "Label (e.g. personal / work)"
   },
-  "optTokenRemove": {
+  "tokenRemove": {
     "message": "Remove"
   },
-  "optTokenRemoveLabel": {
+  "tokenRemoveLabel": {
     "message": "Remove this token"
   },
-  "optTokenValue": {
+  "tokenValue": {
     "message": "Personal access token"
   },
-  "optTokenValuePlaceholder": {
+  "tokenValuePlaceholder": {
     "message": "github_pat_… or ghp_…"
   },
-  "optTokenOwners": {
+  "tokenOwners": {
     "message": "Owners this token is for (comma separated)"
   },
-  "optTokenVerify": {
+  "tokenVerify": {
     "message": "Verify and fill in the owners"
   },
-  "optThresholds": {
+  "thresholds": {
     "message": "Thresholds"
   },
-  "optThresholdsHint": {
+  "thresholdsHint": {
     "message": "A file past these line counts is coloured as a warning."
   },
-  "optWarn": {
+  "warn": {
     "message": "Warn (amber)"
   },
-  "optDanger": {
+  "danger": {
     "message": "Danger (red)"
   },
-  "optDisplay": {
+  "display": {
     "message": "Display"
   },
-  "optShowBars": {
+  "showBars": {
     "message": "Show proportion bars on the file list"
   },
-  "optShowTreemap": {
+  "showTreemap": {
     "message": "Show the treemap button"
   },
-  "optCounting": {
+  "counting": {
     "message": "Line counting"
   },
-  "optModeLabel": {
+  "modeLabel": {
     "message": "Fetching exact line counts"
   },
-  "optModeAuto": {
+  "modeAuto": {
     "message": "<strong>Automatic</strong> — fetch as soon as the page opens"
   },
-  "optModeManual": {
+  "modeManual": {
     "message": "<strong>Manual</strong> — fetch nothing on open. Pick lines or size on the strip above the list and press the button; the row checkboxes narrow what it fetches"
   },
-  "optModeOff": {
+  "modeOff": {
     "message": "<strong>Off</strong> — estimates only, one API request per view"
   },
-  "optModeHint": {
+  "modeHint": {
     "message": "In every mode, files counted before show their real value from the cache, without an API request."
   },
-  "optMaxFetch": {
+  "maxFetch": {
     "message": "Fetch limit per view"
   },
-  "optConcurrency": {
+  "concurrency": {
     "message": "Parallel requests"
   },
-  "optCacheHint": {
+  "cacheHint": {
     "message": "Counts are cached under the file's blob SHA. A git blob SHA is a hash of the content, so a file whose content has not changed is never fetched again, whatever the branch or commit."
   },
-  "optExclusions": {
+  "exclusions": {
     "message": "Exclusions"
   },
-  "optRespectGitattributes": {
+  "respectGitattributes": {
     "message": "Respect <code>linguist-generated</code> / <code>linguist-vendored</code> in <code>.gitattributes</code>"
   },
-  "optExcludeGenerated": {
+  "excludeGenerated": {
     "message": "Exclude files matching the patterns below"
   },
-  "optPatterns": {
+  "patterns": {
     "message": "Exclude patterns (one glob per line)"
   },
-  "optPatternsHint": {
+  "patternsHint": {
     "message": "Binaries (images, fonts, archives and the like) are recognised by extension and always excluded."
   },
-  "optCache": {
+  "cache": {
     "message": "Cache"
   },
-  "optClearCache": {
+  "clearCache": {
     "message": "Clear the cache"
   },
-  "optSave": {
+  "save": {
     "message": "Save"
   },
-  "optReset": {
+  "reset": {
     "message": "Restore defaults"
   },
-  "optTokenEmpty": {
+  "tokenEmpty": {
     "message": "No token entered"
   },
-  "optVerifying": {
+  "verifying": {
     "message": "Checking…"
   },
-  "optTokenInvalid": {
+  "tokenInvalid": {
     "message": "The token is not valid"
   },
-  "optVerifyHttp": {
+  "verifyHttp": {
     "message": "Check failed (HTTP $1)",
     "description": "$1 is an HTTP status code"
   },
-  "optVerifyFailed": {
+  "verifyFailed": {
     "message": "Check failed: $1",
     "description": "$1 is an error message"
   },
-  "optOwnersFound": {
+  "ownersFound": {
     "message": "reaches: $1",
     "description": "$1 is a list of owner names"
   },
-  "optOwnersMore": {
+  "ownersMore": {
     "message": "$1 and $2 more",
     "description": "$1 is a list of names, $2 how many are not shown"
   },
-  "optOwnersNone": {
+  "ownersNone": {
     "message": "could not work out which owners it reaches — fill them in yourself"
   },
-  "optTokenWritable": {
+  "tokenWritable": {
     "message": " / ⚠ includes write access ($1)",
     "description": "$1 is a list of permissions"
   },
-  "optTokenClassic": {
+  "tokenClassic": {
     "message": " / classic (read only)"
   },
-  "optVerifyOk": {
+  "verifyOk": {
     "message": "valid as $1 — $2 ($3/$4 requests left this hour)$5",
     "description": "$1 login, $2 what it reaches, $3/$4 requests left, $5 a note about its kind"
   },
-  "optSaved": {
+  "saved": {
     "message": "Saved"
   },
-  "optCacheStats": {
+  "cacheStats": {
     "message": "$1 line counts / $2 trees / $3 texts",
     "description": "$1, $2, $3 are entry counts"
   },
-  "optCacheStatsFailed": {
+  "cacheStatsFailed": {
     "message": "Could not read the cache"
   },
-  "optCacheCleared": {
+  "cacheCleared": {
     "message": "Cache cleared"
   },
-  "optResetDone": {
+  "resetDone": {
     "message": "Defaults restored"
   },
-  "optLang": {
+  "lang": {
     "message": "en",
     "description": "The BCP 47 tag for this catalogue, for the options page's lang attribute"
   },
-  "optAdvanced": {
+  "advanced": {
     "message": "Advanced"
   },
-  "optAutosave": {
+  "autosave": {
     "message": "Changes are saved as you make them."
   }
 }

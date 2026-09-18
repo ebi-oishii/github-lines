@@ -235,192 +235,192 @@
     "message": "注意 $1",
     "description": "$1 is a line count with its unit"
   },
-  "optTitle": {
+  "title": {
     "message": "GitHub Lines の設定"
   },
-  "optLede": {
+  "lede": {
     "message": "GitHub のファイル一覧で行数を可視化し、肥大化したファイルを一目で見つけます。"
   },
-  "optTokens": {
+  "tokens": {
     "message": "アクセストークン"
   },
-  "optTokensHint1": {
+  "tokensHint1": {
     "message": "未設定でも public リポジトリでは動きますが、<strong>60 回/時</strong> の制限がかかります。トークンを登録すると <strong>5,000 回/時</strong> になり、private リポジトリも読めます。複数アカウントを使い分けるなら<strong>オーナーごと</strong>に登録してください（別アカウントの private は読めないため）。"
   },
-  "optAddToken": {
+  "addToken": {
     "message": "＋ トークンを追加"
   },
-  "optTokenLink": {
+  "tokenLink": {
     "message": "Fine-grained token を作成"
   },
-  "optTokensHint3": {
+  "tokensHint3": {
     "message": "— 必要な権限は <code>Contents: Read-only</code> のみ。トークンはこの端末の <code>chrome.storage.local</code> にのみ保存され、<code>api.github.com</code> 以外には送信しません。"
   },
-  "optTokenDefaultTitle": {
+  "tokenDefaultTitle": {
     "message": "どのオーナーにも一致しないときに使うトークン"
   },
-  "optTokenDefault": {
+  "tokenDefault": {
     "message": "既定"
   },
-  "optTokenLabelPlaceholder": {
+  "tokenLabelPlaceholder": {
     "message": "ラベル（例: 個人 / 仕事）"
   },
-  "optTokenRemove": {
+  "tokenRemove": {
     "message": "削除"
   },
-  "optTokenRemoveLabel": {
+  "tokenRemoveLabel": {
     "message": "このトークンを削除"
   },
-  "optTokenValue": {
+  "tokenValue": {
     "message": "Personal Access Token"
   },
-  "optTokenValuePlaceholder": {
+  "tokenValuePlaceholder": {
     "message": "github_pat_… または ghp_…"
   },
-  "optTokenOwners": {
+  "tokenOwners": {
     "message": "このトークンを使うオーナー（カンマ区切り）"
   },
-  "optTokenVerify": {
+  "tokenVerify": {
     "message": "検証してオーナーを自動取得"
   },
-  "optThresholds": {
+  "thresholds": {
     "message": "閾値"
   },
-  "optThresholdsHint": {
+  "thresholdsHint": {
     "message": "1 ファイルの行数がこの値を超えたら警告色にします。"
   },
-  "optWarn": {
+  "warn": {
     "message": "注意 (黄)"
   },
-  "optDanger": {
+  "danger": {
     "message": "警告 (赤)"
   },
-  "optDisplay": {
+  "display": {
     "message": "表示"
   },
-  "optShowBars": {
+  "showBars": {
     "message": "ファイル一覧に割合バーを表示する"
   },
-  "optShowTreemap": {
+  "showTreemap": {
     "message": "ツリーマップのボタンを表示する"
   },
-  "optCounting": {
+  "counting": {
     "message": "行数のカウント"
   },
-  "optModeLabel": {
+  "modeLabel": {
     "message": "実際の行数の取得"
   },
-  "optModeAuto": {
+  "modeAuto": {
     "message": "<strong>自動</strong> — ページを開いたら取得する"
   },
-  "optModeManual": {
+  "modeManual": {
     "message": "<strong>手動</strong> — ページを開いても何も取得しない。一覧の上の「行数 | サイズ」で選んだ方を「取得」ボタンで取りに行きます。各行のチェックで対象を絞れます"
   },
-  "optModeOff": {
+  "modeOff": {
     "message": "<strong>取得しない</strong> — 推定値のみ。1 画面あたり API 1 リクエストで済みます"
   },
-  "optModeHint": {
+  "modeHint": {
     "message": "どのモードでも、過去に取得してキャッシュ済みのファイルは API を使わずに実測値で表示されます。"
   },
-  "optMaxFetch": {
+  "maxFetch": {
     "message": "1 画面あたりの取得上限"
   },
-  "optConcurrency": {
+  "concurrency": {
     "message": "並列数"
   },
-  "optCacheHint": {
+  "cacheHint": {
     "message": "取得した行数は blob SHA をキーにキャッシュされます。git の blob SHA は内容のハッシュなので、ブランチやコミットが変わっても内容が同じファイルは再取得されません。"
   },
-  "optExclusions": {
+  "exclusions": {
     "message": "除外"
   },
-  "optRespectGitattributes": {
+  "respectGitattributes": {
     "message": "<code>.gitattributes</code> の <code>linguist-generated</code> / <code>linguist-vendored</code> を尊重する"
   },
-  "optExcludeGenerated": {
+  "excludeGenerated": {
     "message": "下記のパターンに一致するファイルを除外する"
   },
-  "optPatterns": {
+  "patterns": {
     "message": "除外パターン（1 行に 1 つ、glob）"
   },
-  "optPatternsHint": {
+  "patternsHint": {
     "message": "バイナリ（画像・フォント・アーカイブ等）は拡張子で判定して常に除外されます。"
   },
-  "optCache": {
+  "cache": {
     "message": "キャッシュ"
   },
-  "optClearCache": {
+  "clearCache": {
     "message": "キャッシュを削除"
   },
-  "optSave": {
+  "save": {
     "message": "保存"
   },
-  "optReset": {
+  "reset": {
     "message": "初期設定に戻す"
   },
-  "optTokenEmpty": {
+  "tokenEmpty": {
     "message": "トークンが未入力です"
   },
-  "optVerifying": {
+  "verifying": {
     "message": "確認中…"
   },
-  "optTokenInvalid": {
+  "tokenInvalid": {
     "message": "トークンが無効です"
   },
-  "optVerifyHttp": {
+  "verifyHttp": {
     "message": "確認に失敗しました (HTTP $1)",
     "description": "$1 is an HTTP status code"
   },
-  "optVerifyFailed": {
+  "verifyFailed": {
     "message": "確認に失敗しました: $1",
     "description": "$1 is an error message"
   },
-  "optOwnersFound": {
+  "ownersFound": {
     "message": "対象: $1",
     "description": "$1 is a list of owner names"
   },
-  "optOwnersMore": {
+  "ownersMore": {
     "message": "$1 ほか$2件",
     "description": "$1 is a list of names, $2 how many are not shown"
   },
-  "optOwnersNone": {
+  "ownersNone": {
     "message": "対象のオーナーを特定できませんでした — 手動で入力してください"
   },
-  "optTokenWritable": {
+  "tokenWritable": {
     "message": " / ⚠ 書き込み権限を含みます（$1）",
     "description": "$1 is a list of permissions"
   },
-  "optTokenClassic": {
+  "tokenClassic": {
     "message": " / classic（読み取りのみ）"
   },
-  "optVerifyOk": {
+  "verifyOk": {
     "message": "$1 として有効 — $2（残り $3/$4 回/時）$5",
     "description": "$1 login, $2 what it reaches, $3/$4 requests left, $5 a note about its kind"
   },
-  "optSaved": {
+  "saved": {
     "message": "保存しました"
   },
-  "optCacheStats": {
+  "cacheStats": {
     "message": "行数 $1 件 / ツリー $2 件 / テキスト $3 件",
     "description": "$1, $2, $3 are entry counts"
   },
-  "optCacheStatsFailed": {
+  "cacheStatsFailed": {
     "message": "キャッシュ情報を取得できませんでした"
   },
-  "optCacheCleared": {
+  "cacheCleared": {
     "message": "キャッシュを削除しました"
   },
-  "optResetDone": {
+  "resetDone": {
     "message": "初期設定に戻しました"
   },
-  "optLang": {
+  "lang": {
     "message": "ja",
     "description": "The BCP 47 tag for this catalogue, for the options page's lang attribute"
   },
-  "optAdvanced": {
+  "advanced": {
     "message": "詳細設定"
   },
-  "optAutosave": {
+  "autosave": {
     "message": "変更はその場で保存されます。"
   }
 }

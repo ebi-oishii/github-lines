@@ -123,11 +123,11 @@ async function verifyRow(row) {
   const token = row.querySelector('.token-value').value.trim();
 
   if (!token) {
-    setStatus(status, t('optTokenEmpty'), 'error');
+    setStatus(status, t('tokenEmpty'), 'error');
     return;
   }
 
-  setStatus(status, t('optVerifying'), 'idle');
+  setStatus(status, t('verifying'), 'idle');
 
   const headers = {
     Accept: 'application/vnd.github+json',
@@ -138,11 +138,11 @@ async function verifyRow(row) {
   try {
     const user = await ghGet('/user', headers);
     if (user.status === 401) {
-      setStatus(status, t('optTokenInvalid'), 'error');
+      setStatus(status, t('tokenInvalid'), 'error');
       return;
     }
     if (!user.ok) {
-      setStatus(status, t('optVerifyHttp', user.status), 'error');
+      setStatus(status, t('verifyHttp', user.status), 'error');
       return;
     }
 
@@ -181,8 +181,8 @@ async function verifyRow(row) {
     const found = [...discovered];
     const shown = found.slice(0, 4).join(', ');
     const summary = found.length
-      ? t('optOwnersFound', found.length > 4 ? t('optOwnersMore', shown, found.length - 4) : shown)
-      : t('optOwnersNone');
+      ? t('ownersFound', found.length > 4 ? t('ownersMore', shown, found.length - 4) : shown)
+      : t('ownersNone');
 
     const writable = writeGranting(user.scopes);
     let kindNote = '';
@@ -190,15 +190,15 @@ async function verifyRow(row) {
     if (writable === null) {
       kindNote = ' / fine-grained';
     } else if (writable.length) {
-      kindNote = t('optTokenWritable', writable.join(', '));
+      kindNote = t('tokenWritable', writable.join(', '));
       if (tone === 'ok') tone = 'warn';
     } else {
-      kindNote = t('optTokenClassic');
+      kindNote = t('tokenClassic');
     }
 
-    setStatus(status, t('optVerifyOk', login, summary, user.remaining, user.limit, kindNote), tone);
+    setStatus(status, t('verifyOk', login, summary, user.remaining, user.limit, kindNote), tone);
   } catch (e) {
-    setStatus(status, t('optVerifyFailed', e.message), 'error');
+    setStatus(status, t('verifyFailed', e.message), 'error');
   }
 }
 
@@ -268,23 +268,23 @@ async function saveNow() {
   clearTimeout(pendingWrite);
   pendingWrite = null;
   await GHL.settings.set(collect());
-  flash(t('optSaved'), 'ok');
+  flash(t('saved'), 'ok');
 }
 
 async function refreshCacheStats() {
   const res = await chrome.runtime.sendMessage({ type: 'CACHE_STATS' });
   if (res && res.ok) {
     $('cache-stats').textContent =
-      t('optCacheStats', res.lines.toLocaleString(), res.trees, res.texts);
+      t('cacheStats', res.lines.toLocaleString(), res.trees, res.texts);
   } else {
-    $('cache-stats').textContent = t('optCacheStatsFailed');
+    $('cache-stats').textContent = t('cacheStatsFailed');
   }
 }
 
 async function clearCache() {
   await chrome.runtime.sendMessage({ type: 'CLEAR_CACHE' });
   await refreshCacheStats();
-  flash(t('optCacheCleared'), 'ok');
+  flash(t('cacheCleared'), 'ok');
 }
 
 async function reset() {
@@ -292,7 +292,7 @@ async function reset() {
   pendingWrite = null;
   await GHL.settings.reset();
   await fill();
-  flash(t('optResetDone'), 'ok');
+  flash(t('resetDone'), 'ok');
 }
 
 $('add-token').addEventListener('click', () => {
@@ -319,6 +319,6 @@ document.addEventListener('visibilitychange', () => {
 });
 
 GHL.i18n.applyDom();
-document.documentElement.lang = t('optLang');
+document.documentElement.lang = t('lang');
 fill();
 refreshCacheStats();

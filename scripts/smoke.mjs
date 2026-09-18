@@ -56,7 +56,7 @@ function assert(cond, msg) {
 }
 
 function assertDocLang(lang) {
-  assert(lang === msg('optLang'), `the options page declares its language (${lang})`);
+  assert(lang === msg('lang'), `the options page declares its language (${lang})`);
 }
 
 function skip(name) {
@@ -98,7 +98,7 @@ try {
   const extensionId = new URL(worker.url()).host;
 
   // Which catalogue the extension resolved to, asked of the extension itself.
-  const locale = await worker.evaluate(() => chrome.i18n.getMessage('optLang'));
+  const locale = await worker.evaluate(() => chrome.i18n.getMessage('lang'));
   if (locale && locale !== 'en') {
     MESSAGES = JSON.parse(fs.readFileSync(path.join(ROOT, `_locales/${locale}/messages.json`), 'utf8'));
   }
@@ -108,7 +108,7 @@ try {
   await context.addInitScript(([busy, verifying]) => {
     window.__ghlBusy = busy;
     window.__ghlVerifying = verifying;
-  }, [busyPrefixes(), msg('optVerifying')]);
+  }, [busyPrefixes(), msg('verifying')]);
 
   // Feed the extension a token if one is in the environment, by driving its own
   // options page — the same path a user takes.
@@ -161,7 +161,7 @@ try {
     await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
 
     const saved = await page.$eval('#save-status', (n) => n.textContent);
-    assert(saved === msg('optSaved'), `the page saved on its own (${saved})`);
+    assert(saved === msg('saved'), `the page saved on its own (${saved})`);
 
     // Every label on the options page comes from the catalogue; a key that is
     // missing or misspelt renders as an empty element rather than failing.
