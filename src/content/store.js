@@ -450,6 +450,7 @@
     (async () => {
       state.settings = await GHL.settings.get();
       if (cancelled) return;
+      refreshRate();
       // Manual mode requests nothing until asked — but what the cache already
       // holds for this commit shows at once, since that costs nothing.
       await loadTree(false, state.settings.exactLinesMode === 'manual');

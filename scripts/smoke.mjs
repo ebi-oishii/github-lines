@@ -216,7 +216,11 @@ try {
   // checks below.
   if (MANUAL) {
     await page.waitForSelector('#ghl-summary [data-ghl-action="fetch"]:visible', { timeout: 30000 });
-    assert(apiRequests.length === 0, `nothing is requested before the button is pressed (${apiRequests.length})`);
+    /* Manual mode spends nothing of the budget before it is asked to. The
+       `/rate_limit` question is not spending: GitHub does not count it against
+       the limit it reports, and it is what lets the strip say what is left. */
+    const spentBefore = apiRequests.filter((r) => !r.url.includes('/rate_limit'));
+    assert(spentBefore.length === 0, `nothing is charged before the button is pressed (${spentBefore.length})`);
     const opening = await page.$eval('#ghl-summary [data-ghl-action="fetch"]', (b) => b.textContent);
     assert(opening === msg('fetchLines'), `the toggle opens on lines (${opening})`);
     await page.click('#ghl-summary [data-ghl-metric="bytes"]');
@@ -230,6 +234,11 @@ try {
       ps.filter((p) => p.offsetParent !== null).length
     );
     assert(idlePicks > 0, `checkboxes are up before anything is fetched (${idlePicks} visible)`);
+    // The budget is readable before anything has been spent, which is when
+    // knowing it matters most.
+    const idleRate = await page.waitForSelector('#ghl-summary .ghl-rate-value', { timeout: 15000 })
+      .then((n) => n.textContent(), () => '');
+    assert(/\d[\d,]*\s*\/\s*[\d,]+/.test(idleRate), `the budget shows on an untouched view (${idleRate})`);
     const head = await page.waitForSelector('thead th > .ghl-col-head:visible', { timeout: 15000 }).catch(() => null);
     assert(!!head, 'the icon heads the checkbox column from the "Name" header cell');
     assert(!!(await page.$('.ghl-col-head [data-ghl-action="pick-all"]:visible')), 'with the all-rows checkbox under it');
@@ -508,7 +517,11 @@ try {
   assert(realErrors.length === 0, `no page errors${realErrors.length ? ': ' + realErrors[0] : ''}`);
 
   const seen = new Set();
-  const duplicates = apiRequests.filter((r) => (seen.has(r.url) ? true : (seen.add(r.url), false)));
+  // `/rate_limit` is asked once per view when a page draws without spending
+  // anything; GitHub does not count it against the budget it reports, and
+  // repeating it is the point rather than waste.
+  const seen_ = apiRequests.filter((r) => !r.url.includes('/rate_limit'));
+  const duplicates = seen_.filter((r) => (seen.has(r.url) ? true : (seen.add(r.url), false)));
   assert(
     duplicates.length === 0,
     `no API request is made twice (${apiRequests.length} total)` +

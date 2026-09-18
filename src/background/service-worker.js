@@ -118,7 +118,7 @@ const identities = new Map();
 function identity(id) {
   let state = identities.get(id);
   if (!state) {
-    state = { id, label: '', limit: null, remaining: null, reset: null, recent: [], pausedUntil: 0 };
+    state = { id, label: '', limit: null, remaining: null, reset: null, recent: [], pausedUntil: 0, askedAt: 0 };
     identities.set(id, state);
   }
   return state;
@@ -269,6 +269,18 @@ async function ghFetchAs(entry, path, accept) {
   const err = fail(`http_${res.status}`, context);
   err.message = detail || err.message;
   throw err;
+}
+
+/* The one endpoint that reports the budget without spending it. Its answer is
+   the same shape the headers carry, so it lands in the same place. */
+async function askRateLimit(entry, state) {
+  const res = await ghFetchAs(entry, '/rate_limit', 'application/vnd.github+json');
+  const body = await res.json();
+  const core = body && body.resources && body.resources.core;
+  if (!core) return;
+  state.limit = core.limit;
+  state.remaining = core.remaining;
+  state.reset = core.reset * 1000;
 }
 
 /* `owner` selects the identity; `fallback` allows trying the user's other
@@ -482,12 +494,25 @@ const HANDLERS = {
   CACHED_LINES: getCachedLines,
   BLOB_TEXT: getBlobText,
   /* What is left of the budget the given owner's requests come out of. Limits
-     are per account, so which account that is depends on the owner. The numbers
-     come from the last response's headers — before any request, there are
-     none, and `limit` is null. */
+     are per account, so which account that is depends on the owner.
+
+     Every response carries the numbers in its headers, so most of the time
+     there is nothing to ask: this reads what the last one said. When there has
+     been no response — a page drawn entirely from the cache, a manual view that
+     has not fetched anything, a worker Chrome restarted — it asks GitHub, whose
+     `/rate_limit` is documented as not counting against the limit it reports.
+     One such question a minute per account is plenty. */
   RATE: async ({ owner } = {}) => {
     const [entry] = await tokenCandidates(owner, false);
     const state = identity(entry ? entry.id : ANON);
+
+    const stale = state.limit == null || state.reset < Date.now();
+    if (stale && Date.now() - state.askedAt > 60000) {
+      state.askedAt = Date.now();
+      // Best effort: a budget nobody could ask about is not worth an error.
+      await askRateLimit(entry, state).catch(() => {});
+    }
+
     return {
       ok: true,
       limit: state.limit,

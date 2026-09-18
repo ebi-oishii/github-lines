@@ -67,8 +67,10 @@ The right-hand side carries the status (`Counting lines 42/120`, `API rate
 limit…`). Nothing there means every number on screen is final.
 
 Under the right-hand end of the bar is what is left of the API budget —
-`API 4,981/5,000` — once something has been fetched, read off the last response
-rather than counted here. It goes amber near the end and red at zero. Hover it
+`API 4,981/5,000` — read off the last response rather than counted here, and
+asked of GitHub's `/rate_limit` when there has been no response to read (a page
+drawn from the cache, or a manual view yet to fetch anything). That question is
+free: GitHub does not count it against the limit it reports. It goes amber near the end and red at zero. Hover it
 (or tab to it) and it says which account the budget belongs to and when it comes
 back.
 
@@ -214,9 +216,11 @@ files):
 
 | Action | Requests | Time |
 |---|---|---|
-| Opening the repository root, first time | **125** (1 tree + 124 blobs) | 8.5 s |
+| Opening the repository root, first time | **126** (1 tree + 124 blobs + 1 free rate check) | 6.8 s |
 | Opening the same repository again | **0** | 1.9 s |
-| Into a subdirectory | **0** | 2.2 s |
+| Into a subdirectory | **0** | 2.1 s |
+
+Only 125 of those count against the budget; `/rate_limit` does not.
 
 The rule of thumb is "countable files + 1". But counting stops at **300 files
 per view**, so beyond that it does not take everything at the root — it fetches
