@@ -174,6 +174,9 @@
       el('span', { class: 'ghl-tm-name', text: node.name + '/' }),
       el('span', { class: 'ghl-tm-value', text: m.short(node) }),
     ]);
+    // The header is the only part of a folded-up directory you can see, so it
+    // carries the same colour its tile would.
+    head.style.background = m.fill ? m.fill(node, opts.settings, 0.55) : '';
     head.addEventListener('click', (e) => {
       e.stopPropagation();
       opts.onDrill(node.path);

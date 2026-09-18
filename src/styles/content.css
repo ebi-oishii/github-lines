@@ -594,7 +594,7 @@ th:has(> .ghl-col-head)::after {
   padding: 0 5px;
   font-size: 10px;
   line-height: 16px;
-  color: var(--ghl-fg-muted);
+  color: var(--ghl-fg);
   background: var(--ghl-track);
   overflow: hidden;
   white-space: nowrap;
