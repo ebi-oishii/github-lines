@@ -37,8 +37,8 @@ list.
 
 ### 2. Open the options
 
-From `chrome://extensions`, under GitHub Lines, click "Extension options". If
-you have pinned it to the toolbar, right-click the icon → "Options".
+If you have pinned it to the toolbar, click the icon. Otherwise, from
+`chrome://extensions`, under GitHub Lines, click "Extension options".
 
 Settings are saved as you change them. There is no Save button.
 

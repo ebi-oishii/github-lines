@@ -11,7 +11,7 @@
     "measure": "node scripts/measure.mjs",
     "icons": "node scripts/make-icons.mjs",
     "fixture": "node scripts/capture-fixture.mjs",
-    "package": "zip -qrX github-lines-$npm_package_version.zip manifest.json src icons _locales -x '*/.DS_Store'"
+    "package": "rm -f github-lines-$npm_package_version.zip && zip -qrX github-lines-$npm_package_version.zip manifest.json LICENSE src icons _locales -x '*/.DS_Store'"
   },
   "devDependencies": {
     "jsdom": "^30.0.1",
