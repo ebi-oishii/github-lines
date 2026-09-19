@@ -355,7 +355,13 @@ $('locale').addEventListener('change', async () => {
   location.reload();
 });
 
-document.addEventListener('input', scheduleSave);
+document.addEventListener('input', (e) => {
+  /* Numbers are saved when the field is done with, not as they are typed: "1"
+     on the way to "1200" is a real setting for 400 ms — it reaches every open
+     tab, and can be taken for a threshold on the wrong side of the other. */
+  if (e.target && NUMBERS.includes(e.target.id)) return;
+  scheduleSave();
+});
 // `change` is the field saying it is finished, which is when it can be tidied.
 document.addEventListener('change', () => saveNow().then(reflect));
 

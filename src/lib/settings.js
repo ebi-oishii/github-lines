@@ -96,6 +96,23 @@
 
     if (s.locale !== 'en' && s.locale !== 'ja') s.locale = '';
 
+    /* The numbers, held to what the code that uses them can take. The options
+       page holds its fields to the same shape, but it is not the only way a
+       value gets in here — an older build wrote what it was given, and a
+       fraction reaching `pool` is an array of fractional length. */
+    const whole = (v, least, most) => {
+      const n = Math.round(Number(v));
+      if (!Number.isFinite(n)) return least;
+      return Math.min(most, Math.max(least, n));
+    };
+    s.warnLines = whole(s.warnLines, 1, Number.MAX_SAFE_INTEGER);
+    s.dangerLines = whole(s.dangerLines, 1, Number.MAX_SAFE_INTEGER);
+    s.maxExactFetch = whole(s.maxExactFetch, 0, Number.MAX_SAFE_INTEGER);
+    s.concurrency = whole(s.concurrency, 1, 16);
+    // The ramp runs from one threshold to the other, so they cannot be the
+    // same point — and a danger below the warning is not an order at all.
+    if (s.dangerLines <= s.warnLines) s.dangerLines = s.warnLines + 1;
+
     // An emptied pattern box means "no patterns", but a missing key means
     // "never configured" and should fall back to the defaults.
     if (!Array.isArray(s.excludePatterns)) {

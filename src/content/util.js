@@ -158,12 +158,5 @@
 
   /* Re-run `cb` when the page's own React re-render wipes our injected nodes.
      Debounced hard: GitHub mutates the DOM constantly. */
-  function onDomSettle(cb, ms = 250) {
-    const debounced = GHL.util.debounce(cb, ms);
-    const mo = new MutationObserver(debounced);
-    mo.observe(document.body, { childList: true, subtree: true });
-    return () => mo.disconnect();
-  }
-
-  GHL.util = { el, fmt, fmtCompact, fmtBytes, debounce, throttle, pool, send, onNavigate, onDomSettle };
+  GHL.util = { el, fmt, fmtCompact, fmtBytes, debounce, throttle, pool, send, onNavigate };
 })(globalThis.GHL);

@@ -283,9 +283,6 @@
   "tokenVerify": {
     "message": "検証してオーナーを自動取得"
   },
-  "thresholds": {
-    "message": "閾値"
-  },
   "thresholdsHint": {
     "message": "1 ファイルの行数がこの値を超えたら警告色にします。"
   },
@@ -306,9 +303,6 @@
   },
   "counting": {
     "message": "行数のカウント"
-  },
-  "modeLabel": {
-    "message": "実際の行数の取得"
   },
   "modeAuto": {
     "message": "<strong>自動</strong> — ページを開いたら取得する"
@@ -331,9 +325,6 @@
   "cacheHint": {
     "message": "取得した行数は blob SHA をキーにキャッシュされます。git の blob SHA は内容のハッシュなので、ブランチやコミットが変わっても内容が同じファイルは再取得されません。"
   },
-  "exclusions": {
-    "message": "除外"
-  },
   "respectGitattributes": {
     "message": "<code>.gitattributes</code> の <code>linguist-generated</code> / <code>linguist-vendored</code> を尊重する"
   },
@@ -346,14 +337,8 @@
   "patternsHint": {
     "message": "バイナリ（画像・フォント・アーカイブ等）は拡張子で判定して常に除外されます。"
   },
-  "cache": {
-    "message": "キャッシュ"
-  },
   "clearCache": {
     "message": "キャッシュを削除"
-  },
-  "save": {
-    "message": "保存"
   },
   "reset": {
     "message": "初期設定に戻す"

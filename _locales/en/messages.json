@@ -283,9 +283,6 @@
   "tokenVerify": {
     "message": "Verify and fill in the owners"
   },
-  "thresholds": {
-    "message": "Thresholds"
-  },
   "thresholdsHint": {
     "message": "A file past these line counts is coloured as a warning."
   },
@@ -306,9 +303,6 @@
   },
   "counting": {
     "message": "Line counting"
-  },
-  "modeLabel": {
-    "message": "Fetching exact line counts"
   },
   "modeAuto": {
     "message": "<strong>Automatic</strong> — fetch as soon as the page opens"
@@ -331,9 +325,6 @@
   "cacheHint": {
     "message": "Counts are cached under the file's blob SHA. A git blob SHA is a hash of the content, so a file whose content has not changed is never fetched again, whatever the branch or commit."
   },
-  "exclusions": {
-    "message": "Exclusions"
-  },
   "respectGitattributes": {
     "message": "Respect <code>linguist-generated</code> / <code>linguist-vendored</code> in <code>.gitattributes</code>"
   },
@@ -346,14 +337,8 @@
   "patternsHint": {
     "message": "Binaries (images, fonts, archives and the like) are recognised by extension and always excluded."
   },
-  "cache": {
-    "message": "Cache"
-  },
   "clearCache": {
     "message": "Clear the cache"
-  },
-  "save": {
-    "message": "Save"
   },
   "reset": {
     "message": "Restore defaults"

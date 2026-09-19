@@ -122,8 +122,8 @@ the service worker's `LOCALE` handler).
   reader to the next directory, and a truncated tree's directory totals stay
   marked as estimates
 - The settings' edges: a per-view limit of zero leaves the button reading
-  "Fetched", and unticking every row still leaves unread exclusion rules
-  readable
+  "Fetched", unticking every row still leaves unread exclusion rules readable,
+  and a stored number nothing could count with is made into one that works
 - The column head found without reading English, for a GitHub UI in another
   language — against the shape a subdirectory page actually has, whose first
   row is the go-to-parent one

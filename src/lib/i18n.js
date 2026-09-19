@@ -59,7 +59,12 @@
   /* Reads the chosen locale and loads its catalogue if that is not what is
      already loaded. Resolves once `t` is answering in the right language, so
      callers can await it before their first render. Safe to call repeatedly. */
+  // Which call is the current one: catalogues are fetched from the service
+  // worker, so two changes in quick succession can come back out of order.
+  let generation = 0;
+
   function load() {
+    const mine = ++generation;
     inFlight = (async () => {
       // Reading the choice can fail too — an extension reloaded under an open
       // tab, say. The browser's own language is a working answer; never
@@ -67,14 +72,16 @@
       let settings = null;
       try { settings = GHL.settings ? await GHL.settings.get() : null; } catch (_) { settings = null; }
       const want = settings && SUPPORTED.includes(settings.locale) ? settings.locale : '';
-      if (want === chosenFor) return;
+      if (mine !== generation || want === chosenFor) return;
       if (!want) {
         chosen = null;
         chosenFor = '';
         return;
       }
       try {
-        chosen = await catalogue(want);
+        const messages = await catalogue(want);
+        if (mine !== generation) return; // a later choice has taken over
+        chosen = messages;
         chosenFor = want;
       } catch (_) {
         // Fall back to the browser's language rather than to empty labels.

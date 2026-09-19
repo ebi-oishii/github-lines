@@ -251,8 +251,21 @@
        anything that might decide there is nothing to draw. Both readings ramp;
        only the units change with whichever is on screen. */
     modal.legend.hidden = false;
+    modal.openLink.href = dirUrl(state.ctx, path);
     for (const end of modal.legend.querySelectorAll('[data-ghl-ramp-end]')) {
       end.textContent = m.rampEnd(state.settings);
+    }
+    /* The ramps themselves, redrawn here rather than built once: the
+       thresholds can change while the treemap is open. */
+    for (const bar of modal.legend.querySelectorAll('[data-ghl-ramp]')) {
+      const colorAt = bar.dataset.ghlRamp === 'dir' ? GHL.inline.dirColor : GHL.inline.lineColor;
+      bar.style.background =
+        `linear-gradient(to right, ${GHL.inline.rampStops(state.settings, 12, colorAt).join(', ')})`;
+      const tick = bar.querySelector('.ghl-ramp-tick');
+      if (tick) {
+        tick.style.left =
+          `${(state.settings.warnLines / Math.max(2, state.settings.dangerLines)) * 100}%`;
+      }
     }
     modal.legend.querySelector('[data-ghl-ramp-start]').textContent =
       t(m.key === 'lines' ? 'rampFileStart' : 'rampFileStartSize');
@@ -338,29 +351,30 @@
     const stats = el('span', { class: 'ghl-tm-stats' });
     const status = el('span', { class: 'ghl-tm-status' });
     // The ramps themselves, with the warn threshold ticked on each.
-    const rampBar = (colorAt) => el('span', {
+    const rampBar = (kind) => el('span', {
       class: 'ghl-ramp-bar',
-      style: {
-        background: `linear-gradient(to right, ${GHL.inline.rampStops(state.settings, 12, colorAt).join(', ')})`,
-      },
-    }, [
-      el('span', {
-        class: 'ghl-ramp-tick',
-        style: { left: `${(state.settings.warnLines / Math.max(2, state.settings.dangerLines)) * 100}%` },
-      }),
-    ]);
+      'data-ghl-ramp': kind,
+    }, [el('span', { class: 'ghl-ramp-tick' })]);
     const legend = el('span', { class: 'ghl-legend ghl-ramps' }, [
       el('span', { class: 'ghl-ramp' }, [
         el('span', { class: 'ghl-ramp-end', 'data-ghl-ramp-start': '' }),
-        rampBar(GHL.inline.lineColor),
+        rampBar('file'),
         el('span', { class: 'ghl-ramp-end', 'data-ghl-ramp-end': '' }),
       ]),
       el('span', { class: 'ghl-ramp' }, [
         el('span', { class: 'ghl-ramp-end' }, [t('rampDirStart')]),
-        rampBar(GHL.inline.dirColor),
+        rampBar('dir'),
         el('span', { class: 'ghl-ramp-end', 'data-ghl-ramp-end': '' }),
       ]),
     ]);
+
+    // Drilling in changes what "open on GitHub" means, so the link is kept and
+    // rewritten with the rest of the heading.
+    const openLink = el('a', {
+      class: 'ghl-btn ghl-btn-quiet',
+      href: dirUrl(state.ctx, state.ctx.path),
+      title: t('tmOpenTitle'),
+    }, [t('tmOpen')]);
 
     const overlay = el('div', { id: OVERLAY_ID, class: 'ghl-overlay' }, [
       el('div', { class: 'ghl-modal', role: 'dialog', 'aria-label': t('tmLabel') }, [
@@ -368,11 +382,7 @@
           crumbs,
           stats,
           el('span', { class: 'ghl-spacer' }),
-          el('a', {
-            class: 'ghl-btn ghl-btn-quiet',
-            href: dirUrl(state.ctx, state.ctx.path),
-            title: t('tmOpenTitle'),
-          }, [t('tmOpen')]),
+          openLink,
           el('button', {
             class: 'ghl-btn ghl-btn-quiet', type: 'button', 'aria-label': t('tmClose'),
             onclick: close,
@@ -399,7 +409,8 @@
     const resizeObserver = new ResizeObserver(util.debounce(draw, 80));
     resizeObserver.observe(canvas);
 
-    modal = { overlay, canvas, crumbs, stats, status, legend, state, path: state.ctx.path, onKey, resizeObserver };
+    modal = { overlay, canvas, crumbs, stats, status, legend, openLink,
+      state, path: state.ctx.path, onKey, resizeObserver };
     draw();
   }
 
@@ -409,7 +420,5 @@
     draw();
   }
 
-  function isOpen() { return !!modal; }
-
-  GHL.treemap = { open, close, update, isOpen, squarify };
+  GHL.treemap = { open, close, update, squarify };
 })(globalThis.GHL);

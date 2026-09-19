@@ -343,7 +343,9 @@ async function fetchTree(owner, repo, target, recursive) {
 function getTree(msg) {
   const { owner, repo, oid, recursive = true, path = '', cacheOnly = false } = msg;
   return dedupe(
-    `tree:${owner}/${repo}@${oid}:${recursive ? 'r' : path}${cacheOnly ? ':c' : ''}`,
+    // "r:" and "p:" rather than "r" and the path itself: a directory named
+    // "r" would otherwise share a key with the recursive listing.
+    `tree:${owner}/${repo}@${oid}:${recursive ? 'r:' : `p:${path}`}${cacheOnly ? ':c' : ''}`,
     () => loadTree(msg)
   );
 }
@@ -353,7 +355,7 @@ function getTree(msg) {
 async function loadTree({ owner, repo, oid, recursive = true, path = '', cacheOnly = false }) {
   let sha = oid;
   let immutable = SHA_RE.test(sha);
-  const keyFor = (s) => `${owner}/${repo}@${s}${recursive ? ':r' : ':' + path}`;
+  const keyFor = (s) => `${owner}/${repo}@${s}${recursive ? ':r:' : `:p:${path}`}`;
 
   // Only a commit SHA is safe to cache: a branch name moves, and a stale tree
   // would keep showing yesterday's file sizes forever.
@@ -546,6 +548,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       message: err.message || String(err),
       reset: err.reset,
       authenticated: err.authenticated,
+      // Which token was tried: with several registered, the message is a
+      // mystery without it.
+      tokenLabel: err.tokenLabel,
     });
   });
   return true; // async response

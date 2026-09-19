@@ -673,7 +673,12 @@
       });
       if (seg.node) {
         bar.addEventListener('click', () => {
-          const row = document.querySelector(`.${CELL_CLASS}[data-ghl-path="${cssEscape(seg.node.path)}"]`);
+          const path = cssEscape(seg.node.path);
+          /* GitHub folds a chain of single-child directories into one row, and
+             that row's cell is named for the whole chain — so the child this
+             segment is about is the start of it, not a row of its own. */
+          const row = document.querySelector(`.${CELL_CLASS}[data-ghl-path="${path}"]`)
+            || document.querySelector(`.${CELL_CLASS}[data-ghl-path^="${path}/"]`);
           if (row) {
             row.closest('tr, .Box-row, [role="row"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
             row.classList.add('ghl-flash');
