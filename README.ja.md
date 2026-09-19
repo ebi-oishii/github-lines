@@ -94,4 +94,4 @@ GitHub のリポジトリを開けば動いています。自分から行数を�
 
 ## ライセンス
 
-[MIT](LICENSE)
+[Apache-2.0](LICENSE)

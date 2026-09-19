@@ -114,4 +114,4 @@ If you cloned it: `git pull`, then press reload on GitHub Lines in
 
 ## Licence
 
-[MIT](LICENSE)
+[Apache-2.0](LICENSE)
