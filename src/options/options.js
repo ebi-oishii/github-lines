@@ -243,10 +243,12 @@ function collect() {
     // which would autosave a threshold of nothing and colour every file. A
     // typed-out zero says the same thing, so it is held to the same floor.
     const raw = $(id).value.trim();
-    // All four are counts. A fraction reaching the fetch pool is an array of
-    // fractional length, and a zero threshold puts every file past it.
+    /* All four are counts, so a typed fraction is rounded: one reaching the
+       fetch pool is an array of fractional length. Below the floor is not a
+       setting — a threshold of zero puts every file past it — and is left
+       unsaved, so what was in effect stays in effect. */
     const n = Math.round(Number(raw));
-    if (raw && Number.isFinite(n)) patch[id] = Math.max(LEAST[id], n);
+    if (raw && Number.isFinite(n) && n >= LEAST[id]) patch[id] = n;
   }
   if (patch.concurrency !== undefined) {
     patch.concurrency = Math.min(16, patch.concurrency);

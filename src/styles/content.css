@@ -366,7 +366,7 @@ th:has(> .ghl-col-head)::after {
   cursor: pointer;
   text-decoration: none;
 }
-.ghl-btn:hover { background: var(--ghl-surface-alt); }
+.ghl-btn:not(:disabled):hover { background: var(--ghl-surface-alt); }
 .ghl-btn-quiet { background: transparent; }
 
 /* Manual mode's "fetch line counts" button — the one action the strip offers. */
@@ -376,7 +376,7 @@ th:has(> .ghl-col-head)::after {
   border-color: transparent;
   font-weight: 600;
 }
-.ghl-btn-primary:hover { filter: brightness(1.1); background: var(--ghl-ok); }
+.ghl-btn-primary:not(:disabled):hover { filter: brightness(1.1); background: var(--ghl-ok); }
 /* No pointer-events rule: a disabled button fires no click anyway, and its
    title is the only thing that says why it is disabled. */
 .ghl-btn:disabled { opacity: 0.55; cursor: default; }
