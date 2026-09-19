@@ -7,7 +7,7 @@ Let an AI write code for a while and one file tends to swell out of proportion
 to the rest — but GitHub's own listing shows you nothing but names, so you never
 see it happen. This makes it obvious in the browser, without cloning anything.
 
-![The file list](docs/screenshot-file-list.png)
+![The file list](docs/screenshot-file-list-vue.png)
 
 That `apiSetupHelpers.ts` is nearing the warning threshold at 573 lines, and
 that `compat/` and `components/` carry 13% of the directory each, are both there
@@ -16,7 +16,7 @@ the moment the page opens. (The pictures are Vue's `runtime-core` package.)
 The "Treemap" button switches to a view where **area is line count**. Click a
 directory to drill into it.
 
-![The treemap](docs/screenshot-treemap.png)
+![The treemap](docs/screenshot-treemap-vue.png)
 
 ## Setting it up
 
