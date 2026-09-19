@@ -243,11 +243,13 @@ function collect() {
     // which would autosave a threshold of nothing and colour every file. A
     // typed-out zero says the same thing, so it is held to the same floor.
     const raw = $(id).value.trim();
-    const n = Number(raw);
-    if (raw && Number.isFinite(n) && n >= LEAST[id]) patch[id] = n;
+    // All four are counts. A fraction reaching the fetch pool is an array of
+    // fractional length, and a zero threshold puts every file past it.
+    const n = Math.round(Number(raw));
+    if (raw && Number.isFinite(n)) patch[id] = Math.max(LEAST[id], n);
   }
   if (patch.concurrency !== undefined) {
-    patch.concurrency = Math.min(16, Math.max(1, patch.concurrency));
+    patch.concurrency = Math.min(16, patch.concurrency);
   }
   if (patch.dangerLines < patch.warnLines) {
     // Swapping is friendlier than rejecting; the intent is obvious.

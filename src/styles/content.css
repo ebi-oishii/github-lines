@@ -377,7 +377,9 @@ th:has(> .ghl-col-head)::after {
   font-weight: 600;
 }
 .ghl-btn-primary:hover { filter: brightness(1.1); background: var(--ghl-ok); }
-.ghl-btn:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
+/* No pointer-events rule: a disabled button fires no click anyway, and its
+   title is the only thing that says why it is disabled. */
+.ghl-btn:disabled { opacity: 0.55; cursor: default; }
 
 /* The fetch button's label changes with the toggle and gains a count; a fixed
    footprint keeps the strip from reflowing on every flip. The floor has to

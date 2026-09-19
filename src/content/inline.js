@@ -725,7 +725,8 @@
       ? t('apiResetsIn', Math.ceil((rate.reset - Date.now()) / 60000))
       : '';
     node.querySelector('.ghl-rate-note').textContent = rate.authenticated
-      ? t('apiLeftTitle', fmt(rate.remaining), fmt(rate.limit), resets, rate.label)
+      ? t('apiLeftTitle', fmt(rate.remaining), fmt(rate.limit), resets,
+          rate.label || t('tokenFallback'))
       : t('apiLeftTitleAnon', fmt(rate.remaining), fmt(rate.limit), resets);
   }
 

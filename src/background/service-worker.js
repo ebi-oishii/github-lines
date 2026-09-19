@@ -183,9 +183,12 @@ async function acquireSlot(state) {
    Memory only: relearning after the worker restarts costs one request. */
 const ownerToken = new Map();
 
+/* A token with neither label nor owner has no name to give. The word for
+   "a token" belongs to whoever shows the message: the content script knows
+   which language the reader chose, and this worker does not. */
 function describe(entry) {
   if (!entry) return '';
-  return entry.label || (entry.owners && entry.owners[0]) || GHL.t('tokenFallback');
+  return entry.label || (entry.owners && entry.owners[0]) || '';
 }
 
 /* The token to try first, then any others worth trying if it cannot see the
