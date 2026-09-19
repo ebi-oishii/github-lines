@@ -117,7 +117,7 @@
     const kind = parts[2];
     if (kind && kind !== 'tree' && kind !== 'blob') return null;
 
-    const rest = parts.slice(3).map(decodePath);
+    const rest = parts.slice(3).map(decodeURIComponent);
 
     // owner/repo always come from the URL — it is the one thing that is never
     // stale. The payload is consulted only for the ref name, commit OID and
@@ -190,13 +190,6 @@
     return href.startsWith(prefix) && /^(blob|tree)\//.test(href.slice(prefix.length));
   }
 
-  /* Git allows a filename that is not valid UTF-8, and GitHub percent-encodes
-     the raw bytes, which `decodeURIComponent` throws on. One such row is not a
-     reason to lose the whole listing. */
-  function decodePath(s) {
-    try { return decodeURIComponent(s); } catch { return s; }
-  }
-
   /* The entry a row's link points at, taken from the href.
 
      Not from the link's text, and not from its `title`: GitHub collapses a
@@ -205,7 +198,7 @@
      through empty directories". The href is the one thing that always names
      the entry. */
   function entryFromHref(href, ctx, prefix) {
-    const rest = decodePath(href).slice(prefix.length);
+    const rest = decodeURIComponent(href).slice(prefix.length);
     const kind = rest.startsWith('tree/') ? 'dir' : 'file';
     const afterKind = rest.slice(5); // both "tree/" and "blob/"
     if (!afterKind.startsWith(`${ctx.ref}/`)) return null; // a link to another ref

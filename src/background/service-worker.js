@@ -343,9 +343,7 @@ async function fetchTree(owner, repo, target, recursive) {
 function getTree(msg) {
   const { owner, repo, oid, recursive = true, path = '', cacheOnly = false } = msg;
   return dedupe(
-    // "r:" and "p:" rather than "r" and the path itself: a directory named
-    // "r" would otherwise share a key with the recursive listing.
-    `tree:${owner}/${repo}@${oid}:${recursive ? 'r:' : `p:${path}`}${cacheOnly ? ':c' : ''}`,
+    `tree:${owner}/${repo}@${oid}:${recursive ? 'r' : path}${cacheOnly ? ':c' : ''}`,
     () => loadTree(msg)
   );
 }
@@ -355,7 +353,7 @@ function getTree(msg) {
 async function loadTree({ owner, repo, oid, recursive = true, path = '', cacheOnly = false }) {
   let sha = oid;
   let immutable = SHA_RE.test(sha);
-  const keyFor = (s) => `${owner}/${repo}@${s}${recursive ? ':r:' : `:p:${path}`}`;
+  const keyFor = (s) => `${owner}/${repo}@${s}${recursive ? ':r' : ':' + path}`;
 
   // Only a commit SHA is safe to cache: a branch name moves, and a stale tree
   // would keep showing yesterday's file sizes forever.
@@ -509,14 +507,12 @@ const HANDLERS = {
     const state = identity(entry ? entry.id : ANON);
 
     /* Asking is free, so the cooldown is only there to keep a quiet tab from
-       asking on every view — and to keep a question that keeps failing from
-       being asked on every view too, since a failure leaves what is held
-       exactly as it was. A window that has already reset is worth asking about
-       for the same reason the unknown one is: what is held would report a spent
-       budget that has since come back. */
+       asking on every view. A window that has already reset is worth asking
+       about whatever the cooldown says: what is held is not stale, it is
+       wrong — it would report a spent budget that has since come back. */
     const expired = state.reset != null && state.reset < Date.now();
     const unknown = state.limit == null;
-    if ((expired || unknown) && Date.now() - state.askedAt > 60000) {
+    if (expired || (unknown && Date.now() - state.askedAt > 60000)) {
       state.askedAt = Date.now();
       // Best effort: a budget nobody could ask about is not worth an error.
       await askRateLimit(entry, state).catch(() => {});

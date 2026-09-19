@@ -641,31 +641,15 @@ check('settings: the exact-lines boolean migrates, and only it', () => {
   assertEqual(settings.normalise(undefined).exactLinesMode, 'manual', 'nothing stored at all');
 });
 
-check('settings: a number nothing could use is made into one that works', () => {
-  /* The options page holds its fields to the same shape, but it is not the
-     only way a value gets into storage — an older build wrote what it was
-     given. Whatever is read back has to be something the code can count with:
-     a fraction reaching the fetch pool is an array of fractional length. */
-  const stored = { warnLines: 500, dangerLines: 800, maxExactFetch: 300, concurrency: 8 };
+check('settings: a number the options page could not read is left alone', () => {
+  // `Number('')` is 0, which passed the old guard — the options page writes
+  // nothing for an emptied field, so the stored value survives being retyped.
+  const stored = { warnLines: 500, dangerLines: 800, maxExactFetch: 300 };
   for (const key of Object.keys(stored)) {
     assertEqual(settings.normalise({ ...stored })[key], stored[key], `${key} round-trips`);
   }
-  assertEqual(settings.normalise({ ...stored, warnLines: 0 }).warnLines, 1,
-    'a threshold of zero would put every file past it');
-  assertEqual(settings.normalise({ ...stored, concurrency: 8.5 }).concurrency, 9,
-    'a fraction is rounded, not handed to the pool');
-  assertEqual(settings.normalise({ ...stored, concurrency: 0 }).concurrency, 1,
-    'and a pool of nobody fetches nothing for ever');
-  assertEqual(settings.normalise({ ...stored, concurrency: 99 }).concurrency, 16,
-    'with the ceiling GitHub asks for kept');
-  assertEqual(settings.normalise({ ...stored, maxExactFetch: 0 }).maxExactFetch, 0,
-    'a fetch limit of zero is a real answer, unlike a threshold of zero');
-  const same = settings.normalise({ ...stored, warnLines: 500, dangerLines: 500 });
-  assert(same.dangerLines > same.warnLines,
-    `the ramp runs between the two, so they cannot be one point (${same.warnLines}/${same.dangerLines})`);
-  const wrongWayRound = settings.normalise({ ...stored, warnLines: 800, dangerLines: 500 });
-  assertEqual(wrongWayRound.warnLines, 500, 'a pair the wrong way round is swapped, not invented');
-  assertEqual(wrongWayRound.dangerLines, 800, 'so both numbers the reader chose survive');
+  assertEqual(settings.normalise({ ...stored, warnLines: 0 }).warnLines, 0,
+    'the store keeps what it is given; the options page is what refuses a zero');
 });
 
 check('the ramp answers the same whether it is asked once or a hundred times', () => {

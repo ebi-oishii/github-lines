@@ -12,10 +12,9 @@ const CHECKBOXES = [
   'respectGitattributes',
 ];
 const NUMBERS = ['warnLines', 'dangerLines', 'maxExactFetch', 'concurrency'];
-/* What a number may be is `GHL.settings.normalise`'s to say — the store holds
-   every value to it, whoever wrote it. This page hands over what was typed and
-   shows what came back, so there is no second copy of the rules to disagree
-   with the first. */
+// A threshold of zero would put every file past it, so zero is not an answer —
+// unlike a fetch limit of zero, which is a way of saying "fetch nothing".
+const LEAST = { warnLines: 1, dangerLines: 1, concurrency: 1, maxExactFetch: 0 };
 const SELECTS = ['locale'];
 
 function setStatus(node, text, tone) {
@@ -245,7 +244,14 @@ function collect() {
     // typed-out zero says the same thing, so it is held to the same floor.
     const raw = $(id).value.trim();
     const n = Number(raw);
-    if (raw && Number.isFinite(n)) patch[id] = n;
+    if (raw && Number.isFinite(n) && n >= LEAST[id]) patch[id] = n;
+  }
+  if (patch.concurrency !== undefined) {
+    patch.concurrency = Math.min(16, Math.max(1, patch.concurrency));
+  }
+  if (patch.dangerLines < patch.warnLines) {
+    // Swapping is friendlier than rejecting; the intent is obvious.
+    [patch.warnLines, patch.dangerLines] = [patch.dangerLines, patch.warnLines];
   }
   patch.excludePatterns = $('excludePatterns').value
     .split('\n')
@@ -273,26 +279,8 @@ function scheduleSave() {
 async function saveNow() {
   clearTimeout(pendingWrite);
   pendingWrite = null;
-  const patch = collect();
-  const saved = await GHL.settings.set(patch);
-  /* A number the store had to change — below its floor, above its ceiling, or
-     a pair of thresholds in the wrong order — is a change to what was typed,
-     so it is said out loud, and `reflect` puts what is in effect in the form. */
-  const adjusted = NUMBERS.some((id) => patch[id] !== undefined && saved[id] !== patch[id]);
-  flash(adjusted ? t('savedAdjusted') : t('saved'), adjusted ? 'warn' : 'ok');
-  return saved;
-}
-
-/* What was saved, read back into the form, so the page never shows a number
-   that is not the one in effect — whether it was clamped on the way in or the
-   two thresholds were swapped. Only fields nobody is typing in are touched, so
-   the cursor stays put; a field left empty mid-edit is not one of them. */
-function reflect(saved) {
-  for (const id of NUMBERS) {
-    const field = $(id);
-    if (field === document.activeElement) continue;
-    if (String(saved[id]) !== field.value.trim()) field.value = saved[id];
-  }
+  await GHL.settings.set(collect());
+  flash(t('saved'), 'ok');
 }
 
 async function refreshCacheStats() {
@@ -340,8 +328,7 @@ document.addEventListener('input', (e) => {
   if (e.target && NUMBERS.includes(e.target.id)) return;
   scheduleSave();
 });
-// `change` is the field saying it is finished, which is when it can be tidied.
-document.addEventListener('change', () => saveNow().then(reflect));
+document.addEventListener('change', saveNow);
 
 // Ctrl/Cmd-S is muscle memory; honour it by flushing rather than by ignoring it.
 document.addEventListener('keydown', (e) => {
