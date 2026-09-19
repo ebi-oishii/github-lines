@@ -1091,7 +1091,20 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
    still describes the directory the page was first loaded with. Anything that
    reads the current directory out of that payload will silently label the new
    rows with the old directory's paths. */
+/* The directory the last navigateDom put on screen. main.js rebuilds the view
+   when the context changes, and only then — so navigating to the directory
+   already showing silently reads the previous test's finished view. That has
+   caught tests out twice; it stops here. */
+let shownPath = null;
+
 function navigateDom(dom, dirPath, entries) {
+  if (dirPath === shownPath) {
+    throw new Error(
+      `navigateDom("${dirPath}") from the same directory — the view is not rebuilt, `
+      + 'so this would read the previous one. Use another directory.'
+    );
+  }
+  shownPath = dirPath;
   const doc = dom.window.document;
 
   const tbody = doc.querySelector('table[aria-labelledby="folders-and-files"] tbody');
@@ -1287,6 +1300,23 @@ await domCheckAsync('manual mode fetches nothing — not even the tree — until
   assert(!fetchButton().classList.contains('ghl-btn-primary'), 'plain for sizes');
   const status = document.querySelector('.ghl-summary-status').textContent;
   assertEqual(status, msg('statusIdle'), 'the status says nothing has been fetched');
+});
+
+domCheck('the checkbox column finds its header without reading English', () => {
+  /* GitHub's own interface has a language too. The name columns are the ones
+     the rows put their name cells in, whatever the header says. */
+  const heads = [...document.querySelectorAll('table[aria-labelledby="folders-and-files"] thead th')];
+  const named = heads.filter((th) => th.textContent.trim() === 'Name');
+  assert(named.length >= 1, 'the fixture is in English to start with');
+  const before = named.map((th) => th.textContent);
+  try {
+    for (const th of named) th.textContent = '名前';
+    const found = GHL.page.findNameHeaders();
+    assertEqual(found.length, named.length, 'the same header cells are found');
+    assert(found.every((th) => named.includes(th)), 'and they are the name columns, not the commit ones');
+  } finally {
+    named.forEach((th, i) => { th.textContent = before[i]; });
+  }
 });
 
 await domCheckAsync('pressing the size button fetches the tree and shows sizes', async () => {
@@ -1580,9 +1610,9 @@ await domCheckAsync('off mode never fetches and offers no button', async () => {
 
 await domCheckAsync('the strip reports what is left of the API budget', async () => {
   await settings.set({ exactLinesMode: 'auto' });
-  navigateDom(currentDom, 'source/as-promise', [
+  navigateDom(currentDom, 'source', [
+    { name: 'create.ts', type: 'file' },
     { name: 'index.ts', type: 'file' },
-    { name: 'types.ts', type: 'file' },
   ]);
   await waitFor(
     () => { const n = document.querySelector('.ghl-rate'); return n && !n.hidden; },
@@ -1772,6 +1802,31 @@ await domCheckAsync('a repository with more exclusion files than it reads still 
   }
 });
 
+await domCheckAsync("a truncated tree's directory totals stay marked as estimates", async () => {
+  /* The tree came back cut short, so a directory's descendants are not all in
+     it. Every count present can be exact and the total still be short of the
+     truth — which is what the `~` says. */
+  await settings.set({ exactLinesMode: 'manual' });
+  try {
+    stubTreeTruncated = true;
+    navigateDom(currentDom, 'source', [
+      { name: 'core', type: 'dir' },
+      { name: 'create.ts', type: 'file' },
+    ]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(() => renderedPaths().includes('source/create.ts'), 8000, 'the counts to land');
+
+    const file = document.querySelector('.ghl-cell[data-ghl-path="source/create.ts"] .ghl-num');
+    assert(!file.textContent.startsWith('~'), `a file that was counted is exact (${file.textContent})`);
+    const dir = document.querySelector('.ghl-cell[data-ghl-path="source/core"] .ghl-num');
+    assert(dir.textContent.startsWith('~'),
+      `a directory that may be missing descendants is not (${dir.textContent})`);
+  } finally {
+    stubTreeTruncated = false;
+  }
+});
+
 await domCheckAsync('a directory the tree left out counts nothing, and does not stick', async () => {
   /* A truncated tree may not carry the directory on screen. The repository
      root is not a stand-in for it: its totals are the wrong ones, and fetching
@@ -1804,6 +1859,58 @@ await domCheckAsync('a directory the tree left out counts nothing, and does not 
     'the treemap comes back with it');
   assertEqual(document.querySelector('.ghl-summary-status').textContent, '',
     'and the message does not follow the reader around');
+});
+
+await domCheckAsync('a per-view limit of zero leaves nothing to press', async () => {
+  // "Fetch nothing" is a setting; the button has to read as done, not offer a
+  // count of zero that cannot be pressed.
+  await settings.set({ exactLinesMode: 'manual', maxExactFetch: 0 });
+  try {
+    navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(() => fetchButton().textContent === msg('fetchDone'), 8000, 'the button to read as done');
+    assert(fetchButton().disabled, 'and to be done');
+  } finally {
+    await settings.set({ maxExactFetch: settings.DEFAULTS.maxExactFetch });
+  }
+});
+
+await domCheckAsync('unticking every row still leaves the unread rules readable', async () => {
+  /* Unticking narrows what gets counted. It says nothing about the exclusion
+     rules the view could not read — and if it disabled the one press that
+     re-reads them, the view could never be put right. */
+  STUB_TREE.push({ path: 'source/as-promise/.gitattributes', type: 'file', size: 40, sha: 'sha-attrs' });
+  try {
+    stubAttributes = { ok: false, error: 'rate_limit' };
+    await settings.set({ exactLinesMode: 'manual' });
+    navigateDom(currentDom, 'source/as-promise', [
+      { name: 'index.ts', type: 'file' },
+      { name: 'types.ts', type: 'file' },
+    ]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(
+      () => renderedPaths().includes('source/as-promise/index.ts'),
+      8000,
+      'the tree, with the rules unread'
+    );
+
+    const all = document.querySelector('[data-ghl-action="pick-all"]');
+    all.checked = false;
+    all.dispatchEvent(new currentDom.window.Event('change', { bubbles: true }));
+    await waitFor(() => !rowPick('source/as-promise/index.ts').checked, 3000, 'every row unticked');
+    assert(!fetchButton().disabled,
+      `the press that would read them again is still there (${fetchButton().textContent})`);
+  } finally {
+    stubAttributes = null;
+    STUB_TREE.pop();
+    const all = document.querySelector('[data-ghl-action="pick-all"]');
+    if (all) {
+      all.checked = true;
+      all.dispatchEvent(new currentDom.window.Event('change', { bubbles: true }));
+    }
+  }
 });
 
 await domCheckAsync('leaving the file list tears the UI down', async () => {

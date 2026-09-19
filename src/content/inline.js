@@ -601,10 +601,12 @@
       title = t('fetchSizesTitle');
       disabled = false;
     } else if (state.press === 'tree') {
+      // Reading the tree is not about which rows are ticked — and when it is
+      // the way back from something unread, unticking must not bar it.
       label = t('fetchLines');
       primary = true;
-      disabled = none;
-      title = none ? t('fetchNothingTicked') : t('fetchLinesTitle');
+      disabled = false;
+      title = t('fetchLinesTitle');
     } else if (state.press === 'counts') {
       label = t('fetchLinesCount', fmt(state.pending));
       primary = true;
@@ -635,8 +637,9 @@
     const total = m.value(dirNode);
     const biggest = [...dirNode.children.values()].sort((a, b) => m.value(b) - m.value(a))[0];
 
-    if (!state.index) {
-      // Nothing fetched yet — the status line carries the message instead.
+    if (!state.index || state.missingDirectory) {
+      // Nothing fetched yet, or nothing covering what is on screen — the status
+      // line carries the message instead. A zero here would read as an answer.
       stats.textContent = '—';
     } else {
       const parts = [m.long(dirNode), filesOf(dirNode.fileCount)];

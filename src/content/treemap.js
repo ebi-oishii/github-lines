@@ -260,19 +260,20 @@
       tick.title = t('rampTick', m.warnAt(state.settings));
     }
 
+    /* Breadcrumb and stats before anything decides there is nothing to draw: a
+       heading left over from the last directory, above an empty canvas, reads
+       as that directory being empty. */
+    modal.crumbs.textContent = '';
+    for (const c of buildBreadcrumb(state.ctx, path, drill)) modal.crumbs.appendChild(c);
+    modal.stats.textContent = node ? `${m.long(node)} · ${filesOf(node.fileCount)}` : '—';
+    modal.status.textContent = statusLine(state, m);
+
     const canvas = modal.canvas;
     canvas.textContent = '';
     if (!node) return;
 
     const rect = canvas.getBoundingClientRect();
     if (rect.width < 10 || rect.height < 10) return;
-
-    // Breadcrumb + stats
-    modal.crumbs.textContent = '';
-    for (const c of buildBreadcrumb(state.ctx, path, drill)) modal.crumbs.appendChild(c);
-
-    modal.stats.textContent = `${m.long(node)} · ${filesOf(node.fileCount)}`;
-    modal.status.textContent = statusLine(state, m);
 
     const opts = {
       settings: state.settings,

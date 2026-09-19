@@ -93,7 +93,7 @@
       node.total = node.excluded ? 0 : node.lines;
       node.bytes = node.excluded ? 0 : node.size;
       node.fileCount = node.excluded ? 0 : 1;
-      node.allExact = node.excluded || node.exact;
+      node.allExact = node.excluded || (node.exact && !node.incomplete);
       node.maxFile = node.total;
       node.maxFileBytes = node.bytes;
       return;
@@ -101,7 +101,9 @@
     let total = 0;
     let bytes = 0;
     let fileCount = 0;
-    let allExact = true;
+    // A directory whose descendants did not all come back cannot be exact,
+    // however exact the ones that did are.
+    let allExact = !node.incomplete;
     let maxFile = 0;
     let maxFileBytes = 0;
     for (const child of node.children.values()) {
@@ -229,6 +231,9 @@
       if (state.status === 'idle' || state.status === 'error'
         || state.needsMetadata || !state.index) return 'tree';
       if (state.metric !== 'lines') return null;
+      // A limit of zero is a way of saying "fetch nothing"; there is no count
+      // to offer.
+      if (!state.settings.maxExactFetch) return null;
       return remaining().length ? 'counts' : null;
     }
 
@@ -471,6 +476,13 @@
         classify(state.index, isExcluded, patterns.makeLinguistMatcher(attributes.rules));
         refresh();
       }
+      /* What the numbers cannot account for: rules that went unread, and, for a
+         directory, descendants a truncated tree left out. Either makes a total
+         an approximation, which is what the `~` in front of it says. */
+      for (const node of state.index.values()) {
+        node.incomplete = !attributes.complete || (node.type === 'dir' && state.truncated);
+      }
+      refresh();
       state.needsMetadata = !attributes.complete || unreadDirectory;
       state.metaWarning = attributes.error;
       emitNow();
@@ -553,10 +565,9 @@
           ? loadTree(state.metric === 'lines', false)
           : runExactPass();
         running = pass
-          .catch((err) => {
-            state.warning = { error: 'exception', message: String(err && err.message || err) };
-            emitNow();
-          })
+          // Not a warning painted over a view that is still "loading": the
+          // status has to move, or the button reads "fetching" for ever.
+          .catch(fail)
           .finally(() => { running = null; });
         return running;
       },

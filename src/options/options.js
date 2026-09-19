@@ -17,6 +17,9 @@ const NUMBERS = ['warnLines', 'dangerLines', 'maxExactFetch', 'concurrency'];
 const LEAST = { warnLines: 1, dangerLines: 1, concurrency: 1, maxExactFetch: 0 };
 const MOST = { concurrency: 16 };
 
+// Set by `collect()` when it put the two thresholds back in order.
+let swapped = false;
+
 /* What a field may hold, in one place: the value saved and the value written
    back to the form are the same answer. */
 function clamp(id, n) {
@@ -262,8 +265,11 @@ function collect() {
     .map((l) => l.trim())
     .filter(Boolean);
 
-  if (patch.dangerLines < patch.warnLines) {
-    // Swapping is friendlier than rejecting; the intent is obvious.
+  swapped = patch.dangerLines < patch.warnLines;
+  if (swapped) {
+    // Swapping is friendlier than rejecting; the intent is obvious. It is also
+    // a change to what was typed, so it is said out loud and shown in the form
+    // rather than left to differ from it.
     [patch.warnLines, patch.dangerLines] = [patch.dangerLines, patch.warnLines];
   }
   return patch;
@@ -287,23 +293,20 @@ function scheduleSave() {
 async function saveNow() {
   clearTimeout(pendingWrite);
   pendingWrite = null;
-  await GHL.settings.set(collect());
-  flash(t('saved'), 'ok');
+  const saved = await GHL.settings.set(collect());
+  flash(swapped ? t('savedSwapped') : t('saved'), swapped ? 'warn' : 'ok');
+  return saved;
 }
 
-/* The one thing read back into the form: a field holding a number outside what
-   it may hold. Each field is compared against its own clamp — never against
-   what was saved, which may have come from the warn/danger swap and would move
-   a number the reader just typed into the other field. Only fields nobody is
-   typing in are touched, so the cursor stays put. */
-function reflect() {
+/* What was saved, read back into the form, so the page never shows a number
+   that is not the one in effect — whether it was clamped on the way in or the
+   two thresholds were swapped. Only fields nobody is typing in are touched, so
+   the cursor stays put; a field left empty mid-edit is not one of them. */
+function reflect(saved) {
   for (const id of NUMBERS) {
     const field = $(id);
-    if (field === document.activeElement) continue;
-    const raw = field.value.trim();
-    const n = Number(raw);
-    if (!raw || !Number.isFinite(n)) continue;
-    if (clamp(id, n) !== n) field.value = clamp(id, n);
+    if (field === document.activeElement || !field.value.trim()) continue;
+    if (String(saved[id]) !== field.value.trim()) field.value = saved[id];
   }
 }
 

@@ -5,7 +5,7 @@ dependencies (jsdom, playwright-core).
 
 ```bash
 npm install
-npm test             # logic and DOM tests (95 of them, no network)
+npm test             # logic and DOM tests (99 of them, no network)
 npm run smoke        # load it into a real Chrome and drive github.com
 npm run measure      # count the API requests
 npm run icons        # regenerate icons/*.png
@@ -96,7 +96,7 @@ the service worker's `LOCALE` handler).
 
 ## Tests
 
-### `scripts/test.mjs` (95, no network)
+### `scripts/test.mjs` (99, no network)
 
 - Pure logic: globs, `.gitattributes`, line estimation, rollups, the treemap
   layout algorithm
@@ -118,8 +118,14 @@ the service worker's `LOCALE` handler).
   press does what the button offered — a failed size fetch never turns into a
   file-per-row count
 - What came back not covering the view: a directory a truncated tree left out
-  counts nothing rather than counting the repository, and does not follow the
-  reader to the next directory
+  counts nothing rather than counting the repository, does not follow the
+  reader to the next directory, and a truncated tree's directory totals stay
+  marked as estimates
+- The settings' edges: a per-view limit of zero leaves the button reading
+  "Fetched", and unticking every row still leaves unread exclusion rules
+  readable
+- The column head found without reading English, for a GitHub UI in another
+  language
 - Localisation: both catalogues carrying the same keys and the same `$1`
   substitutions, and every key the code asks for existing
 
