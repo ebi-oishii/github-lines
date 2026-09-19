@@ -224,3 +224,36 @@ input:focus, textarea:focus {
   .status[data-tone="warn"] { color: #d29922; }
 }
 .status[data-tone="idle"] { color: var(--fg-muted); }
+
+/* The one thing here that cannot be undone: restoring the defaults takes the
+   saved tokens with it, so it asks first. */
+.confirm {
+  max-width: 420px;
+  padding: 20px 22px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.confirm::backdrop { background: rgba(0, 0, 0, 0.4); }
+.confirm h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.confirm p {
+  margin: 0 0 18px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.btn.danger {
+  color: #fff;
+  background: var(--danger);
+  border-color: transparent;
+  font-weight: 600;
+}

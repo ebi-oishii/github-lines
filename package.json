@@ -1,7 +1,8 @@
 {
   "name": "github-lines",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Chrome extension that shows per-directory line-count proportions on GitHub, so bloated files are obvious at a glance.",
   "type": "module",
   "scripts": {
@@ -9,7 +10,8 @@
     "smoke": "node scripts/smoke.mjs",
     "measure": "node scripts/measure.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "fixture": "node scripts/capture-fixture.mjs"
+    "fixture": "node scripts/capture-fixture.mjs",
+    "package": "rm -f github-lines-$npm_package_version.zip && zip -qrX github-lines-$npm_package_version.zip manifest.json LICENSE src icons _locales -x '*/.DS_Store'"
   },
   "devDependencies": {
     "jsdom": "^30.0.1",

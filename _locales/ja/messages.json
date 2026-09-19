@@ -343,6 +343,13 @@
   "reset": {
     "message": "初期設定に戻す"
   },
+  "resetWarning": {
+    "message": "すべての設定が既定値に戻り、保存したアクセストークンも削除されます。キャッシュはそのまま残ります。",
+    "description": "Shown in the confirmation before restoring defaults"
+  },
+  "cancel": {
+    "message": "キャンセル"
+  },
   "tokenEmpty": {
     "message": "トークンが未入力です"
   },

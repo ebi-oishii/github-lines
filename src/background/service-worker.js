@@ -536,6 +536,12 @@ const HANDLERS = {
   PING: async () => ({ ok: true }),
 };
 
+/* The toolbar icon. There is nothing to show in a popup that the strip on the
+   page does not already say, so pressing it opens the settings. */
+chrome.action.onClicked.addListener(() => {
+  chrome.runtime.openOptionsPage();
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   const handler = HANDLERS[msg && msg.type];
   if (!handler) return false;

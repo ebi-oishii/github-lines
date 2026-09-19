@@ -6,3 +6,6 @@ tests/screenshots/
 
 # Packaged extension
 *.zip
+
+# Notes kept locally, not published
+docs/development.md

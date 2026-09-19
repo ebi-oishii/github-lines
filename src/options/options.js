@@ -315,7 +315,14 @@ $('add-token').addEventListener('click', () => {
   addTokenRow({});
   ensureDefaultChecked();
 });
-$('reset').addEventListener('click', reset);
+/* Restoring the defaults is the only thing on this page that cannot be undone
+   — the saved tokens go with it — so it is the only thing that asks first. */
+$('reset').addEventListener('click', () => $('reset-confirm').showModal());
+$('reset-cancel').addEventListener('click', () => $('reset-confirm').close());
+$('reset-go').addEventListener('click', async () => {
+  $('reset-confirm').close();
+  await reset();
+});
 $('clear-cache').addEventListener('click', clearCache);
 
 /* Every other setting takes effect without redrawing this page; a new language
