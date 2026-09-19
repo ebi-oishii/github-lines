@@ -382,9 +382,9 @@
     "message": "$1 として有効 — $2（残り $3/$4 回/時）$5",
     "description": "$1 login, $2 what it reaches, $3/$4 requests left, $5 a note about its kind"
   },
-  "savedSwapped": {
-    "message": "保存しました — 警告と危険のしきい値が逆だったため入れ替えました",
-    "description": "Shown when the warn and danger thresholds were entered the wrong way round"
+  "savedAdjusted": {
+    "message": "保存しました — 設定できる範囲に調整しました",
+    "description": "Shown when the store had to change a number that was typed in"
   },
   "saved": {
     "message": "保存しました"

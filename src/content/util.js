@@ -156,7 +156,5 @@
     });
   }
 
-  /* Re-run `cb` when the page's own React re-render wipes our injected nodes.
-     Debounced hard: GitHub mutates the DOM constantly. */
   GHL.util = { el, fmt, fmtCompact, fmtBytes, debounce, throttle, pool, send, onNavigate };
 })(globalThis.GHL);

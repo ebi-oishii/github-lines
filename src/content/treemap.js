@@ -8,10 +8,10 @@
 
   const { util } = GHL;
   const { el, fmt } = util;
-  const { t, count } = GHL.i18n;
+  const { t } = GHL.i18n;
 
-  const linesOf = (n) => count('unitLines', n, fmt(n));
-  const filesOf = (n) => count('unitFiles', n, fmt(n));
+  // Counted nouns are said the same way as on the strip.
+  const { linesOf, filesOf } = GHL.inline;
 
   const OVERLAY_ID = 'ghl-treemap-overlay';
   const HEADER_H = 17;

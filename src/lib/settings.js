@@ -109,9 +109,14 @@
     s.dangerLines = whole(s.dangerLines, 1, Number.MAX_SAFE_INTEGER);
     s.maxExactFetch = whole(s.maxExactFetch, 0, Number.MAX_SAFE_INTEGER);
     s.concurrency = whole(s.concurrency, 1, 16);
-    // The ramp runs from one threshold to the other, so they cannot be the
-    // same point — and a danger below the warning is not an order at all.
-    if (s.dangerLines <= s.warnLines) s.dangerLines = s.warnLines + 1;
+    /* The ramp runs from one threshold to the other. Danger below warn is the
+       pair entered the wrong way round, and swapping keeps both numbers the
+       reader chose; danger equal to warn is no range at all, and the only
+       repair is to make one. */
+    if (s.dangerLines < s.warnLines) {
+      [s.warnLines, s.dangerLines] = [s.dangerLines, s.warnLines];
+    }
+    if (s.dangerLines === s.warnLines) s.dangerLines = s.warnLines + 1;
 
     // An emptied pattern box means "no patterns", but a missing key means
     // "never configured" and should fall back to the defaults.

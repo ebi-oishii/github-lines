@@ -12,18 +12,10 @@ const CHECKBOXES = [
   'respectGitattributes',
 ];
 const NUMBERS = ['warnLines', 'dangerLines', 'maxExactFetch', 'concurrency'];
-// A threshold of zero would put every file past it, so zero is not an answer —
-// unlike a fetch limit of zero, which is a way of saying "fetch nothing".
-const LEAST = { warnLines: 1, dangerLines: 1, concurrency: 1, maxExactFetch: 0 };
-const MOST = { concurrency: 16 };
-
-/* What a field may hold, in one place: the value saved and the value written
-   back to the form are the same answer. All four are counts, so a typed
-   fraction is rounded rather than carried into code that counts with it. */
-function clamp(id, n) {
-  const low = Math.max(LEAST[id], Math.round(n));
-  return MOST[id] === undefined ? low : Math.min(MOST[id], low);
-}
+/* What a number may be is `GHL.settings.normalise`'s to say — the store holds
+   every value to it, whoever wrote it. This page hands over what was typed and
+   shows what came back, so there is no second copy of the rules to disagree
+   with the first. */
 const SELECTS = ['locale'];
 
 function setStatus(node, text, tone) {
@@ -253,10 +245,7 @@ function collect() {
     // typed-out zero says the same thing, so it is held to the same floor.
     const raw = $(id).value.trim();
     const n = Number(raw);
-    // Clamped rather than dropped: dropping it would save nothing while the
-    // page said "Saved", leaving the field showing a number that is not in
-    // effect. `reflect()` puts the clamped value back once the field is done.
-    if (raw && Number.isFinite(n)) patch[id] = clamp(id, n);
+    if (raw && Number.isFinite(n)) patch[id] = n;
   }
   patch.excludePatterns = $('excludePatterns').value
     .split('\n')
@@ -281,27 +270,16 @@ function scheduleSave() {
   pendingWrite = setTimeout(saveNow, WRITE_DELAY);
 }
 
-/* The two thresholds have an order to them. It is judged on the values that
-   will be in effect, not only on the ones just typed: a field left empty keeps
-   what is stored, which can still be on the wrong side of the other. Swapping
-   is friendlier than rejecting — and it is a change to what was typed, so it is
-   said out loud and shown in the form rather than left to differ from it. */
-function order(patch, stored) {
-  const warn = patch.warnLines !== undefined ? patch.warnLines : stored.warnLines;
-  const danger = patch.dangerLines !== undefined ? patch.dangerLines : stored.dangerLines;
-  if (!(danger < warn)) return false;
-  patch.warnLines = danger;
-  patch.dangerLines = warn;
-  return true;
-}
-
 async function saveNow() {
   clearTimeout(pendingWrite);
   pendingWrite = null;
   const patch = collect();
-  const swapped = order(patch, await GHL.settings.get());
   const saved = await GHL.settings.set(patch);
-  flash(swapped ? t('savedSwapped') : t('saved'), swapped ? 'warn' : 'ok');
+  /* A number the store had to change — below its floor, above its ceiling, or
+     a pair of thresholds in the wrong order — is a change to what was typed,
+     so it is said out loud, and `reflect` puts what is in effect in the form. */
+  const adjusted = NUMBERS.some((id) => patch[id] !== undefined && saved[id] !== patch[id]);
+  flash(adjusted ? t('savedAdjusted') : t('saved'), adjusted ? 'warn' : 'ok');
   return saved;
 }
 
@@ -375,7 +353,12 @@ document.addEventListener('keydown', (e) => {
 
 // A page closing or backgrounding takes its timers with it.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && pendingWrite) saveNow();
+  if (document.visibilityState !== 'hidden') return;
+  /* Leaving the page is being done with the field. Blurring it fires the same
+     `change` that tabbing away would, which is what saves a number. */
+  const field = document.activeElement;
+  if (field && NUMBERS.includes(field.id)) field.blur();
+  if (pendingWrite) saveNow();
 });
 
 (async () => {

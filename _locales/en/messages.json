@@ -382,9 +382,9 @@
     "message": "valid as $1 — $2 ($3/$4 requests left this hour)$5",
     "description": "$1 login, $2 what it reaches, $3/$4 requests left, $5 a note about its kind"
   },
-  "savedSwapped": {
-    "message": "Saved — the warn and danger thresholds were the wrong way round, so they were swapped",
-    "description": "Shown when the warn and danger thresholds were entered the wrong way round"
+  "savedAdjusted": {
+    "message": "Saved — a number was outside what it can be, so it was adjusted",
+    "description": "Shown when the store had to change a number that was typed in"
   },
   "saved": {
     "message": "Saved"

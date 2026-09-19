@@ -84,7 +84,10 @@
         chosen = messages;
         chosenFor = want;
       } catch (_) {
-        // Fall back to the browser's language rather than to empty labels.
+        // Fall back to the browser's language rather than to empty labels —
+        // unless a later choice has already settled, whose catalogue this
+        // failure has nothing to do with.
+        if (mine !== generation) return;
         chosen = null;
         chosenFor = '';
       }

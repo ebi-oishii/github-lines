@@ -677,13 +677,19 @@
           /* GitHub folds a chain of single-child directories into one row, and
              that row's cell is named for the whole chain — so the child this
              segment is about is the start of it, not a row of its own. */
-          const row = document.querySelector(`.${CELL_CLASS}[data-ghl-path="${path}"]`)
-            || document.querySelector(`.${CELL_CLASS}[data-ghl-path^="${path}/"]`);
-          if (row) {
-            row.closest('tr, .Box-row, [role="row"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            row.classList.add('ghl-flash');
-            setTimeout(() => row.classList.remove('ghl-flash'), 1200);
+          let cells = [...document.querySelectorAll(`.${CELL_CLASS}[data-ghl-path="${path}"]`)];
+          if (!cells.length) {
+            cells = [...document.querySelectorAll(`.${CELL_CLASS}[data-ghl-path^="${path}/"]`)];
           }
+          if (!cells.length) return;
+          cells[0].closest('tr, .Box-row, [role="row"]')
+            ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          // A row has a name cell per breakpoint and shows one of them; which
+          // one is not this code's business, so both flash.
+          for (const cell of cells) cell.classList.add('ghl-flash');
+          setTimeout(() => {
+            for (const cell of cells) cell.classList.remove('ghl-flash');
+          }, 1200);
         });
         bar.classList.add('ghl-seg-clickable');
       }
@@ -843,7 +849,7 @@
   }
 
   GHL.inline = {
-    render, clearRows, removeSummary, severity, errorText,
+    render, clearRows, removeSummary, severity, errorText, linesOf, filesOf,
     METRICS, metricOf, viewOf, droppedChildren, lineColor, dirColor, rampStops, SUMMARY_ID,
   };
 })(globalThis.GHL);

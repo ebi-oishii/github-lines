@@ -663,6 +663,9 @@ check('settings: a number nothing could use is made into one that works', () => 
   const same = settings.normalise({ ...stored, warnLines: 500, dangerLines: 500 });
   assert(same.dangerLines > same.warnLines,
     `the ramp runs between the two, so they cannot be one point (${same.warnLines}/${same.dangerLines})`);
+  const wrongWayRound = settings.normalise({ ...stored, warnLines: 800, dangerLines: 500 });
+  assertEqual(wrongWayRound.warnLines, 500, 'a pair the wrong way round is swapped, not invented');
+  assertEqual(wrongWayRound.dangerLines, 800, 'so both numbers the reader chose survive');
 });
 
 check('the ramp answers the same whether it is asked once or a hundred times', () => {
@@ -1766,9 +1769,19 @@ await domCheckAsync('a collapsed row takes the files it stands for with it', asy
       .find((seg) => seg.title.startsWith('utils'));
     assert(segment, 'the strip has a segment for the folded row');
     segment.dispatchEvent(new currentDom.window.Event('click', { bubbles: true }));
-    const flashed = document.querySelector('.ghl-cell.ghl-flash');
-    assertEqual(flashed && flashed.dataset.ghlPath, 'source/core/utils/deep',
+    const flashed = [...document.querySelectorAll('.ghl-cell.ghl-flash')];
+    assert(flashed.length && flashed.every((c) => c.dataset.ghlPath === 'source/core/utils/deep'),
       'clicking the segment reaches the row it stands for');
+    /* A row has a name cell per breakpoint and shows one of them — the hidden
+       one comes first in the markup, so flashing only the first flashes
+       nothing the reader can see. */
+    const named = [...document.querySelectorAll('.ghl-cell[data-ghl-path="source/core/options.ts"]')];
+    assert(named.length > 1, 'the fixture has a cell per breakpoint to get this wrong with');
+    const seg = [...document.querySelectorAll('.ghl-stack .ghl-seg-clickable')]
+      .find((x) => x.title.startsWith('options.ts'));
+    seg.dispatchEvent(new currentDom.window.Event('click', { bubbles: true }));
+    assertEqual(document.querySelectorAll('.ghl-cell[data-ghl-path="source/core/options.ts"].ghl-flash').length,
+      named.length, 'so every cell of the row flashes');
   } finally {
     STUB_TREE.pop();
     tr.remove();
