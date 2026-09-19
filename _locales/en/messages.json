@@ -343,6 +343,13 @@
   "reset": {
     "message": "Restore defaults"
   },
+  "resetWarning": {
+    "message": "Every setting goes back to its default, and the access tokens you have saved are deleted. The cache is left alone.",
+    "description": "Shown in the confirmation before restoring defaults"
+  },
+  "cancel": {
+    "message": "Cancel"
+  },
   "tokenEmpty": {
     "message": "No token entered"
   },
