@@ -101,7 +101,6 @@ If you cloned it: `git pull`, then press reload on GitHub Lines in
 | [Tokens](docs/token.md) | Creating and registering a PAT, organizations, SAML SSO |
 | [Troubleshooting](docs/troubleshooting.md) | No bars, counts that disagree, and the rest |
 | [API use and terms](docs/api-usage-and-terms.md) | How this extension treats GitHub's terms and rate limits |
-| [Development](docs/development.md) | Tests, refreshing the fixture, how the code is laid out |
 
 ## Limits
 
@@ -110,23 +109,6 @@ If you cloned it: `git pull`, then press reload on GitHub Lines in
 - On a repository large enough for the Tree API to answer `truncated` — around
   100,000 files — nested directory totals are incomplete, and the status line
   says so
-
-## How it differs from what exists
-
-Nothing found in the survey did the thing this is for: comparing shares within a
-directory, on the listing itself.
-
-| Extension | What it actually does |
-|---|---|
-| [harshjv/github-repo-size](https://github.com/harshjv/github-repo-size) | A size column in bytes. Archived 2025-08 |
-| [AminoffZ/github-repo-size](https://github.com/AminoffZ/github-repo-size) | Totals sizes in a popup, in bytes |
-| [Github Aid](https://chromewebstore.google.com/detail/github-aid-displays-repo/abfbcnoemiciiljhpngefacedfgebdcn) | Byte counts per file and folder |
-| [GitHub Code Counter](https://chromewebstore.google.com/detail/github-code-counter/lkmlkgijefhcbgpngkhmdhilfdffljhj) | Total LOC and a per-file breakdown, in a popup |
-| [GitHub Tree Map](https://chromewebstore.google.com/detail/github-tree-map/aagofmkgihihajogoojeamnfgpgmehnn) | A tree **diagram** of the hierarchy; area is not line count |
-| [github-better-line-counts](https://github.com/aklinker1/github-better-line-counts) | Drops generated files from a PR's diff |
-
-Reading `linguist-generated` out of `.gitattributes` to exclude files is taken
-from github-better-line-counts.
 
 ## Licence
 
