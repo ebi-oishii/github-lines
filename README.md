@@ -1,5 +1,7 @@
 # GitHub Lines
 
+[日本語](README.ja.md)
+
 A Chrome extension that puts a bar on GitHub's file list showing **each entry's
 share of the lines in that directory**.
 
