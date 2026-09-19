@@ -518,8 +518,10 @@
         });
 
       if (settings.exactLinesMode === 'off' || !candidates.length || !settings.maxExactFetch) {
-        state.pending = 0;
-        state.status = 'ready';
+        // Nothing is going to be fetched here, so nothing is left to fetch —
+        // including on the rows, whose own counts come from `settle`.
+        candidates = [];
+        settle();
         emitNow();
         return;
       }
@@ -579,6 +581,14 @@
         if (next.length === rowPaths.length && next.every((p, i) => p === rowPaths[i])) return;
         rowPaths = next;
         if (state.index && (state.status === 'pending' || state.status === 'ready')) settle();
+      },
+      /* A settings change that only affects how the picture is drawn. The
+         numbers were not fetched with any of it, so nothing is fetched again —
+         which matters because the options page saves as the reader types. */
+      setSettings(next) {
+        if (cancelled) return;
+        state.settings = next;
+        emitNow();
       },
       /* Which quantity the UI shows. Costs nothing: both come from what is
          already loaded. */

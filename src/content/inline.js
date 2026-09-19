@@ -289,7 +289,9 @@
     let total = 0;
     let bytes = 0;
     let fileCount = 0;
-    let allExact = true;
+    // Whatever the rows that are left say, a directory missing descendants is
+    // still missing them.
+    let allExact = !dirNode.incomplete;
     let maxFile = 0;
     let maxFileBytes = 0;
     for (const [name, child] of dirNode.children) {
@@ -327,6 +329,9 @@
     if (!node) {
       cell.dataset.ghlPath = row.path;
       cell.dataset.state = 'unknown';
+      // A cell is reused: without this it keeps the colour of whatever it said
+      // last time, on a row that now says nothing.
+      cell.dataset.severity = 'none';
       fill.style.width = '0%';
       num.textContent = '–';
       pct.textContent = '';
@@ -584,8 +589,6 @@
     // with nothing left to fetch it sits disabled as "fetched".
     const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
     const wantsLines = m.key === 'lines';
-    const none = pickKeys.length > 0 &&
-      pickKeys.every((k) => state.deselected && state.deselected.has(k));
     const busy = state.status === 'loading' || state.status === 'estimated' || state.status === 'refining';
     let label = t('fetchDone');
     let title = t(wantsLines ? 'fetchDoneLinesTitle' : 'fetchDoneSizesTitle');
@@ -637,7 +640,7 @@
     const total = m.value(dirNode);
     const biggest = [...dirNode.children.values()].sort((a, b) => m.value(b) - m.value(a))[0];
 
-    if (!state.index || state.missingDirectory) {
+    if (!state.index || !GHL.store.dirNodeOf(state)) {
       // Nothing fetched yet, or nothing covering what is on screen — the status
       // line carries the message instead. A zero here would read as an answer.
       stats.textContent = '—';

@@ -308,7 +308,10 @@
       }
       if (state.status === 'estimated') return t('statusEstimating');
     }
+    if (state.status === 'error') return GHL.inline.errorText(state.error);
     if (state.warning) return GHL.inline.errorText(state.warning);
+    if (state.missingDirectory) return t('statusNoDirectory');
+    if (state.metaWarning) return GHL.inline.errorText(state.metaWarning);
     if (state.truncated) return t(m.key === 'lines' ? 'statusTruncated' : 'statusTruncatedSizes');
     return t('tmArea', m.label);
   }

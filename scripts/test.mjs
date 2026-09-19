@@ -1309,6 +1309,12 @@ domCheck('the checkbox column finds its header without reading English', () => {
   const named = heads.filter((th) => th.textContent.trim() === 'Name');
   assert(named.length >= 1, 'the fixture is in English to start with');
   const before = named.map((th) => th.textContent);
+  // Every subdirectory page opens with the go-to-parent row, which spans the
+  // table and carries no name cell.
+  const tbody = document.querySelector('table[aria-labelledby="folders-and-files"] tbody');
+  const parent = document.createElement('tr');
+  parent.innerHTML = '<td colspan="3" class="f5 text-normal"><a href="/sindresorhus/got/tree/main">..</a></td>';
+  tbody.insertBefore(parent, tbody.firstChild);
   try {
     for (const th of named) th.textContent = '名前';
     const found = GHL.page.findNameHeaders();
@@ -1316,6 +1322,7 @@ domCheck('the checkbox column finds its header without reading English', () => {
     assert(found.every((th) => named.includes(th)), 'and they are the name columns, not the commit ones');
   } finally {
     named.forEach((th, i) => { th.textContent = before[i]; });
+    parent.remove();
   }
 });
 
@@ -1822,6 +1829,16 @@ await domCheckAsync("a truncated tree's directory totals stay marked as estimate
     const dir = document.querySelector('.ghl-cell[data-ghl-path="source/core"] .ghl-num');
     assert(dir.textContent.startsWith('~'),
       `a directory that may be missing descendants is not (${dir.textContent})`);
+    /* And the strip, whose figure is recomputed over the ticked rows: a
+       directory holding nothing but counted files is still short of whatever
+       the truncated tree left out of it. */
+    navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(() => renderedPaths().includes('source/core/options.ts'), 8000, 'the counts to land');
+    const stats = document.querySelector('.ghl-summary-stats').textContent;
+    assert(stats.trimStart().startsWith('~'),
+      `the strip marks the directory's own total as an estimate too (${stats})`);
   } finally {
     stubTreeTruncated = false;
   }
@@ -1871,6 +1888,9 @@ await domCheckAsync('a per-view limit of zero leaves nothing to press', async ()
     fetchButton().click();
     await waitFor(() => fetchButton().textContent === msg('fetchDone'), 8000, 'the button to read as done');
     assert(fetchButton().disabled, 'and to be done');
+    const pick = rowPick('source/core/options.ts');
+    assertEqual(pick.title, msg('pickRow'),
+      `and the row does not claim files are left to fetch (${pick.title})`);
   } finally {
     await settings.set({ maxExactFetch: settings.DEFAULTS.maxExactFetch });
   }

@@ -272,12 +272,16 @@
 
     /* GitHub's own interface is not always in English. Failing the word, the
        name columns are the ones the rows put their name cells in. */
-    const row = container.querySelector('tbody tr');
-    if (!row) return [];
-    const columns = new Set([...row.cells]
-      .filter((td) => /react-directory-row-name-cell/.test(td.className))
-      .map((td) => td.cellIndex));
-    return heads.filter((th) => columns.has(th.cellIndex));
+    const columns = new Set();
+    // Not the first row: a subdirectory page opens with the go-to-parent row,
+    // which spans the table and has no name cell at all.
+    for (const row of container.querySelectorAll('tbody tr')) {
+      for (const td of row.cells) {
+        if (/react-directory-row-name-cell/.test(td.className)) columns.add(td.cellIndex);
+      }
+      if (columns.size) break;
+    }
+    return columns.size ? heads.filter((th) => columns.has(th.cellIndex)) : [];
   }
 
   /* The "latest commit" box above the table — on the repository root it sits

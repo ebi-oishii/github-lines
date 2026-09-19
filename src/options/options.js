@@ -17,13 +17,11 @@ const NUMBERS = ['warnLines', 'dangerLines', 'maxExactFetch', 'concurrency'];
 const LEAST = { warnLines: 1, dangerLines: 1, concurrency: 1, maxExactFetch: 0 };
 const MOST = { concurrency: 16 };
 
-// Set by `collect()` when it put the two thresholds back in order.
-let swapped = false;
-
 /* What a field may hold, in one place: the value saved and the value written
-   back to the form are the same answer. */
+   back to the form are the same answer. All four are counts, so a typed
+   fraction is rounded rather than carried into code that counts with it. */
 function clamp(id, n) {
-  const low = Math.max(LEAST[id], n);
+  const low = Math.max(LEAST[id], Math.round(n));
   return MOST[id] === undefined ? low : Math.min(MOST[id], low);
 }
 const SELECTS = ['locale'];
@@ -265,13 +263,6 @@ function collect() {
     .map((l) => l.trim())
     .filter(Boolean);
 
-  swapped = patch.dangerLines < patch.warnLines;
-  if (swapped) {
-    // Swapping is friendlier than rejecting; the intent is obvious. It is also
-    // a change to what was typed, so it is said out loud and shown in the form
-    // rather than left to differ from it.
-    [patch.warnLines, patch.dangerLines] = [patch.dangerLines, patch.warnLines];
-  }
   return patch;
 }
 
@@ -290,10 +281,26 @@ function scheduleSave() {
   pendingWrite = setTimeout(saveNow, WRITE_DELAY);
 }
 
+/* The two thresholds have an order to them. It is judged on the values that
+   will be in effect, not only on the ones just typed: a field left empty keeps
+   what is stored, which can still be on the wrong side of the other. Swapping
+   is friendlier than rejecting — and it is a change to what was typed, so it is
+   said out loud and shown in the form rather than left to differ from it. */
+function order(patch, stored) {
+  const warn = patch.warnLines !== undefined ? patch.warnLines : stored.warnLines;
+  const danger = patch.dangerLines !== undefined ? patch.dangerLines : stored.dangerLines;
+  if (!(danger < warn)) return false;
+  patch.warnLines = danger;
+  patch.dangerLines = warn;
+  return true;
+}
+
 async function saveNow() {
   clearTimeout(pendingWrite);
   pendingWrite = null;
-  const saved = await GHL.settings.set(collect());
+  const patch = collect();
+  const swapped = order(patch, await GHL.settings.get());
+  const saved = await GHL.settings.set(patch);
   flash(swapped ? t('savedSwapped') : t('saved'), swapped ? 'warn' : 'ok');
   return saved;
 }
@@ -305,7 +312,7 @@ async function saveNow() {
 function reflect(saved) {
   for (const id of NUMBERS) {
     const field = $(id);
-    if (field === document.activeElement || !field.value.trim()) continue;
+    if (field === document.activeElement) continue;
     if (String(saved[id]) !== field.value.trim()) field.value = saved[id];
   }
 }

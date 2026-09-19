@@ -90,6 +90,10 @@
 
   const scheduleTick = util.debounce(tick, 200);
 
+  /* Settings the drawn picture reads but the fetched one does not. */
+  const DRAWN_ONLY = new Set(['warnLines', 'dangerLines', 'showInlineBars', 'showTreemapButton']);
+  let known = null; // the settings the view on screen was drawn with
+
   function boot() {
     observer = new MutationObserver(scheduleTick);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -105,13 +109,28 @@
       setTimeout(tick, 400);
     });
 
-    // A changed locale means a different catalogue, which has to be in before
-    // anything is drawn again.
-    GHL.settings.onChange(() => {
+    /* A settings change. Thresholds and what is shown only change how the
+       picture is drawn, so the view takes them where it stands: the options
+       page saves as the reader types, and tearing down on each keystroke would
+       cancel a fetch in flight and lose which rows were ticked. Anything else —
+       what is fetched, which token, which language — needs the view built
+       again, with the catalogue in before anything is drawn. */
+    GHL.settings.onChange((next) => {
+      const previous = known;
+      known = next;
+      const changed = previous
+        ? Object.keys(next).filter((k) => JSON.stringify(next[k]) !== JSON.stringify(previous[k]))
+        : null;
+      if (changed && !changed.length) return;
+      if (changed && current && current.handle && changed.every((k) => DRAWN_ONLY.has(k))) {
+        current.handle.setSettings(next);
+        return;
+      }
       const ctx = current && current.ctx;
       teardown();
       GHL.i18n.load().then(() => { if (ctx) tick(); });
     });
+    GHL.settings.get().then((s) => { if (!known) known = s; });
 
     // The React file list can mount after document_idle.
     tick();

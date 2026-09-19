@@ -125,7 +125,8 @@ the service worker's `LOCALE` handler).
   "Fetched", and unticking every row still leaves unread exclusion rules
   readable
 - The column head found without reading English, for a GitHub UI in another
-  language
+  language — against the shape a subdirectory page actually has, whose first
+  row is the go-to-parent one
 - Localisation: both catalogues carrying the same keys and the same `$1`
   substitutions, and every key the code asks for existing
 

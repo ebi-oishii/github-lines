@@ -61,7 +61,11 @@
      callers can await it before their first render. Safe to call repeatedly. */
   function load() {
     inFlight = (async () => {
-      const settings = GHL.settings ? await GHL.settings.get() : null;
+      // Reading the choice can fail too — an extension reloaded under an open
+      // tab, say. The browser's own language is a working answer; never
+      // booting is not.
+      let settings = null;
+      try { settings = GHL.settings ? await GHL.settings.get() : null; } catch (_) { settings = null; }
       const want = settings && SUPPORTED.includes(settings.locale) ? settings.locale : '';
       if (want === chosenFor) return;
       if (!want) {
