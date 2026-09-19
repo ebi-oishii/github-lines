@@ -1,119 +1,178 @@
-# 開発
+# Development
 
-拡張そのものにビルドは不要です。`npm install` はテスト用の依存（jsdom / playwright-core）だけです。
+The extension itself needs no build. `npm install` is only the test
+dependencies (jsdom, playwright-core).
 
 ```bash
 npm install
-npm test             # ロジック + DOM テスト（ネットワーク不要）
-npm run smoke        # 実 Chrome に読み込んで github.com で動作確認
-npm run measure      # API リクエスト数を実測
-npm run icons        # icons/*.png を再生成
-npm run fixture      # GitHub の実 HTML からテスト用フィクスチャを更新
+npm test             # logic and DOM tests (99 of them, no network)
+npm run smoke        # load it into a real Chrome and drive github.com
+npm run measure      # count the API requests
+npm run icons        # regenerate icons/*.png
+npm run fixture      # refresh the test fixture from GitHub's live HTML
 ```
 
-`smoke` と `measure` は未認証だと 60 回/時の枠を使うので、トークンを渡すのが楽です:
+`smoke` and `measure` spend the unauthenticated 60-an-hour budget, so it is
+easier to hand them a token:
 
 ```bash
 GITHUB_TOKEN=$(gh auth token) npm run smoke
-node scripts/smoke.mjs --manual    # 手動モード（ボタンを押して取得）を検証
-node scripts/smoke.mjs --auto      # 自動取得モードを検証
-node scripts/smoke.mjs --headed    # 実際の動きを見る
+node scripts/smoke.mjs --manual    # exercise manual mode, where you press the button
+node scripts/smoke.mjs --headed    # watch it happen
 ```
 
-## コード構成
+## How the code is laid out
 
 ```
 manifest.json
 src/
   lib/
-    namespace.js      全コンテキスト共通の名前空間
-    patterns.js       除外判定、.gitattributes 解析
-    settings.js       chrome.storage.local の読み書き
+    namespace.js      the namespace every context hangs things off
+    patterns.js       exclusions, .gitattributes, bytes-to-lines estimation
+    settings.js       reading and writing chrome.storage.local
+    i18n.js           the catalogues, and applying them to a page
   background/
-    service-worker.js GitHub API + IndexedDB キャッシュ + レート制御
+    service-worker.js the GitHub API, the IndexedDB cache, rate control
   content/
-    util.js           DOM ヘルパー、並列実行、service worker との通信
-    page.js           GitHub のページ解析（リポジトリ / ref / パス / 行）
-    store.js          取得の統括（キャッシュ確認 → 手動 / 自動取得）
-    inline.js         一覧のバーとサマリー行
-    treemap.js        squarified treemap
-    main.js           遷移の追従とライフサイクル
-  options/            設定画面
-  styles/content.css  注入する CSS
+    util.js           DOM helpers, parallelism, talking to the service worker
+    page.js           reading GitHub's page (repository / ref / path / rows)
+    store.js          orchestration — estimates converging on real counts,
+                      and what pressing the fetch button does (`state.press`)
+    inline.js         the row bars and the summary strip
+    treemap.js        a squarified treemap
+    main.js           navigation and lifecycle
+  options/            the options page
+  styles/content.css  the injected CSS
+_locales/             en and ja message catalogues
 ```
 
-### なぜ API 呼び出しを service worker に集約しているか
+### Why every API call goes through the service worker
 
-MV3 では content script の `fetch` が拡張の host 権限ではなく**ページ側の CORS** に従うため、
-github.com から `api.github.com` を直接叩けません。加えて、キャッシュを service worker 側に
-置くことで github.com のオリジンストレージを汚さずに済みます。
+Under MV3 a content script's `fetch` answers to the **page's** CORS rules rather
+than the extension's host permissions, so github.com cannot call
+`api.github.com` directly. Keeping the cache in the worker also means it uses
+the extension's own storage instead of polluting github.com's origin.
 
-### GitHub のページを読むときの前提
+### What reading GitHub's page assumes
 
-`page.js` は 3 段構えで、上から順に試します。
+`page.js` has three layers, tried in order:
 
-1. React アプリの埋め込み JSON（`react-app.embeddedData`） — コミット OID が取れる唯一の経路
-2. `<meta>` タグ + ブランチ選択ボタン
-3. URL のパースのみ
+1. The React app's embedded JSON (`react-app.embeddedData`) — the only source
+   that gives the commit OID
+2. `<meta>` tags plus the branch-selector button
+3. Parsing the URL alone
 
-**パスだけは必ず URL から求めます。** GitHub はクライアントサイド遷移のときに
-埋め込み JSON を更新しないため、そこからパスを取ると遷移後も前のディレクトリのままになります
-（実際に踏んだバグです。`scripts/test.mjs` に回帰テストがあります）。
+**The path always comes from the URL.** GitHub does not update the embedded JSON
+on a client-side navigation, so taking the path from it leaves every soft
+navigation labelled with the previous directory. (A bug that actually happened;
+`scripts/test.mjs` has the regression test.)
 
-## テスト
+**A row's own path comes from its link's href**, for the same reason in
+miniature: GitHub folds a chain of single-child directories into one row whose
+text is the whole chain and whose `title` is the sentence "This path skips
+through empty directories". The href is the only part that names the entry.
 
-### `scripts/test.mjs`（ネットワーク不要）
+## Localisation
 
-- 純粋なロジック: glob、`.gitattributes`、集計、treemap の配置アルゴリズム
-- トークンのルーティング: オーナーごとの選択、旧形式からの移行
-- service worker との通信: タイムアウト、リトライ、コンテキスト消失
-- DOM: **GitHub の実 HTML を切り出したフィクスチャ**（`tests/fixtures/tree-page.html`）に対して、
-  コンテキスト抽出・行の検出・バーの注入を検証
-- クライアントサイド遷移: `main.js` を実際に動かして、遷移時の再描画とテアダウンを検証
-- キャッシュ専用の worker 経路: 未キャッシュ時も外部通信しないこと、通常取得との同時実行
-- 不完全なデータ: 未取得・サイズ上限・一覧切り詰め時に合計や割合を表示しないこと
-- 行数取得のモード: 自動 / 手動 / 取得しない の挙動と、旧 boolean からの移行
+The UI strings live in `_locales/<lang>/messages.json` and are looked up through
+`chrome.i18n` by default, which picks the catalogue from **Chrome's UI
+language** (on macOS, the OS language). Choosing a language in the options wins
+over that; since chrome.i18n has no override, the chosen catalogue is loaded and
+consulted first (a content script cannot read a packaged file itself, so it asks
+the service worker's `LOCALE` handler).
+
+- From code: `GHL.t('key', substitutions…)`. Counted nouns go through
+  `GHL.i18n.count('unitLines', n, text)` to decline (English has `unitLines` and
+  `unitLinesOne`; Japanese points both at one string)
+- In HTML: `data-i18n="key"` for text, `-html` for a sentence carrying a `<code>`
+  or a `<strong>`, and `-title` / `-placeholder` / `-label`.
+  `GHL.i18n.applyDom()` fills them in on load
+- To add a language, write `_locales/<lang>/messages.json` with every key
+  translated, then add it to `SUPPORTED` in `src/lib/i18n.js` and to
+  `<select id="locale">` in the options. Missing keys and mismatched `$1`
+  substitutions fail `scripts/test.mjs`
+- Nothing is drawn before `GHL.i18n.ready()` resolves, so no label is ever
+  painted in one language and swapped in another
+
+## Tests
+
+### `scripts/test.mjs` (99, no network)
+
+- Pure logic: globs, `.gitattributes`, line estimation, rollups, the treemap
+  layout algorithm
+- Token routing: choosing one per owner, migrating from the old shape
+- Talking to the service worker: timeouts, retries, a lost context
+- DOM: against **a fixture cut from GitHub's real HTML**
+  (`tests/fixtures/tree-page.html`) — context extraction, finding rows,
+  injecting bars
+- Client-side navigation: `main.js` actually running, redrawing and tearing down
+- The counting modes: automatic / manual / off, and migration from the old
+  boolean. Manual fetches whichever [Lines | Size] says, from one button
+- The lines/size toggle: the same rows drawn by size, and switching costing no
+  request
+- Manual mode's checkboxes: an unticked row (and everything under a directory)
+  leaving the fetch, and the checkbox above the column taking them all — which
+  moves to the strip on a page with no header row
+- Recovering from a failure: a failed fetch leaves a button that starts over,
+  an exclusion rule that went unread is read again on the next press, and a
+  press does what the button offered — a failed size fetch never turns into a
+  file-per-row count
+- What came back not covering the view: a directory a truncated tree left out
+  counts nothing rather than counting the repository, does not follow the
+  reader to the next directory, and a truncated tree's directory totals stay
+  marked as estimates
+- The settings' edges: a per-view limit of zero leaves the button reading
+  "Fetched", unticking every row still leaves unread exclusion rules readable,
+  and a stored number nothing could count with is made into one that works
+- The column head found without reading English, for a GitHub UI in another
+  language — against the shape a subdirectory page actually has, whose first
+  row is the go-to-parent one
+- Localisation: both catalogues carrying the same keys and the same `$1`
+  substitutions, and every key the code asks for existing
 
 ### `scripts/smoke.mjs`
 
-未パッケージの拡張を実際の Chrome に読み込み、github.com を開いて確認します。
-実トークンを対象オーナーに紐づけ、**無効なトークンを「既定」に置いた状態で**実行するので、
-オーナーごとのルーティングが壊れると失敗します。
-バー・ツリーマップ・遷移・トークンのオーナー自動取得・「同じ URL を二度取得していないこと」・
-**「全 API リクエストが GET であること」**を検証し、
-`tests/screenshots/` にスクリーンショットを保存します。失敗時は `failure.png` が残ります。
+Loads the unpacked extension into a real Chrome and drives github.com. It binds
+the real token to the owner under test **with an invalid one set as the
+default**, so a regression in per-owner routing fails the run rather than
+passing quietly. It checks the bars, the treemap, navigation, filling in a
+token's owners, that no URL is fetched twice, and **that every API request is a
+GET**, then saves screenshots under `tests/screenshots/` — `failure.png` on the
+way out if something breaks.
 
 ### `scripts/measure.mjs`
 
-API リクエスト数をネットワーク層で数えます。`--urls` で blob 以外の内訳を表示します。
+Counts API requests at the network layer. `--urls` breaks down everything that
+is not a blob.
 
 ```bash
 GITHUB_TOKEN=$(gh auth token) node scripts/measure.mjs owner/repo --urls
 ```
 
-## GitHub の変更で壊れたら
+## When a GitHub change breaks it
 
-GitHub は数ヶ月おきに markup を作り変えます。
+GitHub reworks its markup every few months.
 
 ```bash
-npm run fixture   # 最新の HTML を取り込む
-npm test          # どの前提が壊れたかが FAIL で分かる
+npm run fixture   # take in the current HTML
+npm test          # the failures say which assumptions broke
 ```
 
-GitHub がサーバーサイドレンダリングを返さないことがあります（クライアント描画のみのシェル）。
-その場合はブラウザで保存した HTML を渡してください:
+Sometimes GitHub answers without server-side rendering — a shell that only the
+client fills in. Hand it a page saved from the browser instead:
 
 ```bash
 node scripts/capture-fixture.mjs ./saved.html
 ```
 
-## レート制御をいじるとき
+## Changing the rate control
 
-`src/background/service-worker.js` の以下の定数が [GitHub の基準](api-usage-and-terms.md)に
-対応しています。緩める場合は規約側の上限を確認してください。
+These constants in `src/background/service-worker.js` answer to
+[GitHub's guidance](api-usage-and-terms.md). Check that guidance before loosening
+any of them.
 
-| 定数 | 既定 | GitHub の上限 |
+| Constant | Default | GitHub's limit |
 |---|---|---|
-| `MAX_PER_WINDOW` | 600 / 分 | 900 points/分 |
+| `MAX_PER_WINDOW` | 600 a minute | 900 points a minute |
 | `settings.concurrency` | 8 | 100 |
-| `settings.maxExactFetch` | 300 / 回 | — |
+| `settings.maxExactFetch` | 300 a view | — |

@@ -190,7 +190,31 @@
     return href.startsWith(prefix) && /^(blob|tree)\//.test(href.slice(prefix.length));
   }
 
-  /* Returns [{ el, hosts, name, type, path }].
+  /* The entry a row's link points at, taken from the href.
+
+     Not from the link's text, and not from its `title`: GitHub collapses a
+     chain of single-child directories into one row, whose text is the whole
+     chain ("tests/fixtures") and whose title is the sentence "This path skips
+     through empty directories". The href is the one thing that always names
+     the entry. */
+  function entryFromHref(href, ctx, prefix) {
+    const rest = decodeURIComponent(href).slice(prefix.length);
+    const kind = rest.startsWith('tree/') ? 'dir' : 'file';
+    const afterKind = rest.slice(5); // both "tree/" and "blob/"
+    if (!afterKind.startsWith(`${ctx.ref}/`)) return null; // a link to another ref
+    const path = afterKind.slice(ctx.ref.length + 1).replace(/\/$/, '');
+    if (!path) return null;
+
+    // Everything on this listing is below the directory being shown. The
+    // go-to-parent row is not, which is how it falls out here.
+    const base = ctx.path ? `${ctx.path}/` : '';
+    if (!path.startsWith(base) || path === ctx.path) return null;
+
+    return { type: kind, path, name: path.slice(base.length) };
+  }
+
+  /* Returns [{ el, hosts, name, type, path }], where `name` is what the row
+     reads as — for a collapsed row, the whole chain.
 
      `hosts` is a list because each row carries two name cells — one for small
      screens and one for large — and only one of them is visible at a time. We
@@ -209,14 +233,10 @@
       if (!anchors.length) continue;
 
       const first = anchors[0];
-      const name = (first.getAttribute('title') || first.textContent || '').trim();
-      // ".." is the go-to-parent row; a name with a slash means the anchor is
-      // not a plain entry in this directory.
-      if (!name || name === '..' || name.includes('/')) continue;
       if (/parent/i.test(first.getAttribute('aria-label') || '')) continue;
 
-      const href = first.getAttribute('href') || '';
-      const type = href.slice(prefix.length).startsWith('tree/') ? 'dir' : 'file';
+      const entry = entryFromHref(first.getAttribute('href') || '', ctx, prefix);
+      if (!entry) continue;
 
       const hosts = [];
       for (const a of anchors) {
@@ -225,16 +245,42 @@
       }
       if (!hosts.length) continue;
 
-      rows.push({
-        el: row,
-        hosts,
-        name,
-        type,
-        path: ctx.path ? `${ctx.path}/${name}` : name,
-      });
+      rows.push({ el: row, hosts, name: entry.name, type: entry.type, path: entry.path });
     }
 
     return rows;
+  }
+
+  /* The "Name" header cells of the file table — one per breakpoint, like the
+     rows' name cells. Only cells that actually take up space: the repository
+     root keeps its header row in the DOM at zero height, and older layouts
+     have none at all. */
+  function findNameHeaders() {
+    const container = findListContainer();
+    if (!container) return [];
+    const heads = [...container.querySelectorAll('thead th')]
+      .filter((th) => th.getBoundingClientRect().height > 0);
+    const named = heads.filter((th) => th.textContent.trim() === 'Name');
+    if (named.length) return named;
+
+    /* GitHub's own interface is not always in English. Failing the word, the
+       name columns are the ones the rows put their name cells in. */
+    const columns = new Set();
+    // Not the first row: a subdirectory page opens with the go-to-parent row,
+    // which spans the table and has no name cell at all.
+    for (const row of container.querySelectorAll('tbody tr')) {
+      for (const td of row.cells) {
+        if (/react-directory-row-name-cell/.test(td.className)) columns.add(td.cellIndex);
+      }
+      if (columns.size) break;
+    }
+    return columns.size ? heads.filter((th) => columns.has(th.cellIndex)) : [];
+  }
+
+  /* The "latest commit" box above the table — on the repository root it sits
+     directly on top of the rows, where the header row would be. */
+  function findCommitBox() {
+    return document.querySelector('[data-testid="latest-commit"]');
   }
 
   /* The summary strip goes above the file table, inside the same column. */
@@ -252,6 +298,8 @@
     getContext,
     findListContainer,
     findRows,
+    findNameHeaders,
+    findCommitBox,
     findSummaryAnchor,
   };
 })(globalThis.GHL);

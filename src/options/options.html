@@ -1,163 +1,157 @@
 <!doctype html>
-<html lang="ja">
+<html>
 <head>
   <meta charset="utf-8">
-  <title>GitHub Lines の設定</title>
+  <title data-i18n="title">GitHub Lines</title>
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <main class="wrap">
     <header class="head">
       <h1>GitHub Lines</h1>
-      <p class="lede">
-        GitHub のファイル一覧に、ディレクトリ内での行数の割合バーとツリーマップを表示します。
+      <p class="lede" data-i18n="lede"></p>
+      <p class="guide">
+        <a href="https://github.com/ebi-oishii/github-lines#readme" target="_blank" rel="noreferrer"
+           data-i18n="setupGuide"></a>
       </p>
     </header>
 
     <section class="card">
-      <h2>アクセストークン</h2>
-      <p class="hint">
-        未設定でも public リポジトリでは動作しますが、GitHub API のレート制限が
-        <strong>60 回/時</strong> になります。トークンを登録すると
-        <strong>5,000 回/時</strong> になり、private リポジトリでも使えます。
-      </p>
-      <p class="hint">
-        複数のアカウントを使い分けている場合は、トークンを複数登録して
-        <strong>オーナー（ユーザー名 / Organization 名）ごとに</strong>割り当てられます。
-        あるアカウントのトークンで別アカウントの private リポジトリは読めないためです。
-      </p>
+      <h2 data-i18n="tokens"></h2>
+      <p class="hint" data-i18n-html="tokensHint1"></p>
 
       <div id="token-list"></div>
-      <button class="btn" id="add-token" type="button">＋ トークンを追加</button>
+      <button class="btn" id="add-token" type="button" data-i18n="addToken"></button>
 
       <p class="hint">
-        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">
-          Fine-grained token を作成
-        </a>
-        — 必要な権限は <code>Repository permissions → Contents: Read-only</code> のみです。
-        トークンはこの端末の <code>chrome.storage.local</code> にのみ保存され、
-        <code>api.github.com</code> 以外には送信しません。
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer"
+           data-i18n="tokenLink"></a>
+        <span data-i18n-html="tokensHint3"></span>
       </p>
     </section>
 
     <template id="token-row-template">
       <div class="token-row">
         <div class="token-head">
-          <label class="radio" title="どのオーナーにも一致しないときに使うトークン">
+          <label class="radio" data-i18n-title="tokenDefaultTitle">
             <input type="radio" name="default-token" class="token-default">
-            <span>既定</span>
+            <span data-i18n="tokenDefault"></span>
           </label>
-          <input class="token-label" type="text" spellcheck="false" placeholder="ラベル（例: 個人 / 仕事）">
-          <button class="btn quiet token-remove" type="button" aria-label="このトークンを削除">削除</button>
+          <input class="token-label" type="text" spellcheck="false" data-i18n-placeholder="tokenLabelPlaceholder">
+          <button class="btn quiet token-remove" type="button"
+                  data-i18n-label="tokenRemoveLabel" data-i18n="tokenRemove"></button>
         </div>
         <label class="field">
-          <span class="label">Personal Access Token</span>
+          <span class="label" data-i18n="tokenValue"></span>
           <input class="token-value" type="password" autocomplete="off" spellcheck="false"
-                 placeholder="github_pat_… または ghp_…">
+                 data-i18n-placeholder="tokenValuePlaceholder">
         </label>
         <label class="field">
-          <span class="label">このトークンを使うオーナー（カンマ区切り）</span>
-          <input class="token-owners" type="text" spellcheck="false" placeholder="ebi-oishii, my-org">
+          <span class="label" data-i18n="tokenOwners"></span>
+          <input class="token-owners" type="text" spellcheck="false" placeholder="my-name, my-org">
         </label>
         <div class="token-actions">
-          <button class="btn token-verify" type="button">検証してオーナーを自動取得</button>
+          <button class="btn token-verify" type="button" data-i18n="tokenVerify"></button>
           <span class="status token-status" data-tone="idle"></span>
         </div>
       </div>
     </template>
 
     <section class="card">
-      <h2>閾値</h2>
-      <p class="hint">1 ファイルの行数がこの値を超えたら色を変えて警告します。</p>
+      <h2 data-i18n="counting"></h2>
+      <label class="check">
+        <input type="radio" name="exactLinesMode" value="auto">
+        <span data-i18n-html="modeAuto"></span>
+      </label>
+      <label class="check">
+        <input type="radio" name="exactLinesMode" value="manual">
+        <span data-i18n-html="modeManual"></span>
+      </label>
+      <label class="check">
+        <input type="radio" name="exactLinesMode" value="off">
+        <span data-i18n-html="modeOff"></span>
+      </label>
+      <p class="hint" data-i18n="modeHint"></p>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="display"></h2>
+      <label class="check">
+        <input id="showInlineBars" type="checkbox">
+        <span data-i18n="showBars"></span>
+      </label>
+      <label class="check">
+        <input id="showTreemapButton" type="checkbox">
+        <span data-i18n="showTreemap"></span>
+      </label>
+      <label class="field narrow">
+        <span class="label" data-i18n="language"></span>
+        <select id="locale">
+          <option value="" data-i18n="languageAuto"></option>
+          <option value="ja">日本語</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <p class="hint" data-i18n="thresholdsHint"></p>
       <div class="row">
         <label class="field narrow">
-          <span class="label">注意 (黄)</span>
+          <span class="label" data-i18n="warn"></span>
           <input id="warnLines" type="number" min="1" step="50">
         </label>
         <label class="field narrow">
-          <span class="label">警告 (赤)</span>
+          <span class="label" data-i18n="danger"></span>
           <input id="dangerLines" type="number" min="1" step="50">
         </label>
       </div>
     </section>
 
-    <section class="card">
-      <h2>表示</h2>
-      <label class="check">
-        <input id="showInlineBars" type="checkbox">
-        <span>ファイル一覧に割合バーを表示する</span>
-      </label>
-      <label class="check">
-        <input id="showTreemapButton" type="checkbox">
-        <span>ツリーマップのボタンを表示する</span>
-      </label>
-    </section>
+    <details class="card fold">
+      <summary data-i18n="advanced"></summary>
 
-    <section class="card">
-      <h2>行数のカウント</h2>
-      <div class="field">
-        <span class="label">行数の取得</span>
+      <div class="fold-body">
         <label class="check">
-          <input type="radio" name="exactLinesMode" value="manual">
-          <span>手動（既定）</span>
+          <input id="respectGitattributes" type="checkbox">
+          <span data-i18n-html="respectGitattributes"></span>
         </label>
         <label class="check">
-          <input type="radio" name="exactLinesMode" value="auto">
-          <span>ページを開いたときに自動取得</span>
+          <input id="excludeGenerated" type="checkbox">
+          <span data-i18n="excludeGenerated"></span>
         </label>
-        <label class="check">
-          <input type="radio" name="exactLinesMode" value="off">
-          <span>取得済みの行数のみ</span>
+        <label class="field">
+          <span class="label" data-i18n="patterns"></span>
+          <textarea id="excludePatterns" rows="10" spellcheck="false"></textarea>
         </label>
+        <p class="hint" data-i18n="patternsHint"></p>
+
+        <div class="row">
+          <label class="field narrow">
+            <span class="label" data-i18n="maxFetch"></span>
+            <input id="maxExactFetch" type="number" min="0" step="50">
+          </label>
+          <label class="field narrow">
+            <span class="label" data-i18n="concurrency"></span>
+            <input id="concurrency" type="number" min="1" max="16" step="1">
+          </label>
+        </div>
+        <p class="hint" data-i18n="cacheHint"></p>
+
+        <div class="row cache-row">
+          <button class="btn" id="clear-cache" type="button" data-i18n="clearCache"></button>
+          <span class="hint" id="cache-stats">…</span>
+        </div>
       </div>
-      <div class="row">
-        <label class="field narrow">
-          <span class="label">1 回あたりの取得ファイル数</span>
-          <input id="maxExactFetch" type="number" min="0" step="50">
-        </label>
-        <label class="field narrow">
-          <span class="label">並列数</span>
-          <input id="concurrency" type="number" min="1" max="16" step="1">
-        </label>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>除外</h2>
-      <label class="check">
-        <input id="respectGitattributes" type="checkbox">
-        <span>
-          <code>.gitattributes</code> の <code>linguist-generated</code> /
-          <code>linguist-vendored</code> を尊重する
-        </span>
-      </label>
-      <label class="check">
-        <input id="excludeGenerated" type="checkbox">
-        <span>下記のパターンに一致するファイルを除外する</span>
-      </label>
-      <label class="field">
-        <span class="label">除外パターン（1 行に 1 つ、glob）</span>
-        <textarea id="excludePatterns" rows="12" spellcheck="false"></textarea>
-      </label>
-      <p class="hint">
-        バイナリ（画像・フォント・アーカイブ等）は拡張子で判定して常に除外されます。
-      </p>
-    </section>
-
-    <section class="card">
-      <h2>キャッシュ</h2>
-      <p class="hint" id="cache-stats">…</p>
-      <button class="btn" id="clear-cache" type="button">キャッシュを削除</button>
-    </section>
+    </details>
 
     <footer class="foot">
-      <button class="btn primary" id="save" type="button">保存</button>
-      <button class="btn" id="reset" type="button">初期設定に戻す</button>
+      <span class="hint" data-i18n="autosave"></span>
       <span class="status" id="save-status" data-tone="idle"></span>
+      <span class="spacer"></span>
+      <button class="btn quiet" id="reset" type="button" data-i18n="reset"></button>
     </footer>
   </main>
 
   <script src="../lib/namespace.js"></script>
+  <script src="../lib/i18n.js"></script>
   <script src="../lib/patterns.js"></script>
   <script src="../lib/settings.js"></script>
   <script src="options.js"></script>

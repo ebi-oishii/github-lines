@@ -10,6 +10,11 @@
 
   const { util } = GHL;
   const { el, fmt, fmtCompact } = util;
+  const { t, count } = GHL.i18n;
+
+  /* Counted nouns, formatted then declined — "1 line" against "1,204 lines". */
+  const linesOf = (n, text) => count('unitLines', n, text === undefined ? fmt(n) : text);
+  const filesOf = (n) => count('unitFiles', n, fmt(n));
 
   const SUMMARY_ID = 'ghl-summary';
   const CELL_CLASS = 'ghl-cell';
@@ -20,7 +25,188 @@
     return 'ok';
   }
 
+  /* ---------------------------------------------------------- colour ramp */
+
+  /* A file's colour runs continuously from the "ok" token at zero lines,
+     through "warn" at the warn threshold, to "danger" at the danger threshold and
+     beyond — a rainfall map's ramp rather than three steps. Interpolating in
+     HSL keeps the path through the tokens' own hues (blue → green → amber →
+     red); sRGB would cut across the middle and go muddy.
+
+     The anchors are read from the theme tokens at render time, so GitHub's
+     light/dark switch carries. The fallbacks are the light values, for
+     contexts where the stylesheet is not applied. */
+  const RAMP_TOKENS = ['--ghl-ok', '--ghl-warn', '--ghl-danger', '--ghl-dir-lo', '--ghl-dir-hi'];
+  const RAMP_FALLBACK = ['#0969da', '#bf8700', '#cf222e', '#d7c9f7', '#5b21b6'];
+
+  function hexToHsl(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    const r = ((n >> 16) & 255) / 255;
+    const g = ((n >> 8) & 255) / 255;
+    const b = (n & 255) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (!d) return [0, 0, l * 100];
+    const s = d / (1 - Math.abs(2 * l - 1));
+    let h;
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    return [(h + 360) % 360, s * 100, l * 100];
+  }
+
+  let rampCache = null;
+
+  /* Reading a custom property means reading computed style, and a row paints
+     its bar just before asking for its colour — so asking per row would force a
+     style recalculation per row, every render, all the way through a fetch. The
+     tokens only move when the theme does, which is rare enough that holding the
+     answer for a moment costs nothing and saves all of that. */
+  const RAMP_TTL = 250;
+  // Monotonic: a wall clock that steps backwards would pin the cache for good.
+  const since = () => (globalThis.performance ? performance.now() : Date.now());
+
+  function ramp() {
+    const now = since();
+    if (rampCache && now - rampCache.at < RAMP_TTL) return rampCache.stops;
+
+    const cs = window.getComputedStyle(document.documentElement);
+    const raw = RAMP_TOKENS.map((name, i) => cs.getPropertyValue(name).trim() || RAMP_FALLBACK[i]);
+    const key = raw.join('|');
+    if (rampCache && rampCache.key === key) {
+      rampCache.at = now;
+      return rampCache.stops;
+    }
+    const stops = raw.map((v, i) => hexToHsl(v) || hexToHsl(RAMP_FALLBACK[i]));
+    rampCache = { key, stops, at: now };
+    return stops;
+  }
+
+  /* Hue takes the short way round, which for these tokens is the descending
+     one — through green and amber rather than through magenta. */
+  function mixHsl(a, b, t) {
+    let dh = b[0] - a[0];
+    if (dh > 180) dh -= 360;
+    if (dh < -180) dh += 360;
+    return [
+      (a[0] + dh * t + 360) % 360,
+      a[1] + (b[1] - a[1]) * t,
+      a[2] + (b[2] - a[2]) * t,
+    ];
+  }
+
+  function hsl([h, s, l], alpha) {
+    const base = `${h.toFixed(1)} ${s.toFixed(1)}% ${l.toFixed(1)}%`;
+    return alpha === undefined ? `hsl(${base})` : `hsl(${base} / ${alpha})`;
+  }
+
+  /* Where a line count sits on the ramp: 0 at none, 0.5 at the warn
+     threshold, 1 at the danger threshold and above. */
+  function rampPosition(lines, settings) {
+    const w = Math.max(1, settings.warnLines);
+    const d = Math.max(w + 1, settings.dangerLines);
+    const n = Math.max(0, lines);
+    if (n >= d) return 1;
+    return n <= w ? (n / w) * 0.5 : 0.5 + ((n - w) / (d - w)) * 0.5;
+  }
+
+  /* The ramp's colour for a line count. */
+  function lineColor(lines, settings, alpha) {
+    const [ok, warn, danger] = ramp();
+    const t = rampPosition(lines, settings);
+    const stop = t <= 0.5 ? mixHsl(ok, warn, t * 2) : mixHsl(warn, danger, (t - 0.5) * 2);
+    return hsl(stop, alpha);
+  }
+
+  /* Directories run on their own ramp, in violet, so they never read as a
+     file's severity. What it measures is the largest file anywhere inside: a
+     deep folder is one with something bloated in it, however small its own
+     share of the directory. The two ends line up with the file ramp, so half
+     way means "holds a file past the warn threshold". */
+  function dirColor(maxFile, settings, alpha) {
+    const [, , , lo, hi] = ramp();
+    return hsl(mixHsl(lo, hi, rampPosition(maxFile, settings)), alpha);
+  }
+
+  /* Sizes ramp on the same thresholds, read in bytes at a typical line's
+     length. There is no such thing as a "too many bytes" threshold to set, and
+     a second pair of numbers to configure would be worse than approximate:
+     this way a file that is amber by its lines is about amber by its size, and
+     the two readings agree with each other. */
+  const linesIn = (bytes) => (bytes || 0) / GHL.patterns.DEFAULT_BYTES_PER_LINE;
+
+  /* Stops across a whole ramp, for a legend strip. Sampled rather than left to
+     the browser, whose gradients interpolate in sRGB. */
+  function rampStops(settings, steps = 12, colorAt = lineColor) {
+    const d = Math.max(2, settings.dangerLines);
+    const out = [];
+    for (let i = 0; i <= steps; i++) {
+      out.push(`${colorAt((d * i) / steps, settings)} ${((i / steps) * 100).toFixed(0)}%`);
+    }
+    return out;
+  }
+
+  function approxPrefix(node) {
+    return node.allExact ? '' : '~';
+  }
+
+  /* The two things a node can be measured by. Lines are what the extension is
+     for; bytes come free with the tree listing and are always exact, so they
+     carry no `~` and no thresholds. */
+  const METRICS = {
+    lines: {
+      key: 'lines',
+      get label() { return t('metricLines'); },
+      // An empty string hands the colour back to CSS — for excluded files, and
+      // for the treemap's "N more" aggregate, which stands for no one count.
+      fill: (n, settings, alpha) => {
+        if (n.type === 'dir') return dirColor(n.maxFile || 0, settings, alpha);
+        if (n.type === 'file' && !n.excluded) return lineColor(n.total || 0, settings, alpha);
+        return '';
+      },
+      value: (n) => n.total || 0,
+      cell: (n) => approxPrefix(n) + fmt(n.total || 0),
+      short: (n) => linesOf(n.total || 0, approxPrefix(n) + fmtCompact(n.total || 0)),
+      long: (n) => linesOf(n.total || 0, approxPrefix(n) + fmt(n.total || 0)),
+      fmtTotal: (v) => linesOf(v),
+      rampEnd: (settings) => t('unitLinesOrMore', linesOf(settings.dangerLines)),
+      warnAt: (settings) => linesOf(settings.warnLines),
+      severity: (n, settings) => (n.type === 'file' ? severity(n.total || 0, settings) : 'dir'),
+    },
+    bytes: {
+      key: 'bytes',
+      get label() { return t('metricBytes'); },
+      fill: (n, settings, alpha) => {
+        if (n.type === 'dir') return dirColor(linesIn(n.maxFileBytes), settings, alpha);
+        if (n.type === 'file' && !n.excluded) return lineColor(linesIn(n.bytes), settings, alpha);
+        return '';
+      },
+      value: (n) => n.bytes || 0,
+      cell: (n) => util.fmtBytes(n.bytes || 0),
+      short: (n) => util.fmtBytes(n.bytes || 0),
+      long: (n) => util.fmtBytes(n.bytes || 0),
+      fmtTotal: (v) => util.fmtBytes(v),
+      severity: (n, settings) =>
+        (n.type === 'file' ? severity(linesIn(n.bytes), settings) : 'dir'),
+      // Where this ramp's far end sits, for the legend.
+      rampEnd: (settings) =>
+        t('unitLinesOrMore', util.fmtBytes(settings.dangerLines * GHL.patterns.DEFAULT_BYTES_PER_LINE)),
+      warnAt: (settings) => util.fmtBytes(settings.warnLines * GHL.patterns.DEFAULT_BYTES_PER_LINE),
+    },
+  };
+
+  function metricOf(state) {
+    return METRICS[state.metric] || METRICS.lines;
+  }
+
   /* ------------------------------------------------------------ row cells */
+
+  const PICK_CLASS = 'ghl-row-pick';
 
   function cellIn(host) {
     let cell = host.querySelector(`:scope > .${CELL_CLASS}`);
@@ -35,58 +221,138 @@
     return cell;
   }
 
+  /* Manual mode's checkbox goes at the head of the row, before GitHub's file
+     icon — the bar cell sits at the far end of the name column. */
+  function pickIn(host, handlers) {
+    let pick = host.querySelector(`:scope > .${PICK_CLASS}`);
+    if (!pick) {
+      pick = el('input', { class: PICK_CLASS, type: 'checkbox' });
+      // The row may navigate on click; keep the toggle to ourselves.
+      pick.addEventListener('click', (e) => e.stopPropagation());
+      pick.addEventListener('change', () => {
+        if (handlers.onPick) handlers.onPick(pick.dataset.ghlPath, pick.checked);
+      });
+      host.insertBefore(pick, host.firstChild);
+    }
+    return pick;
+  }
+
   /* A row has one name cell per breakpoint; paint every one of them. */
-  function renderRow(row, node, dirTotal, maxTotal, settings) {
+  function renderRow(row, node, dirTotal, maxTotal, state, handlers, manual, included) {
     for (const host of row.hosts) {
-      paintCell(cellIn(host), row, node, dirTotal, maxTotal, settings);
+      // Only manual mode has checkboxes; building one everywhere else would be
+      // an input and two listeners per row, for CSS to hide.
+      if (manual) paintPick(pickIn(host, handlers), row.path, state, manual);
+      paintCell(cellIn(host), row, node, dirTotal, maxTotal, state, included);
     }
   }
 
-  function paintCell(cell, row, node, dirTotal, maxTotal, settings) {
+  /* Whether manual mode's checkbox for a row is ticked. Rows are always
+     included outside manual mode. */
+  function isIncluded(state, path) {
+    return !(state.deselected && state.deselected.has(path));
+  }
+
+  /* Manual mode's checkbox column is up for the whole view. A ticked row is
+     in: its bar and number show, it counts towards the totals and the
+     percentages, and its files are what the fetch button fetches. Untick it and it
+     drops out of all of that. Other modes have no column. */
+  function paintPick(pick, path, state, manual) {
+    pick.dataset.ghlPath = path;
+    if (!manual) { pick.dataset.pick = 'none'; return; }
+    pick.dataset.pick = 'on';
+    pick.checked = isIncluded(state, path);
+    const left = (state.pickable && state.pickable.get(path)) || 0;
+    pick.title = left ? t('pickRowLeft', filesOf(left)) : t('pickRow');
+  }
+
+  /* Which of a directory's own children an unticked row stands for. A row is
+     usually one of them, but a folded-up chain ("deep/nested") is a row for the
+     child it starts at. */
+  function droppedChildren(dirNode, rows, state) {
+    const out = new Set();
+    for (const row of rows) {
+      if (isIncluded(state, row.path)) continue;
+      const base = dirNode.path ? `${dirNode.path}/` : '';
+      const rest = row.path.startsWith(base) ? row.path.slice(base.length) : row.path;
+      const slash = rest.indexOf('/');
+      out.add(base + (slash === -1 ? rest : rest.slice(0, slash)));
+    }
+    return out;
+  }
+
+  /* Manual mode's view of the directory: the unticked rows dropped, totals
+     recomputed over what is left. Feeds the strip, the percentages and the
+     treemap alike. */
+  function viewOf(dirNode, state, dropped) {
+    const children = new Map();
+    let total = 0;
+    let bytes = 0;
+    let fileCount = 0;
+    // Whatever the rows that are left say, a directory missing descendants is
+    // still missing them.
+    let allExact = !dirNode.incomplete;
+    let maxFile = 0;
+    let maxFileBytes = 0;
+    for (const [name, child] of dirNode.children) {
+      if (dropped ? dropped.has(child.path) : !isIncluded(state, child.path)) continue;
+      children.set(name, child);
+      total += child.total || 0;
+      bytes += child.bytes || 0;
+      fileCount += child.fileCount || 0;
+      if (!child.allExact) allExact = false;
+      if ((child.maxFile || 0) > maxFile) maxFile = child.maxFile || 0;
+      if ((child.maxFileBytes || 0) > maxFileBytes) maxFileBytes = child.maxFileBytes || 0;
+    }
+    return { ...dirNode, children, total, bytes, fileCount, allExact, maxFile, maxFileBytes };
+  }
+
+  function paintCell(cell, row, node, dirTotal, maxTotal, state, included) {
+    const settings = state.settings;
     const fill = cell.querySelector('.ghl-bar-fill');
     const num = cell.querySelector('.ghl-num');
     const pct = cell.querySelector('.ghl-pct');
-    const bar = cell.querySelector('.ghl-bar');
-    bar.style.visibility = !node || !node.allExact || dirTotal === null ? 'hidden' : '';
-    cell.dataset.severity = 'none';
+
+    // Unticked in manual mode: out of the picture, but the cell keeps its
+    // footprint so the column does not reflow.
+    if (!included) {
+      cell.dataset.ghlPath = row.path;
+      cell.dataset.state = 'off';
+      cell.dataset.severity = 'none';
+      fill.style.width = '0%';
+      num.textContent = '';
+      pct.textContent = '';
+      cell.title = '';
+      return;
+    }
 
     if (!node) {
       cell.dataset.ghlPath = row.path;
       cell.dataset.state = 'unknown';
+      // A cell is reused: without this it keeps the colour of whatever it said
+      // last time, on a row that now says nothing.
+      cell.dataset.severity = 'none';
       fill.style.width = '0%';
-      num.textContent = '—';
+      num.textContent = '–';
       pct.textContent = '';
-      cell.title = '未取得';
+      cell.title = t('tipUnknown');
       return;
     }
 
-    const total = node.total || 0;
+    const m = metricOf(state);
+    const total = m.value(node);
     const isFile = node.type === 'file';
     const excluded = isFile && node.excluded;
 
     cell.dataset.ghlPath = node.path;
     cell.dataset.state = excluded ? 'excluded' : (isFile ? 'file' : 'dir');
-    cell.dataset.severity = excluded ? 'none' : (isFile ? severity(total, settings) : 'dir');
+    cell.dataset.severity = excluded ? 'none' : m.severity(node, settings);
 
     if (excluded) {
       fill.style.width = '0%';
       num.textContent = node.binary ? 'binary' : 'generated';
       pct.textContent = '';
-      cell.title = node.binary
-        ? `${node.path}\nバイナリのため行数を数えていません (${util.fmtBytes(node.size)})`
-        : `${node.path}\n生成物として除外 (${util.fmtBytes(node.size)})`;
-      return;
-    }
-
-    if (!node.allExact) {
-      cell.dataset.state = 'unknown';
-      cell.dataset.severity = 'none';
-      fill.style.width = '0%';
-      num.textContent = '—';
-      pct.textContent = '';
-      cell.title = isFile && node.size > settings.maxBlobBytes
-        ? `取得上限（${util.fmtBytes(settings.maxBlobBytes)}）を超えています`
-        : '未取得';
+      cell.title = t(node.binary ? 'tipBinary' : 'tipGenerated', node.path, util.fmtBytes(node.size));
       return;
     }
 
@@ -94,48 +360,120 @@
     const width = maxTotal > 0 ? Math.max(total > 0 ? 2 : 0, (total / maxTotal) * 100) : 0;
 
     fill.style.width = width.toFixed(2) + '%';
-    num.textContent = fmt(total);
+    fill.style.background = m.fill ? m.fill(node, settings) : '';
+    num.textContent = m.cell(node);
     pct.textContent = share >= 0.5 ? Math.round(share) + '%' : '';
 
-    const lines = [];
-    lines.push(node.path);
-    lines.push(`${fmt(total)} 行` + (dirTotal === null ? '' : ` — このディレクトリの ${share.toFixed(1)}%`));
-    if (!isFile) lines.push(`${fmt(node.fileCount)} ファイル`);
-    lines.push(util.fmtBytes(node.bytes || node.size || 0));
-    if (isFile && total >= settings.dangerLines) {
-      lines.push(`⚠ 閾値 ${fmt(settings.dangerLines)} 行を超えています`);
-    } else if (isFile && total >= settings.warnLines) {
-      lines.push(`閾値 ${fmt(settings.warnLines)} 行に近づいています`);
+    const tip = [];
+    tip.push(node.path);
+    tip.push(t('tipShare', m.long(node), share.toFixed(1)));
+    if (!isFile) tip.push(filesOf(node.fileCount));
+    // A directory's colour is about its worst file, so name it.
+    if (!isFile && m.key === 'lines') tip.push(t('tipMaxFile', linesOf(node.maxFile || 0)));
+    if (m.key === 'lines') {
+      tip.push(util.fmtBytes(node.bytes || node.size || 0));
+      if (!node.allExact) tip.push(t('tipEstimate'));
+      if (isFile && total >= settings.dangerLines) {
+        tip.push(t('tipOverDanger', linesOf(settings.dangerLines)));
+      } else if (isFile && total >= settings.warnLines) {
+        tip.push(t('tipNearWarn', linesOf(settings.warnLines)));
+      }
+    } else {
+      tip.push(METRICS.lines.long(node));
     }
-    cell.title = lines.join('\n');
+    cell.title = tip.join('\n');
   }
 
   function clearRows() {
-    for (const cell of document.querySelectorAll(`.${CELL_CLASS}`)) cell.remove();
+    for (const n of document.querySelectorAll(`.${CELL_CLASS}, .${PICK_CLASS}, .${COL_HEAD_CLASS}`)) n.remove();
+  }
+
+  function clearCells() {
+    for (const n of document.querySelectorAll(`.${CELL_CLASS}`)) n.remove();
+  }
+
+  /* Row paths whose checkbox is currently on screen. */
+  function pickedKeysOnScreen() {
+    return [...new Set(
+      [...document.querySelectorAll(`.${PICK_CLASS}[data-pick="on"]`)].map((p) => p.dataset.ghlPath)
+    )];
+  }
+
+  function allRowsBox(handlers) {
+    const box = el('input', {
+      class: 'ghl-pick', type: 'checkbox', 'data-ghl-action': 'pick-all',
+      title: GHL.i18n.t('pickAllTitle'),
+    });
+    box.addEventListener('click', (e) => e.stopPropagation());
+    box.addEventListener('change', () => {
+      if (handlers.onPickAll) handlers.onPickAll(box.checked, pickedKeysOnScreen());
+    });
+    return box;
+  }
+
+  /* The all-rows checkbox mirrors the rows: ticked when every row is,
+     indeterminate when only some are. Clicking it takes all rows with it. */
+  function syncAllRowsBox(box, pickKeys, state) {
+    const selected = pickKeys.filter((k) => isIncluded(state, k)).length;
+    box.checked = pickKeys.length > 0 && selected === pickKeys.length;
+    box.indeterminate = selected > 0 && selected < pickKeys.length;
+  }
+
+  /* The head of the checkbox column: the icon, with the all-rows checkbox
+     under it, exactly over the rows' checkboxes — so the column reads as ours
+     and is driven from its top. It lives in the table's "Name" header cells
+     (one per breakpoint, like the rows); on the repository root, where that
+     row has no height, in GitHub's latest-commit box, which sits directly on
+     the rows there. The vertical rule between the checkboxes and GitHub's
+     file icons is CSS on the rows and on the head's home. Returns whether a
+     head found a home. */
+  const COL_HEAD_CLASS = 'ghl-col-head';
+
+  function renderColumnHead(state, handlers, pickKeys, show) {
+    let homes = show ? GHL.page.findNameHeaders() : [];
+    if (show && !homes.length) {
+      const box = GHL.page.findCommitBox();
+      if (box) homes = [box];
+    }
+    // A head left in a home the layout no longer uses is stale.
+    for (const h of document.querySelectorAll(`.${COL_HEAD_CLASS}`)) {
+      if (!homes.includes(h.parentElement)) h.remove();
+    }
+    if (!homes.length) return false;
+    for (const home of homes) {
+      let head = home.querySelector(`:scope > .${COL_HEAD_CLASS}`);
+      if (!head) {
+        head = el('span', { class: COL_HEAD_CLASS }, [icon(), allRowsBox(handlers)]);
+        home.insertBefore(head, home.firstChild);
+      }
+      syncAllRowsBox(head.querySelector('input'), pickKeys, state);
+    }
+    return true;
   }
 
   /* ---------------------------------------------------------- summary bar */
 
-  function segmentsFor(dirNode, settings, limit = 12) {
+  function segmentsFor(dirNode, settings, m, limit = 12) {
     const kids = [...dirNode.children.values()]
-      .filter((n) => (n.total || 0) > 0)
-      .sort((a, b) => b.total - a.total);
+      .filter((n) => m.value(n) > 0)
+      .sort((a, b) => m.value(b) - m.value(a));
 
     const head = kids.slice(0, limit);
     const tail = kids.slice(limit);
     const segments = head.map((n, i) => ({
       node: n,
       label: n.name + (n.type === 'dir' ? '/' : ''),
-      total: n.total,
-      tone: n.type === 'file' ? severity(n.total, settings) : 'dir',
+      total: m.value(n),
+      tone: m.severity(n, settings),
+      color: m.fill ? m.fill(n, settings) : '',
       alt: i % 2 === 1,
     }));
 
     if (tail.length) {
       segments.push({
         node: null,
-        label: `他 ${tail.length} 件`,
-        total: tail.reduce((s, n) => s + n.total, 0),
+        label: t('restItems', tail.length),
+        total: tail.reduce((s, n) => s + m.value(n), 0),
         tone: 'rest',
         alt: false,
       });
@@ -143,24 +481,68 @@
     return segments;
   }
 
+  /* The toolbar icon, inline so it follows GitHub's theme and stays crisp.
+     Static markup, so innerHTML is safe here. */
+  const ICON_SVG =
+    '<svg viewBox="0 0 128 128" aria-hidden="true">' +
+    '<g fill="currentColor" opacity="0.3">' +
+    '<rect x="17" y="17" width="94" height="24" rx="12"/>' +
+    '<rect x="17" y="52" width="94" height="24" rx="12"/>' +
+    '<rect x="17" y="87" width="94" height="24" rx="12"/></g>' +
+    '<rect x="17" y="17" width="94" height="24" rx="12" style="fill:var(--ghl-danger)"/>' +
+    '<rect x="17" y="52" width="56" height="24" rx="12" style="fill:var(--ghl-warn)"/>' +
+    '<rect x="17" y="87" width="32" height="24" rx="12" style="fill:var(--ghl-ok)"/>' +
+    '</svg>';
+
+  function icon() {
+    const span = el('span', { class: 'ghl-icon' });
+    span.innerHTML = ICON_SVG;
+    return span;
+  }
+
   function buildSummary() {
     return el('div', { id: SUMMARY_ID, class: 'ghl-summary' }, [
       el('div', { class: 'ghl-summary-head' }, [
-        el('span', { class: 'ghl-summary-title' }, ['GitHub Lines']),
+        el('span', { class: 'ghl-summary-title' }, [icon(), 'GitHub Lines']),
         el('span', { class: 'ghl-summary-stats' }),
         el('span', { class: 'ghl-spacer' }),
         el('span', { class: 'ghl-summary-status' }),
-        el('button', { class: 'ghl-btn ghl-btn-primary', type: 'button', 'data-ghl-action': 'fetch' }),
-        el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [
-          'ツリーマップ',
+        // Marked with the icon so the checkboxes in GitHub's table below read
+        // as ours, not GitHub's.
+        // Only when the column head has no home (older GitHub layouts).
+        el('label', { class: 'ghl-pick-all', title: t('pickAllTitle') }, [
+          icon(),
+          t('pickAll'),
         ]),
+        // What the bars measure — and, in manual mode, what the button beside
+        // it fetches.
+        el('span', { class: 'ghl-metric', role: 'group', 'aria-label': t('metricGroup') }, [
+          el('button', { type: 'button', 'data-ghl-metric': 'lines', title: t('metricLinesTitle') }, [t('metricLines')]),
+          el('button', { type: 'button', 'data-ghl-metric': 'bytes', title: t('metricBytesTitle') }, [t('metricBytes')]),
+        ]),
+        el('button', { class: 'ghl-btn ghl-btn-fetch', type: 'button', 'data-ghl-action': 'fetch' }),
+        el('button', { class: 'ghl-btn', type: 'button', 'data-ghl-action': 'treemap' }, [t('treemap')]),
       ]),
       el('div', { class: 'ghl-stack' }),
-      el('div', { class: 'ghl-legend' }),
+      el('div', { class: 'ghl-summary-foot' }, [
+        el('div', { class: 'ghl-legend' }),
+        el('span', { class: 'ghl-spacer' }),
+        /* What is left of the budget these bars were drawn out of. The detail
+           is our own tooltip rather than a `title`: a native one depends on the
+           window being focused and the pointer resting, and cannot be reached
+           from the keyboard at all. */
+        el('span', { class: 'ghl-rate', tabindex: '0' }, [
+          el('span', { class: 'ghl-rate-value' }),
+          el('span', { class: 'ghl-rate-note', role: 'tooltip' }),
+        ]),
+      ]),
     ]);
   }
 
-  function renderSummary(state, dirNode, handlers) {
+  /* `pickKeys` are the row paths the checkboxes currently stand for;
+     `headPlaced` says the column head is up, so the strip's copy of the
+     all-rows checkbox is not needed. */
+  function renderSummary(state, dirNode, handlers, pickKeys, headPlaced) {
     const anchor = GHL.page.findSummaryAnchor();
     if (!anchor) return;
 
@@ -169,81 +551,145 @@
       node = buildSummary();
       node.querySelector('[data-ghl-action="treemap"]')
         .addEventListener('click', () => handlers.onTreemap && handlers.onTreemap());
+      for (const b of node.querySelectorAll('[data-ghl-metric]')) {
+        b.addEventListener('click', () => handlers.onMetric && handlers.onMetric(b.dataset.ghlMetric));
+      }
       node.querySelector('[data-ghl-action="fetch"]')
-        .addEventListener('click', () => handlers.onFetchExact && handlers.onFetchExact());
+        .addEventListener('click', () => handlers.onFetch && handlers.onFetch());
+      node.querySelector('.ghl-pick-all').insertBefore(allRowsBox(handlers), node.querySelector('.ghl-pick-all').lastChild);
     }
-    if (node.previousElementSibling !== anchor && node.parentElement !== anchor.parentElement) {
-      anchor.parentElement.insertBefore(node, anchor);
-    } else if (!node.isConnected) {
+    // The strip sits immediately before the file list. Anything else — a node
+    // GitHub inserted between them, a re-parent, a detach — puts it back.
+    if (!node.isConnected
+        || node.parentElement !== anchor.parentElement
+        || node.nextElementSibling !== anchor) {
       anchor.parentElement.insertBefore(node, anchor);
     }
 
     const settings = state.settings;
     const treemapButton = node.querySelector('[data-ghl-action="treemap"]');
     treemapButton.hidden = !settings.showTreemapButton;
-    treemapButton.disabled = !state.index || !dirNode.allExact;
+    treemapButton.disabled = !GHL.store.dirNodeOf(state);
 
-    // Manual mode: nothing is fetched until this is pressed.
-    const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
-    const offerFetch = settings.exactLinesMode === 'manual' &&
-      (state.status === 'error' || (state.status === 'pending' && (state.needsMetadata || state.pending > 0)));
-    fetchButton.hidden = !offerFetch;
-    if (offerFetch) {
-      fetchButton.textContent = state.needsMetadata || !state.pending
-        ? '行数を取得' : `行数を取得（${fmt(state.pending)}）`;
+    const m = metricOf(state);
+
+    // Lines | Size. With a tree in, it says what the bars measure; in manual
+    // mode it is up from the start and stays put through the fetch, since it
+    // also says what the button fetches.
+    const toggle = node.querySelector('.ghl-metric');
+    toggle.hidden = !state.index && settings.exactLinesMode !== 'manual';
+    for (const b of toggle.querySelectorAll('[data-ghl-metric]')) {
+      b.setAttribute('aria-pressed', String(b.dataset.ghlMetric === m.key));
     }
+
+    // Manual mode's one button fetches whichever the toggle says. Sizes cost a
+    // single request, so that reading is plain; lines cost one per file and
+    // carry the colour. It never leaves the strip once the view is up, so the
+    // controls beside it never move: while a fetch runs it reads "fetching", and
+    // with nothing left to fetch it sits disabled as "fetched".
+    const fetchButton = node.querySelector('[data-ghl-action="fetch"]');
+    const wantsLines = m.key === 'lines';
+    const busy = state.status === 'loading' || state.status === 'estimated' || state.status === 'refining';
+    let label = t('fetchDone');
+    let title = t(wantsLines ? 'fetchDoneLinesTitle' : 'fetchDoneSizesTitle');
+    let disabled = true;
+    let primary = false;
+    // What a press would do is the store's answer, not a second guess at it.
+    // Busy comes first: a pass already running is what the button says.
+    if (busy) {
+      label = t('fetchBusy');
+      title = '';
+    } else if (state.press === 'tree' && !wantsLines) {
+      label = t('fetchSizes');
+      title = t('fetchSizesTitle');
+      disabled = false;
+    } else if (state.press === 'tree') {
+      // Reading the tree is not about which rows are ticked — and when it is
+      // the way back from something unread, unticking must not bar it.
+      label = t('fetchLines');
+      primary = true;
+      disabled = false;
+      title = t('fetchLinesTitle');
+    } else if (state.press === 'counts') {
+      label = t('fetchLinesCount', fmt(state.pending));
+      primary = true;
+      // Every row unticked: there is something to fetch, and nothing asked for.
+      disabled = state.pending === 0;
+      title = state.pending ? t('fetchLinesCountTitle', fmt(state.pending)) : t('fetchNothingTicked');
+    }
+    fetchButton.hidden = settings.exactLinesMode !== 'manual';
+    fetchButton.classList.toggle('ghl-btn-primary', primary);
+    fetchButton.disabled = disabled;
+    fetchButton.textContent = label;
+    fetchButton.title = title;
+
+    // The strip's copy of the all-rows checkbox, for pages where the column
+    // head could not be placed.
+    const pickAll = node.querySelector('.ghl-pick-all');
+    const manual = settings.showInlineBars && settings.exactLinesMode === 'manual';
+    pickAll.hidden = !manual || headPlaced;
+    if (!pickAll.hidden) syncAllRowsBox(pickAll.querySelector('input'), pickKeys, state);
+
+    renderRate(node.querySelector('.ghl-rate'), state);
 
     const stats = node.querySelector('.ghl-summary-stats');
     const status = node.querySelector('.ghl-summary-status');
     const stack = node.querySelector('.ghl-stack');
     const legend = node.querySelector('.ghl-legend');
 
-    const total = dirNode.total || 0;
-    const biggest = [...dirNode.children.values()].sort((a, b) => b.total - a.total)[0];
+    const total = m.value(dirNode);
+    const biggest = [...dirNode.children.values()].sort((a, b) => m.value(b) - m.value(a))[0];
 
-    if (!state.index) {
-      // Nothing fetched yet — the status line carries the message instead.
-      stats.textContent = '';
-    } else if (!dirNode.allExact) {
-      stats.textContent = `取得済み ${fmt(dirNode.exactCount || 0)}/${fmt(dirNode.fileCount)} ファイル`;
+    if (!state.index || !GHL.store.dirNodeOf(state)) {
+      // Nothing fetched yet, or nothing covering what is on screen — the status
+      // line carries the message instead. A zero here would read as an answer.
+      stats.textContent = '—';
     } else {
-      const parts = [`${fmt(total)} 行`, `${fmt(dirNode.fileCount)} ファイル`];
+      const parts = [m.long(dirNode), filesOf(dirNode.fileCount)];
       if (biggest && total > 0) {
-        const share = Math.round((biggest.total / total) * 100);
-        parts.push(`最大: ${biggest.name}${biggest.type === 'dir' ? '/' : ''} ${fmtCompact(biggest.total)} 行 (${share}%)`);
+        const share = Math.round((m.value(biggest) / total) * 100);
+        parts.push(t('summaryBiggest',
+          biggest.name + (biggest.type === 'dir' ? '/' : ''), m.short(biggest), share));
       }
       stats.textContent = parts.join('  ·  ');
     }
 
-    status.textContent = statusText(state);
-    status.dataset.tone = state.status === 'error' ? 'error' : (state.warning ? 'warn' : 'ok');
+    status.textContent = statusText(state, m);
+    status.dataset.tone = state.status === 'error' ? 'error'
+      : (state.warning || state.metaWarning || state.missingDirectory) ? 'warn' : 'ok';
 
     // Stacked proportion bar
     stack.textContent = '';
     legend.textContent = '';
-    const complete = !!state.index && dirNode.allExact;
-    node.dataset.complete = String(complete);
-    stack.hidden = !complete || total === 0;
-    legend.hidden = !complete || total === 0;
-    if (!complete) return;
-    const segments = segmentsFor(dirNode, settings);
+    const segments = segmentsFor(dirNode, settings, m);
     for (const seg of segments) {
       const pct = total > 0 ? (seg.total / total) * 100 : 0;
       const bar = el('span', {
         class: 'ghl-seg',
         'data-tone': seg.tone,
         'data-alt': seg.alt ? '1' : '0',
-        style: { width: pct.toFixed(3) + '%' },
-        title: `${seg.label}\n${fmt(seg.total)} 行 (${pct.toFixed(1)}%)`,
+        style: { width: pct.toFixed(3) + '%', background: seg.color || '' },
+        title: `${seg.label}\n${m.fmtTotal(seg.total)} (${pct.toFixed(1)}%)`,
       });
       if (seg.node) {
         bar.addEventListener('click', () => {
-          const row = document.querySelector(`.${CELL_CLASS}[data-ghl-path="${cssEscape(seg.node.path)}"]`);
-          if (row) {
-            row.closest('tr, .Box-row, [role="row"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            row.classList.add('ghl-flash');
-            setTimeout(() => row.classList.remove('ghl-flash'), 1200);
+          const path = cssEscape(seg.node.path);
+          /* GitHub folds a chain of single-child directories into one row, and
+             that row's cell is named for the whole chain — so the child this
+             segment is about is the start of it, not a row of its own. */
+          let cells = [...document.querySelectorAll(`.${CELL_CLASS}[data-ghl-path="${path}"]`)];
+          if (!cells.length) {
+            cells = [...document.querySelectorAll(`.${CELL_CLASS}[data-ghl-path^="${path}/"]`)];
           }
+          if (!cells.length) return;
+          cells[0].closest('tr, .Box-row, [role="row"]')
+            ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          // A row has a name cell per breakpoint and shows one of them; which
+          // one is not this code's business, so both flash.
+          for (const cell of cells) cell.classList.add('ghl-flash');
+          setTimeout(() => {
+            for (const cell of cells) cell.classList.remove('ghl-flash');
+          }, 1200);
         });
         bar.classList.add('ghl-seg-clickable');
       }
@@ -252,7 +698,7 @@
       if (pct >= 6) {
         legend.appendChild(
           el('span', { class: 'ghl-legend-item', 'data-tone': seg.tone }, [
-            el('span', { class: 'ghl-legend-dot' }),
+            el('span', { class: 'ghl-legend-dot', style: { background: seg.color || '' } }),
             `${seg.label} ${Math.round(pct)}%`,
           ])
         );
@@ -260,56 +706,83 @@
     }
   }
 
+  /* Nothing until something has been spent: before the first request there are
+     no headers to read a budget off, and a made-up number would be worse than
+     none. */
+  function renderRate(node, state) {
+    const rate = state.rate;
+    if (!rate || rate.limit == null || rate.remaining == null) {
+      node.hidden = true;
+      return;
+    }
+    node.hidden = false;
+    node.querySelector('.ghl-rate-value').textContent =
+      t('apiLeft', fmt(rate.remaining), fmt(rate.limit));
+    node.dataset.tone = rate.remaining === 0 ? 'error'
+      : rate.remaining <= Math.max(5, rate.limit * 0.1) ? 'warn' : 'ok';
+
+    const resets = rate.reset && rate.reset > Date.now()
+      ? t('apiResetsIn', Math.ceil((rate.reset - Date.now()) / 60000))
+      : '';
+    node.querySelector('.ghl-rate-note').textContent = rate.authenticated
+      ? t('apiLeftTitle', fmt(rate.remaining), fmt(rate.limit), resets,
+          rate.label || t('tokenFallback'))
+      : t('apiLeftTitleAnon', fmt(rate.remaining), fmt(rate.limit), resets);
+  }
+
   function cssEscape(value) {
     if (window.CSS && CSS.escape) return CSS.escape(value);
     return String(value).replace(/["\\]/g, '\\$&');
   }
 
-  function statusText(state) {
+  function statusText(state, m) {
     if (state.status === 'error') return errorText(state.error);
     if (state.warning) return errorText(state.warning);
-    if (state.status === 'loading') return '読み込み中…';
+    if (state.status === 'loading') return t('statusLoading');
+    if (state.status === 'idle') return t('statusIdle');
     if (state.status === 'refining') {
-      return `行数を取得中 ${state.progress.done}/${state.progress.total}`;
+      return t('statusRefining', state.progress.done, state.progress.total);
     }
-    if (state.truncated) return 'ファイル一覧の取得上限に達しました';
-    if (state.status === 'ready' && !state.index) return '未取得';
+    if (state.missingDirectory) return t('statusNoDirectory');
+    if (state.metaWarning) return errorText(state.metaWarning);
+    // Estimates only exist for lines; sizes are exact from the start.
+    if (m && m.key === 'bytes') return state.truncated ? t('statusTruncatedSizes') : '';
+    if (state.status === 'estimated') return t('statusEstimating');
+    if (state.status === 'pending') return t('statusEstimated');
+    if (state.truncated) return t('statusTruncated');
     return '';
   }
 
   function untilText(reset) {
     if (!reset) return '';
     const minutes = Math.ceil((reset - Date.now()) / 60000);
-    return minutes > 0 ? `（あと約 ${minutes} 分）` : '';
+    return minutes > 0 ? t('untilMinutes', minutes) : '';
   }
 
   function errorText(err) {
-    if (!err) return 'エラー';
+    if (!err) return t('errGeneric');
+    const token = err.tokenLabel || t('tokenFallback');
     switch (err.error) {
       case 'rate_limit':
-        return err.authenticated
-          ? `API レート制限に到達しました${untilText(err.reset)}`
-          : 'API レート制限（未認証 60回/時）— 設定でトークンを登録してください';
+        return err.authenticated ? t('errRateLimit', untilText(err.reset)) : t('errRateLimitAnon');
       case 'secondary_rate_limit':
-        return `GitHub の二次レート制限により一時停止中${untilText(err.reset)}`;
+        return t('errSecondary', untilText(err.reset));
       case 'throttled':
-        return '短時間に取得しすぎました — 時間をおいて再試行してください';
+        return t('errThrottled');
       case 'bad_token':
-        return `${err.tokenLabel || 'トークン'} が無効です — 設定を確認してください`;
-      case 'attributes_limit':
-        return '.gitattributes の取得上限に達しました';
+        return t('errBadToken', token);
       case 'not_found':
         // With several accounts configured, naming the one that was tried is
         // the difference between a useful message and a mystery.
-        return err.authenticated
-          ? `リポジトリにアクセスできません（${err.tokenLabel || 'トークン'} の権限を確認）`
-          : 'private リポジトリ — 設定でトークンを登録してください';
+        return err.authenticated ? t('errNotFound', token) : t('errPrivate');
+      case 'attributes_limit':
+        return t('errAttributes');
       case 'timeout':
-        return 'バックグラウンドが応答しません — ページを更新してください';
+        return t('errTimeout');
       case 'disconnected':
       case 'invalidated':
-        return '拡張が再読み込みされました — ページを更新してください';
-      default: return `取得に失敗しました (${err.error || 'error'})`;
+        return t('errReloaded');
+      default: return t('errFailed', err.error || 'error');
     }
   }
 
@@ -319,48 +792,65 @@
 
   /* ------------------------------------------------------------- render */
 
-  const EMPTY_DIR = { children: new Map(), total: 0, fileCount: 0, allExact: true };
+  const EMPTY_DIR = { children: new Map(), total: 0, bytes: 0, fileCount: 0, allExact: true };
 
   function render(state, handlers) {
     const settings = state.settings;
     if (!settings) return;
 
     const ctx = state.ctx;
-    const dirNode = state.index && (state.index.get(ctx.path) || state.root);
-
-    // Still loading, or the request failed outright. Show the strip regardless:
-    // a blank page gives the user nothing to act on, and "no bars" should never
-    // be indistinguishable from "extension not running".
-    if (!dirNode) {
-      clearRows();
-      renderSummary(state, EMPTY_DIR, handlers);
-      if (settings.showInlineBars) {
-        for (const row of GHL.page.findRows(ctx)) {
-          renderRow(row, null, null, 0, settings);
-        }
+    const dirNode = GHL.store.dirNodeOf(state);
+    const rows = GHL.page.findRows(ctx);
+    // Manual mode's checkbox column is up for the whole view, one box per row
+    // on screen.
+    const manual = settings.showInlineBars && settings.exactLinesMode === 'manual';
+    const pickKeys = manual ? rows.map((r) => r.path) : [];
+    // What the rows on screen are is the store's to know as well: it decides
+    // which files an unticked row takes with it.
+    if (manual && handlers.onRows) handlers.onRows(pickKeys);
+    const headPlaced = renderColumnHead(state, handlers, pickKeys, manual);
+    if (manual) {
+      for (const r of rows) {
+        for (const host of r.hosts) paintPick(pickIn(host, handlers), r.path, state, true);
       }
+    }
+
+    // No tree yet — idle, loading, or the request failed outright. Show the
+    // strip regardless: a blank page gives the user nothing to act on, and "no
+    // bars" should never be indistinguishable from "extension not running".
+    if (!dirNode) {
+      clearCells();
+      if (!manual) clearRows();
+      renderSummary(state, EMPTY_DIR, handlers, pickKeys, headPlaced);
       return;
     }
 
-    renderSummary(state, dirNode, handlers);
+    // What the strip and the percentages are computed over: in manual mode,
+    // the ticked rows only.
+    const view = manual ? viewOf(dirNode, state, droppedChildren(dirNode, rows, state)) : dirNode;
+    renderSummary(state, view, handlers, pickKeys, headPlaced);
 
     if (!settings.showInlineBars) {
       clearRows();
       return;
     }
 
-    const rows = GHL.page.findRows(ctx);
     const visible = rows
       .map((r) => ({ row: r, node: state.index.get(r.path) }))
-      .filter((x) => x.node);
+      .filter((x) => x.node && (!manual || isIncluded(state, x.row.path)));
 
-    const dirTotal = dirNode.allExact ? dirNode.total || 0 : null;
-    const maxTotal = visible.reduce((m, x) => Math.max(m, x.node.total || 0), 0);
+    const m = metricOf(state);
+    const dirTotal = m.value(view);
+    const maxTotal = visible.reduce((acc, x) => Math.max(acc, m.value(x.node)), 0);
 
     for (const r of rows) {
-      renderRow(r, state.index.get(r.path), dirTotal, maxTotal, settings);
+      const included = !manual || isIncluded(state, r.path);
+      renderRow(r, state.index.get(r.path), dirTotal, maxTotal, state, handlers, manual, included);
     }
   }
 
-  GHL.inline = { render, clearRows, removeSummary, severity, errorText, SUMMARY_ID };
+  GHL.inline = {
+    render, clearRows, removeSummary, severity, errorText, linesOf, filesOf,
+    METRICS, metricOf, viewOf, droppedChildren, lineColor, dirColor, rampStops, SUMMARY_ID,
+  };
 })(globalThis.GHL);

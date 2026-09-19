@@ -1,80 +1,133 @@
 # GitHub Lines
 
-GitHub のファイル一覧に、**そのディレクトリ内での行数の割合**をバーで表示する Chrome 拡張です。
+A Chrome extension that puts a bar on GitHub's file list showing **each entry's
+share of the lines in that directory**.
 
-AI にコードを書かせていると特定のファイルだけが肥大化しがちですが、GitHub の標準 UI は
-ファイル名しか出さないため気づけません。clone せずに、ブラウザ上で一目で分かるようにします。
+Let an AI write code for a while and one file tends to swell out of proportion
+to the rest — but GitHub's own listing shows you nothing but names, so you never
+see it happen. This makes it obvious in the browser, without cloning anything.
 
-![ファイル一覧](docs/screenshot-file-list.png)
+![The file list](docs/screenshot-file-list.png)
 
-「行数を取得」を押すと、取得したファイルの行数を表示します。
-ディレクトリ配下の対象ファイルが揃うと、合計と割合を表示します。
-初期設定は手動で、ボタンを押すまで API を呼びません。キャッシュ済みの実測値は再利用します。
+That `apiSetupHelpers.ts` is nearing the warning threshold at 573 lines, and
+that `compat/` and `components/` carry 13% of the directory each, are both there
+the moment the page opens. (The pictures are Vue's `runtime-core` package.)
 
-「ツリーマップ」ボタンで面積 = 行数の俯瞰図に切り替わります。ディレクトリをクリックすると
-その中へドリルダウンできます。
+The "Treemap" button switches to a view where **area is line count**. Click a
+directory to drill into it.
 
-![ツリーマップ](docs/screenshot-treemap.png)
+![The treemap](docs/screenshot-treemap.png)
 
-## インストール
+## Setting it up
 
-ビルド不要です。
+There is nothing to build. Five minutes, in order:
 
-1. このリポジトリを clone するか、[ZIP をダウンロード](https://github.com/ebi-oishii/github-lines/archive/refs/heads/main.zip)して展開
-2. `chrome://extensions` を開く
-3. 右上の「デベロッパーモード」をオン
-4. 「パッケージ化されていない拡張機能を読み込む」でこのディレクトリを選択
+### 1. Load the extension
 
-GitHub のリポジトリを開き、一覧の上の「行数を取得」を押してください。private リポジトリを見る場合や、
-未認証の API 制限（60 回/時）に当たる場合は[トークンを設定](docs/token.md)してください。
-個人用と仕事用のようにアカウントを使い分けている場合は、
-[複数のトークンをオーナーごとに割り当て](docs/token.md#複数アカウントを使い分ける)られます。
+1. Clone this repository, or [download the ZIP](https://github.com/ebi-oishii/github-lines/archive/refs/heads/main.zip) and unpack it
+2. Open `chrome://extensions`
+3. Turn on "Developer mode", top right
+4. "Load unpacked", and pick the directory holding `manifest.json`
 
-## 表示の読み方
+Open any GitHub repository and it is working. It does not go and count lines on
+its own, so start by pressing "Fetch line counts" in the strip above the file
+list.
 
-| 表示 | 意味 |
+### 2. Open the options
+
+From `chrome://extensions`, under GitHub Lines, click "Extension options". If
+you have pinned it to the toolbar, right-click the icon → "Options".
+
+Settings are saved as you change them. There is no Save button.
+
+### 3. Add a token (needed for private repositories)
+
+It works on public repositories without one, but the GitHub API allows 60
+requests an hour unauthenticated. A token raises that to 5,000 and reaches
+private repositories.
+
+1. [Create a fine-grained token](https://github.com/settings/personal-access-tokens/new).
+   The only permission it needs is `Repository permissions → Contents: Read-only`
+2. Paste it into "Access tokens" in the options
+3. Press "Verify and fill in the owners". The accounts and organizations that
+   token can actually read are filled in for you
+
+How to create one in detail, and what to watch for with organizations and SAML
+SSO, is in [Tokens](docs/token.md). If you keep separate accounts for personal
+and work, you can [route a token per owner](docs/token.md#using-several-accounts).
+
+### 4. Choose when it counts
+
+| Mode | What it does | When |
+|---|---|---|
+| Manual (default) | Fetches nothing on open; counts when you press the button | You would rather a page you are passing through spent nothing |
+| Automatic | Counts as soon as the page opens | You always want real numbers |
+| Off | Estimates only | The proportions are enough |
+
+Manual is the default so that a page you merely passed through does not spend
+your API budget — 60 an hour, until you add a token. In manual mode the
+checkbox on each row narrows what gets fetched. See
+[Usage](docs/usage.md#when-it-counts).
+
+### 5. Language (optional)
+
+It follows your browser's language by default (English or Japanese). You can pin
+one under "Display → Language" in the options.
+
+### Updating
+
+If you cloned it: `git pull`, then press reload on GitHub Lines in
+`chrome://extensions`. GitHub tabs you had open need a refresh.
+
+## Reading the display
+
+| What you see | What it means |
 |---|---|
-| バーの長さ | **そのディレクトリで最大の項目に対する相対値**。1 位が常に満タン |
-| `52%` | ディレクトリ合計に占める**実際の割合** |
-| `1,204` | 取得済みの実測行数 |
-| `—` | 未取得、または配下の行数が揃っていない。推定値は表示しません |
-| 青 / 黄 / 赤 | 通常 / 500 行以上 / 800 行以上（閾値は変更可） |
-| `generated` `binary` | カウント対象外 |
+| Bar length | **Relative to the largest entry in that directory** — the top one is always full |
+| `52%` | Its **actual share** of the directory's total |
+| `~1,204` | An estimate; the real count has not been fetched |
+| Blue → green → amber → red | Continuous with the line count (amber at 500, red at 800 and above; both configurable) |
+| Pale → deep violet | A directory, deepening with **the largest file inside it** |
+| | On the Size reading, the same ramp with the thresholds read in bytes |
+| `generated` `binary` | Not counted |
 
-詳しくは [使い方](docs/usage.md) を参照してください。
+[Usage](docs/usage.md) has the rest.
 
-## ドキュメント
+## Documentation
 
 | | |
 |---|---|
-| [使い方](docs/usage.md) | 表示の読み方、設定項目、除外ルール、キャッシュと API 消費量 |
-| [トークンの設定](docs/token.md) | PAT の作り方と登録手順、Organization / SAML SSO の注意点 |
-| [困ったときは](docs/troubleshooting.md) | バーが出ない、行数が合わない、など |
-| [API 利用と規約](docs/api-usage-and-terms.md) | GitHub の利用規約・レート制限に対する本拡張の扱い |
-| [開発](docs/development.md) | テスト、フィクスチャ更新、コード構成 |
+| [Usage](docs/usage.md) | Reading the display, every setting, exclusions, the cache and what it spends |
+| [Tokens](docs/token.md) | Creating and registering a PAT, organizations, SAML SSO |
+| [Troubleshooting](docs/troubleshooting.md) | No bars, counts that disagree, and the rest |
+| [API use and terms](docs/api-usage-and-terms.md) | How this extension treats GitHub's terms and rate limits |
+| [Development](docs/development.md) | Tests, refreshing the fixture, how the code is laid out |
 
-## 制限
+## Limits
 
-- 対象は `github.com` のみ（GitHub Enterprise Server は未対応）
-- 「行数」は `wc -l` 相当です。空行・コメントは区別しません
-- 10 万ファイル超などで Tree API が `truncated` を返す場合、ディレクトリ合計と割合は
-  表示しません（その旨をステータスに表示します）
+- `github.com` only (GitHub Enterprise Server is not supported)
+- A "line" is what `wc -l` counts. Blank lines and comments are not told apart
+- On a repository large enough for the Tree API to answer `truncated` — around
+  100,000 files — nested directory totals are incomplete, and the status line
+  says so
 
-## 既存拡張との違い
+## How it differs from what exists
 
-調べた範囲では、要件（ディレクトリ内の割合を一覧上で比較）を満たすものはありませんでした。
+Nothing found in the survey did the thing this is for: comparing shares within a
+directory, on the listing itself.
 
-| 拡張 | 実際にやること |
+| Extension | What it actually does |
 |---|---|
-| [harshjv/github-repo-size](https://github.com/harshjv/github-repo-size) | 一覧にサイズ列（バイト）。2025-08 にアーカイブ |
-| [AminoffZ/github-repo-size](https://github.com/AminoffZ/github-repo-size) | popup でサイズ集計（バイト） |
-| [Github Aid](https://chromewebstore.google.com/detail/github-aid-displays-repo/abfbcnoemiciiljhpngefacedfgebdcn) | ファイル / フォルダのバイト数 |
-| [GitHub Code Counter](https://chromewebstore.google.com/detail/github-code-counter/lkmlkgijefhcbgpngkhmdhilfdffljhj) | popup で総 LOC とファイル別内訳 |
-| [GitHub Tree Map](https://chromewebstore.google.com/detail/github-tree-map/aagofmkgihihajogoojeamnfgpgmehnn) | 階層のツリー**図**（面積は行数に非依存） |
-| [github-better-line-counts](https://github.com/aklinker1/github-better-line-counts) | PR の diff から生成物を除外 |
+| [harshjv/github-repo-size](https://github.com/harshjv/github-repo-size) | A size column in bytes. Archived 2025-08 |
+| [AminoffZ/github-repo-size](https://github.com/AminoffZ/github-repo-size) | Totals sizes in a popup, in bytes |
+| [Github Aid](https://chromewebstore.google.com/detail/github-aid-displays-repo/abfbcnoemiciiljhpngefacedfgebdcn) | Byte counts per file and folder |
+| [GitHub Code Counter](https://chromewebstore.google.com/detail/github-code-counter/lkmlkgijefhcbgpngkhmdhilfdffljhj) | Total LOC and a per-file breakdown, in a popup |
+| [GitHub Tree Map](https://chromewebstore.google.com/detail/github-tree-map/aagofmkgihihajogoojeamnfgpgmehnn) | A tree **diagram** of the hierarchy; area is not line count |
+| [github-better-line-counts](https://github.com/aklinker1/github-better-line-counts) | Drops generated files from a PR's diff |
 
-`.gitattributes` の `linguist-generated` を除外に使う手法は github-better-line-counts から取り入れました。
+Reading `linguist-generated` out of `.gitattributes` to exclude files is taken
+from github-better-line-counts.
 
-## ライセンス
+## Licence
 
 [MIT](LICENSE)

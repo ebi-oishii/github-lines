@@ -1,12 +1,17 @@
 /* Squarified treemap, rendered as nested absolutely-positioned divs.
 
-   Area is proportional to line count, so a file that has swallowed half a
-   package is literally half the picture. */
+   Area is proportional to the chosen metric — line count by default, or file
+   size — so a file that has swallowed half a package is literally half the
+   picture. */
 (function (GHL) {
   'use strict';
 
   const { util } = GHL;
-  const { el, fmt, fmtCompact } = util;
+  const { el, fmt } = util;
+  const { t } = GHL.i18n;
+
+  // Counted nouns are said the same way as on the strip.
+  const { linesOf, filesOf } = GHL.inline;
 
   const OVERLAY_ID = 'ghl-treemap-overlay';
   const HEADER_H = 17;
@@ -88,17 +93,17 @@
 
   /* -------------------------------------------------------------- render */
 
-  function childrenOf(node) {
+  function childrenOf(node, m) {
     const kids = [...node.children.values()]
-      .filter((n) => (n.total || 0) > 0)
-      .sort((a, b) => b.total - a.total);
+      .filter((n) => m.value(n) > 0)
+      .sort((a, b) => m.value(b) - m.value(a));
 
     if (kids.length <= MAX_CHILDREN) return kids;
 
     const head = kids.slice(0, MAX_CHILDREN - 1);
     const rest = kids.slice(MAX_CHILDREN - 1);
     head.push({
-      name: `他 ${rest.length} 件`,
+      name: t('restItems', rest.length),
       path: node.path,
       type: 'aggregate',
       children: new Map(),
@@ -106,6 +111,8 @@
       fileCount: rest.reduce((s, n) => s + n.fileCount, 0),
       allExact: rest.every((n) => n.allExact),
       bytes: rest.reduce((s, n) => s + (n.bytes || 0), 0),
+      maxFile: rest.reduce((s, n) => Math.max(s, n.maxFile || 0), 0),
+      maxFileBytes: rest.reduce((s, n) => Math.max(s, n.maxFileBytes || 0), 0),
     });
     return head;
   }
@@ -117,14 +124,17 @@
     tile.style.width = Math.max(0, rect.w - 1) + 'px';
     tile.style.height = Math.max(0, rect.h - 1) + 'px';
 
+    const m = opts.metric;
+    const other = m.key === 'lines' ? GHL.inline.METRICS.bytes : GHL.inline.METRICS.lines;
     const isDir = node.type === 'dir';
-    const share = opts.rootTotal > 0 ? (node.total / opts.rootTotal) * 100 : 0;
+    const share = opts.rootTotal > 0 ? (m.value(node) / opts.rootTotal) * 100 : 0;
 
     tile.title =
       `${node.path || node.name}\n` +
-      `${fmt(node.total)} 行 (${share.toFixed(1)}%)` +
-      (isDir ? `\n${fmt(node.fileCount)} ファイル` : '') +
-      (node.type === 'file' ? `\n${util.fmtBytes(node.size || 0)}` : '');
+      `${m.long(node)} (${share.toFixed(1)}%)` +
+      (isDir ? `\n${filesOf(node.fileCount)}` : '') +
+      (isDir && m.key === 'lines' ? `\n${t('tipMaxFile', linesOf(node.maxFile || 0))}` : '') +
+      `\n${other.long(node)}`;
 
     const canRecurse =
       isDir &&
@@ -136,14 +146,15 @@
     if (!canRecurse) {
       tile.classList.add('ghl-tm-leaf');
       tile.dataset.kind = node.type;
-      tile.dataset.severity =
-        node.type === 'file' ? GHL.inline.severity(node.total, opts.settings) : 'dir';
+      tile.dataset.severity = m.severity(node, opts.settings);
+      // Tiles are translucent so the labels stay readable over them.
+      tile.style.background = m.fill ? m.fill(node, opts.settings, 0.55) : '';
 
       if (rect.w > 44 && rect.h > 20) {
         tile.appendChild(el('span', { class: 'ghl-tm-label' }, [
           el('span', { class: 'ghl-tm-name', text: node.name + (isDir ? '/' : '') }),
           rect.h > 34 && rect.w > 60
-            ? el('span', { class: 'ghl-tm-value', text: fmtCompact(node.total) })
+            ? el('span', { class: 'ghl-tm-value', text: m.short(node) })
             : null,
         ]));
       }
@@ -162,8 +173,11 @@
     tile.classList.add('ghl-tm-group');
     const head = el('div', { class: 'ghl-tm-head ghl-tm-clickable' }, [
       el('span', { class: 'ghl-tm-name', text: node.name + '/' }),
-      el('span', { class: 'ghl-tm-value', text: fmtCompact(node.total) }),
+      el('span', { class: 'ghl-tm-value', text: m.short(node) }),
     ]);
+    // The header is the only part of a folded-up directory you can see, so it
+    // carries the same colour its tile would.
+    head.style.background = m.fill ? m.fill(node, opts.settings, 0.55) : '';
     head.addEventListener('click', (e) => {
       e.stopPropagation();
       opts.onDrill(node.path);
@@ -177,8 +191,8 @@
       w: rect.w - PAD * 2 - 1,
       h: rect.h - HEADER_H - PAD - 1,
     };
-    const kids = childrenOf(node);
-    const placed = squarify(kids.map((n) => ({ node: n, value: n.total })), inner);
+    const kids = childrenOf(node, m);
+    const placed = squarify(kids.map((n) => ({ node: n, value: m.value(n) })), inner);
     for (const p of placed) {
       drawNode(p.node, { x: p.x, y: p.y, w: p.w, h: p.h }, depth + 1, tile, opts);
     }
@@ -223,7 +237,50 @@
   function draw() {
     if (!modal) return;
     const { state, path } = modal;
-    const node = state.index && (state.index.get(path) || state.root);
+    /* Only what came back for this path. The repository root standing in for a
+       directory that is missing would label the whole repository as it. */
+    const raw = state.index && (state.index.get(path) || (path ? null : state.root));
+    // Manual mode's checkboxes filter the directory on screen; drilling into a
+    // subdirectory shows all of it.
+    const node = raw && state.settings.exactLinesMode === 'manual' && path === state.ctx.path
+      ? GHL.inline.viewOf(raw, state, GHL.inline.droppedChildren(raw, GHL.page.findRows(state.ctx), state))
+      : raw;
+    const m = GHL.inline.metricOf(state);
+
+    /* The legend describes the ramp, not the tiles, so it is labelled before
+       anything that might decide there is nothing to draw. Both readings ramp;
+       only the units change with whichever is on screen. */
+    modal.legend.hidden = false;
+    modal.openLink.href = dirUrl(state.ctx, path);
+    for (const end of modal.legend.querySelectorAll('[data-ghl-ramp-end]')) {
+      end.textContent = m.rampEnd(state.settings);
+    }
+    /* The ramps themselves, redrawn here rather than built once: the
+       thresholds can change while the treemap is open. */
+    for (const bar of modal.legend.querySelectorAll('[data-ghl-ramp]')) {
+      const colorAt = bar.dataset.ghlRamp === 'dir' ? GHL.inline.dirColor : GHL.inline.lineColor;
+      bar.style.background =
+        `linear-gradient(to right, ${GHL.inline.rampStops(state.settings, 12, colorAt).join(', ')})`;
+      const tick = bar.querySelector('.ghl-ramp-tick');
+      if (tick) {
+        tick.style.left =
+          `${(state.settings.warnLines / Math.max(2, state.settings.dangerLines)) * 100}%`;
+      }
+    }
+    modal.legend.querySelector('[data-ghl-ramp-start]').textContent =
+      t(m.key === 'lines' ? 'rampFileStart' : 'rampFileStartSize');
+    for (const tick of modal.legend.querySelectorAll('.ghl-ramp-tick')) {
+      tick.title = t('rampTick', m.warnAt(state.settings));
+    }
+
+    /* Breadcrumb and stats before anything decides there is nothing to draw: a
+       heading left over from the last directory, above an empty canvas, reads
+       as that directory being empty. */
+    modal.crumbs.textContent = '';
+    for (const c of buildBreadcrumb(state.ctx, path, drill)) modal.crumbs.appendChild(c);
+    modal.stats.textContent = node ? `${m.long(node)} · ${filesOf(node.fileCount)}` : '—';
+    modal.status.textContent = statusLine(state, m);
+
     const canvas = modal.canvas;
     canvas.textContent = '';
     if (!node) return;
@@ -231,22 +288,10 @@
     const rect = canvas.getBoundingClientRect();
     if (rect.width < 10 || rect.height < 10) return;
 
-    // Breadcrumb + stats
-    modal.crumbs.textContent = '';
-    for (const c of buildBreadcrumb(state.ctx, path, drill)) modal.crumbs.appendChild(c);
-
-    modal.stats.textContent = node.allExact
-      ? `${fmt(node.total)} 行 · ${fmt(node.fileCount)} ファイル` : '';
-    modal.status.textContent = statusLine(state);
-
-    if (!node.allExact) {
-      canvas.appendChild(el('div', { class: 'ghl-tm-empty', text: '未取得のファイルがあります' }));
-      return;
-    }
-
     const opts = {
       settings: state.settings,
-      rootTotal: node.total || 1,
+      metric: m,
+      rootTotal: m.value(node) || 1,
       onDrill: drill,
       onSelect: (n) => {
         if (n.type === 'dir') drill(n.path);
@@ -254,14 +299,14 @@
       },
     };
 
-    const kids = childrenOf(node);
+    const kids = childrenOf(node, m);
     if (!kids.length) {
-      canvas.appendChild(el('div', { class: 'ghl-tm-empty', text: 'カウント対象のファイルがありません' }));
+      canvas.appendChild(el('div', { class: 'ghl-tm-empty', text: t('tmEmpty') }));
       return;
     }
 
     const placed = squarify(
-      kids.map((n) => ({ node: n, value: n.total })),
+      kids.map((n) => ({ node: n, value: m.value(n) })),
       { x: 0, y: 0, w: rect.width, h: rect.height }
     );
     for (const p of placed) {
@@ -269,13 +314,19 @@
     }
   }
 
-  function statusLine(state) {
-    if (state.status === 'refining') {
-      return `行数を取得中 ${state.progress.done}/${state.progress.total}`;
+  function statusLine(state, m) {
+    if (m.key === 'lines') {
+      if (state.status === 'refining') {
+        return t('tmRefining', state.progress.done, state.progress.total);
+      }
+      if (state.status === 'estimated') return t('statusEstimating');
     }
+    if (state.status === 'error') return GHL.inline.errorText(state.error);
     if (state.warning) return GHL.inline.errorText(state.warning);
-    if (state.truncated) return 'ファイル一覧の取得上限に達しました';
-    return '';
+    if (state.missingDirectory) return t('statusNoDirectory');
+    if (state.metaWarning) return GHL.inline.errorText(state.metaWarning);
+    if (state.truncated) return t(m.key === 'lines' ? 'statusTruncated' : 'statusTruncatedSizes');
+    return t('tmArea', m.label);
   }
 
   function drill(path) {
@@ -299,38 +350,47 @@
     const crumbs = el('div', { class: 'ghl-tm-crumbs' });
     const stats = el('span', { class: 'ghl-tm-stats' });
     const status = el('span', { class: 'ghl-tm-status' });
+    // The ramps themselves, with the warn threshold ticked on each.
+    const rampBar = (kind) => el('span', {
+      class: 'ghl-ramp-bar',
+      'data-ghl-ramp': kind,
+    }, [el('span', { class: 'ghl-ramp-tick' })]);
+    const legend = el('span', { class: 'ghl-legend ghl-ramps' }, [
+      el('span', { class: 'ghl-ramp' }, [
+        el('span', { class: 'ghl-ramp-end', 'data-ghl-ramp-start': '' }),
+        rampBar('file'),
+        el('span', { class: 'ghl-ramp-end', 'data-ghl-ramp-end': '' }),
+      ]),
+      el('span', { class: 'ghl-ramp' }, [
+        el('span', { class: 'ghl-ramp-end' }, [t('rampDirStart')]),
+        rampBar('dir'),
+        el('span', { class: 'ghl-ramp-end', 'data-ghl-ramp-end': '' }),
+      ]),
+    ]);
+
+    // Drilling in changes what "open on GitHub" means, so the link is kept and
+    // rewritten with the rest of the heading.
+    const openLink = el('a', {
+      class: 'ghl-btn ghl-btn-quiet',
+      href: dirUrl(state.ctx, state.ctx.path),
+      title: t('tmOpenTitle'),
+    }, [t('tmOpen')]);
 
     const overlay = el('div', { id: OVERLAY_ID, class: 'ghl-overlay' }, [
-      el('div', { class: 'ghl-modal', role: 'dialog', 'aria-label': 'GitHub Lines treemap' }, [
+      el('div', { class: 'ghl-modal', role: 'dialog', 'aria-label': t('tmLabel') }, [
         el('div', { class: 'ghl-modal-head' }, [
           crumbs,
           stats,
           el('span', { class: 'ghl-spacer' }),
-          el('a', {
-            class: 'ghl-btn ghl-btn-quiet',
-            href: dirUrl(state.ctx, state.ctx.path),
-            title: 'このディレクトリを GitHub で開く',
-          }, ['開く']),
+          openLink,
           el('button', {
-            class: 'ghl-btn ghl-btn-quiet', type: 'button', 'aria-label': '閉じる',
+            class: 'ghl-btn ghl-btn-quiet', type: 'button', 'aria-label': t('tmClose'),
             onclick: close,
           }, ['✕']),
         ]),
         canvas,
         el('div', { class: 'ghl-modal-foot' }, [
-          el('span', { class: 'ghl-legend' }, [
-            el('span', { class: 'ghl-legend-item', 'data-tone': 'ok' }, [
-              el('span', { class: 'ghl-legend-dot' }), '通常',
-            ]),
-            el('span', { class: 'ghl-legend-item', 'data-tone': 'warn' }, [
-              el('span', { class: 'ghl-legend-dot' }),
-              `${fmt(state.settings.warnLines)} 行以上`,
-            ]),
-            el('span', { class: 'ghl-legend-item', 'data-tone': 'danger' }, [
-              el('span', { class: 'ghl-legend-dot' }),
-              `${fmt(state.settings.dangerLines)} 行以上`,
-            ]),
-          ]),
+          legend,
           el('span', { class: 'ghl-spacer' }),
           status,
         ]),
@@ -349,7 +409,8 @@
     const resizeObserver = new ResizeObserver(util.debounce(draw, 80));
     resizeObserver.observe(canvas);
 
-    modal = { overlay, canvas, crumbs, stats, status, state, path: state.ctx.path, onKey, resizeObserver };
+    modal = { overlay, canvas, crumbs, stats, status, legend, openLink,
+      state, path: state.ctx.path, onKey, resizeObserver };
     draw();
   }
 
@@ -359,7 +420,5 @@
     draw();
   }
 
-  function isOpen() { return !!modal; }
-
-  GHL.treemap = { open, close, update, isOpen, squarify };
+  GHL.treemap = { open, close, update, squarify };
 })(globalThis.GHL);

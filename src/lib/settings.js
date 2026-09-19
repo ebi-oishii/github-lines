@@ -20,17 +20,24 @@
     showInlineBars: true,
     showTreemapButton: true,
 
+    // '' follows the browser's UI language; 'en' or 'ja' pins it.
+    locale: '',
+
     // Exclusions
     excludeGenerated: true,
     respectGitattributes: true,
     excludePatterns: GHL.patterns.DEFAULT_EXCLUDES.slice(),
 
-    // Manual waits for a button press before any API request, including trees
-    // and attributes. Off only reads local caches.
+    /* Exact line counting: 'manual' fetches nothing until asked, 'auto' as
+       soon as the page opens, 'off' never.
+
+       Manual is the default because the other two spend a reader's API budget
+       on a page they may only be passing through — and the budget is 60 an
+       hour until they set up a token. */
     exactLinesMode: 'manual',
-    maxExactFetch: 300,   // per click, or one automatic pass per directory view
+    maxExactFetch: 300,   // per directory view
     concurrency: 8,
-    maxBlobBytes: 2 * 1024 * 1024, // above this, leave the count unknown
+    maxBlobBytes: 2 * 1024 * 1024, // above this, keep the estimate
   };
 
   const KEY = 'settings';
@@ -62,25 +69,32 @@
     // Migration: a single top-level token becomes the first entry.
     const legacy = stored && typeof stored.token === 'string' ? stored.token.trim() : '';
     if (legacy && !s.tokens.some((t) => t.token === legacy)) {
-      s.tokens.unshift(normaliseToken({ label: '既定', token: legacy }));
+      s.tokens.unshift(normaliseToken({ label: GHL.t('tokenDefaultLabel'), token: legacy }));
     }
     delete s.token;
 
-    // Migration: the mode used to be a boolean. Check what was actually stored
-    // rather than the merged value, which always has the default in place.
+    /* Migration: the mode used to be a boolean. What was actually stored is
+       what decides — the merged value always has the default in place, so
+       reading that would hand every install the default and undo the
+       migration. An install that has neither key is a new one, and gets the
+       default like anything else. */
     const storedMode = stored && stored.exactLinesMode;
     if (EXACT_MODES.has(storedMode)) {
       s.exactLinesMode = storedMode;
+    } else if (stored && 'fetchExactLines' in stored) {
+      // The boolean had no third state: false meant off, and true meant the
+      // automatic fetching it was switched on for.
+      s.exactLinesMode = stored.fetchExactLines === false ? 'off' : 'auto';
     } else {
-      const legacyMode = stored && stored.fetchExactLines;
-      s.exactLinesMode = legacyMode === false ? 'off'
-        : legacyMode === true ? 'auto' : DEFAULTS.exactLinesMode;
+      s.exactLinesMode = DEFAULTS.exactLinesMode;
     }
     delete s.fetchExactLines;
 
     if (!s.tokens.some((t) => t.id === s.defaultTokenId)) {
       s.defaultTokenId = s.tokens.length ? s.tokens[0].id : '';
     }
+
+    if (s.locale !== 'en' && s.locale !== 'ja') s.locale = '';
 
     // An emptied pattern box means "no patterns", but a missing key means
     // "never configured" and should fall back to the defaults.

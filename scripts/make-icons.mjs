@@ -1,5 +1,7 @@
-/* Generates the toolbar icons — three stacked bars, longest one red, which is
-   the same visual language the extension uses on the page.
+/* Generates the toolbar icons — three stacked bars on faint tracks, longest
+   one red, which is the same visual language the extension uses on the page.
+   The tracks are what keep it from reading as a menu icon: a bar that stops
+   short of its track is a proportion.
 
    Written by hand rather than pulled from a dependency so the repo stays
    build-free: `node scripts/make-icons.mjs` and you are done.
@@ -64,7 +66,7 @@ function encodePng(width, height, rgba) {
 
 /* ---------------------------------------------------------------- drawing */
 
-function fillRoundRect(buf, W, x0, y0, w, h, r, [cr, cg, cb]) {
+function fillRoundRect(buf, W, x0, y0, w, h, r, [cr, cg, cb, ca = 255]) {
   const x1 = x0 + w;
   const y1 = y0 + h;
   r = Math.min(r, w / 2, h / 2);
@@ -75,7 +77,7 @@ function fillRoundRect(buf, W, x0, y0, w, h, r, [cr, cg, cb]) {
       const cy = y < y0 + r ? y0 + r : y > y1 - r ? y1 - r : y;
       if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) continue;
       const i = (y * W + x) * 4;
-      buf[i] = cr; buf[i + 1] = cg; buf[i + 2] = cb; buf[i + 3] = 255;
+      buf[i] = cr; buf[i + 1] = cg; buf[i + 2] = cb; buf[i + 3] = ca;
     }
   }
 }
@@ -115,6 +117,9 @@ const BARS = [
   { width: 0.34, color: [88, 166, 255] }, // ok blue
 ];
 
+// Translucent so it sits on light and dark toolbars alike.
+const TRACK = [140, 149, 159, 77];
+
 function renderIcon(size) {
   const W = size * SS;
   const H = size * SS;
@@ -128,6 +133,7 @@ function renderIcon(size) {
   let y = pad;
   for (const bar of BARS) {
     const w = Math.max(barH, Math.round(inner * bar.width));
+    fillRoundRect(buf, W, pad, y, inner, barH, barH / 2, TRACK);
     fillRoundRect(buf, W, pad, y, w, barH, barH / 2, bar.color);
     y += barH + gap;
   }

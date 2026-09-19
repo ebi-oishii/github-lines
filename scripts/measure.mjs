@@ -11,6 +11,17 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/* The wordings that mean "still working", in whichever language the extension
+   resolved to. Asking it is the only way to know: chrome.i18n follows the
+   browser's UI language, which no flag overrides. */
+let MESSAGES = JSON.parse(fs.readFileSync(path.join(ROOT, '_locales/en/messages.json'), 'utf8'));
+const msg = (key, ...subs) =>
+  (MESSAGES[key] ? MESSAGES[key].message : key).replace(/\$(\d)/g, (_, i) => subs[Number(i) - 1] ?? '');
+const busyPrefixes = () => ['fetchBusy', 'statusLoading', 'statusEstimating', 'statusRefining']
+  .map((key) => msg(key, '', '').replace(/[\s/…]+$/, '').trim())
+  .filter(Boolean);
+
 const TOKEN = process.env.GITHUB_TOKEN || '';
 const REPO = process.argv[2] || 'sindresorhus/got';
 
@@ -37,7 +48,8 @@ const context = await chromium.launchPersistentContext(profile, {
 let counter = null;
 context.on('request', (req) => {
   const url = req.url();
-  if (!counter || !url.startsWith('https://api.github.com/')) return;
+  // `/_private/browser/stats` is github.com's own telemetry, not ours.
+  if (!counter || !url.startsWith('https://api.github.com/') || url.includes('/_private/')) return;
   const kind =
     /\/git\/trees\//.test(url) ? 'tree' :
     /\/git\/blobs\//.test(url) ? 'blob' :
@@ -55,30 +67,37 @@ try {
   const worker = context.serviceWorkers()[0] || (await context.waitForEvent('serviceworker'));
   const extensionId = new URL(worker.url()).host;
 
-  if (TOKEN) {
-    await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
-    await page.fill('.token-row:nth-child(1) .token-value', TOKEN);
-    await page.click('#save');
-    await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
-    console.log('token configured\n');
-  } else {
-    console.log('no GITHUB_TOKEN — measuring unauthenticated (60/hr)\n');
+  const locale = await worker.evaluate(() => chrome.i18n.getMessage('lang'));
+  if (locale && locale !== 'en') {
+    MESSAGES = JSON.parse(fs.readFileSync(path.join(ROOT, `_locales/${locale}/messages.json`), 'utf8'));
   }
+  const BUSY = busyPrefixes();
 
-  async function visit(label, url, fetchCounts = false) {
+  /* What is being measured is what a page costs when it counts on its own, so
+     the mode is pinned rather than left at the default, which fetches nothing
+     until asked. */
+  await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
+  if (TOKEN) await page.fill('.token-row:nth-child(1) .token-value', TOKEN);
+  await page.check('input[name="exactLinesMode"][value="auto"]');
+  await page.click('h1'); // the page saves on its own; blur to flush it
+  await page.waitForFunction(() => document.querySelector('#save-status')?.dataset.tone === 'ok');
+  console.log(TOKEN ? 'token configured\n' : 'no GITHUB_TOKEN — measuring unauthenticated (60/hr)\n');
+
+  async function visit(label, url) {
     counter = { total: 0, byKind: {}, notable: [] };
     const t0 = Date.now();
 
-    if (page.url() !== url) await page.goto(url, { waitUntil: 'domcontentloaded' });
-    else if (!fetchCounts) await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#ghl-summary', { state: 'attached', timeout: 60000 });
-    if (fetchCounts) await page.click('[data-ghl-action="fetch"]');
+    /* A resting view is one that has stopped working — not one with nothing
+       to say. "Repository too large — partly estimated" and any warning are
+       both final, and waiting for them to clear would wait forever. */
     await page.waitForFunction(
-      () => {
+      (busy) => {
         const s = document.querySelector('.ghl-summary-status');
-        return s && !/取得中|読み込み中/.test(s.textContent);
+        return s && !busy.some((b) => s.textContent.includes(b));
       },
-      null, { timeout: 180000 }
+      BUSY, { timeout: 180000 }
     );
     // Let any trailing requests land before we stop counting.
     await page.waitForTimeout(1500);
@@ -100,9 +119,8 @@ try {
     console.log('');
   }
 
-  await visit(`${REPO} 直下 — 取得前`, `https://github.com/${REPO}`);
-  await visit(`${REPO} 直下 — ボタンを押して取得`, `https://github.com/${REPO}`, true);
-  await visit(`${REPO} 直下 — 2回目（同一プロファイル、キャッシュあり）`, `https://github.com/${REPO}`);
+  await visit(`${REPO} root — first time`, `https://github.com/${REPO}`);
+  await visit(`${REPO} root — again, same profile, warm cache`, `https://github.com/${REPO}`);
 
   // A directory whose files were not covered by the root view's fetch budget.
   const sub = await page.$(
@@ -110,7 +128,7 @@ try {
   );
   if (sub) {
     const href = await sub.getAttribute('href');
-    await visit(`${href.split('/').slice(5).join('/')}/ へ移動`, `https://github.com${href}`);
+    await visit(`into ${href.split('/').slice(5).join('/')}/`, `https://github.com${href}`);
   }
 } finally {
   await context.close();

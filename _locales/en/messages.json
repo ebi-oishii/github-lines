@@ -1,0 +1,441 @@
+{
+  "appName": {
+    "message": "GitHub Lines"
+  },
+  "appDesc": {
+    "message": "Visualises line counts on GitHub's file list, so bloated files stand out."
+  },
+  "actionTitle": {
+    "message": "GitHub Lines options"
+  },
+  "unitLinesOne": {
+    "message": "$1 line",
+    "description": "$1 is a formatted number"
+  },
+  "unitLines": {
+    "message": "$1 lines",
+    "description": "$1 is a formatted number"
+  },
+  "unitFilesOne": {
+    "message": "$1 file",
+    "description": "$1 is a formatted number"
+  },
+  "unitFiles": {
+    "message": "$1 files",
+    "description": "$1 is a formatted number"
+  },
+  "unitLinesOrMore": {
+    "message": "$1 or more",
+    "description": "$1 is a line count with its unit"
+  },
+  "metricGroup": {
+    "message": "What the bars measure"
+  },
+  "metricLines": {
+    "message": "Lines"
+  },
+  "metricBytes": {
+    "message": "Size"
+  },
+  "metricLinesTitle": {
+    "message": "Show the bars and shares as line counts"
+  },
+  "metricBytesTitle": {
+    "message": "Show the bars and shares as file sizes"
+  },
+  "treemap": {
+    "message": "Treemap"
+  },
+  "pickAll": {
+    "message": "All"
+  },
+  "pickAllTitle": {
+    "message": "GitHub Lines: include or exclude every row"
+  },
+  "pickRow": {
+    "message": "Include this row in the view and the fetch"
+  },
+  "pickRowLeft": {
+    "message": "Include this row in the view and the fetch ($1 not yet counted)",
+    "description": "$1 is a file count with its unit"
+  },
+  "fetchSizes": {
+    "message": "Fetch sizes"
+  },
+  "fetchSizesTitle": {
+    "message": "Fetches the file listing in one request and shows each file's size"
+  },
+  "fetchLines": {
+    "message": "Fetch line counts"
+  },
+  "fetchLinesCount": {
+    "message": "Fetch line counts ($1)",
+    "description": "$1 is how many files pressing it will fetch"
+  },
+  "fetchLinesTitle": {
+    "message": "Fetches the file listing, then the line count of every file in the ticked rows\n(one API request per file)"
+  },
+  "fetchLinesCountTitle": {
+    "message": "Fetches the line counts of $1 files from GitHub\n(one API request each; files already counted are not included)",
+    "description": "$1 is how many files pressing it will fetch"
+  },
+  "fetchNothingTicked": {
+    "message": "Tick the rows you want counted"
+  },
+  "fetchBusy": {
+    "message": "Fetching…"
+  },
+  "fetchDone": {
+    "message": "Fetched"
+  },
+  "fetchDoneLinesTitle": {
+    "message": "The ticked rows have been counted"
+  },
+  "fetchDoneSizesTitle": {
+    "message": "The sizes are in"
+  },
+  "summaryBiggest": {
+    "message": "biggest: $1 $2 ($3%)",
+    "description": "$1 is a name, $2 a measurement, $3 a percentage"
+  },
+  "restItems": {
+    "message": "$1 more",
+    "description": "$1 is how many further entries are folded into one segment"
+  },
+  "statusLoading": {
+    "message": "Loading…"
+  },
+  "statusIdle": {
+    "message": "Not fetched"
+  },
+  "statusRefining": {
+    "message": "Counting lines $1/$2",
+    "description": "$1 of $2 files counted so far"
+  },
+  "statusEstimating": {
+    "message": "Estimating from byte counts…"
+  },
+  "statusEstimated": {
+    "message": "Estimated from byte counts"
+  },
+  "statusTruncated": {
+    "message": "Repository too large — partly estimated"
+  },
+  "statusTruncatedSizes": {
+    "message": "Repository too large — partial"
+  },
+  "errGeneric": {
+    "message": "Error"
+  },
+  "errFailed": {
+    "message": "Could not fetch ($1)",
+    "description": "$1 is an error code"
+  },
+  "errRateLimit": {
+    "message": "GitHub API rate limit reached$1",
+    "description": "$1 is the parenthesised time left, or empty"
+  },
+  "errRateLimitAnon": {
+    "message": "API rate limit (60/hour unauthenticated) — add a token in the options"
+  },
+  "errSecondary": {
+    "message": "Paused by GitHub's secondary rate limit$1",
+    "description": "$1 is the parenthesised time left, or empty"
+  },
+  "errThrottled": {
+    "message": "Fetched too fast — waiting, then resuming"
+  },
+  "errBadToken": {
+    "message": "$1 is not valid — check the options",
+    "description": "$1 is a token's label"
+  },
+  "errNotFound": {
+    "message": "Cannot reach the repository (check $1's permissions)",
+    "description": "$1 is a token's label"
+  },
+  "errPrivate": {
+    "message": "Private repository — add a token in the options"
+  },
+  "errTimeout": {
+    "message": "The background is not responding — reload the page"
+  },
+  "errReloaded": {
+    "message": "The extension was reloaded — reload the page"
+  },
+  "untilMinutes": {
+    "message": " (about $1 min left)",
+    "description": "$1 is a number of minutes"
+  },
+  "tokenFallback": {
+    "message": "the token"
+  },
+  "tokenDefaultLabel": {
+    "message": "Default"
+  },
+  "tipUnknown": {
+    "message": "GitHub Lines: no information for this entry (a submodule, perhaps)"
+  },
+  "tipBinary": {
+    "message": "$1\nBinary, so its lines are not counted ($2)",
+    "description": "$1 is a path, $2 a byte size"
+  },
+  "tipGenerated": {
+    "message": "$1\nExcluded as generated ($2)",
+    "description": "$1 is a path, $2 a byte size"
+  },
+  "tipShare": {
+    "message": "$1 — $2% of this directory",
+    "description": "$1 is a measurement, $2 a percentage"
+  },
+  "tipMaxFile": {
+    "message": "Largest file: $1",
+    "description": "$1 is a line count with its unit"
+  },
+  "tipEstimate": {
+    "message": "(estimated — still counting, or not counted)"
+  },
+  "tipOverDanger": {
+    "message": "⚠ Past the $1 threshold",
+    "description": "$1 is a line count with its unit"
+  },
+  "tipNearWarn": {
+    "message": "Approaching the $1 threshold",
+    "description": "$1 is a line count with its unit"
+  },
+  "tmLabel": {
+    "message": "GitHub Lines treemap"
+  },
+  "tmEmpty": {
+    "message": "Nothing here is counted"
+  },
+  "tmRefining": {
+    "message": "Counting lines $1/$2 — the rest is estimated from byte counts (~)",
+    "description": "$1 of $2 files counted so far"
+  },
+  "tmArea": {
+    "message": "Area = $1",
+    "description": "$1 is the name of a metric — lines or size"
+  },
+  "tmOpen": {
+    "message": "Open"
+  },
+  "tmOpenTitle": {
+    "message": "Open this directory on GitHub"
+  },
+  "tmClose": {
+    "message": "Close"
+  },
+  "rampFileStart": {
+    "message": "File 0 lines"
+  },
+  "rampDirStart": {
+    "message": "Folder largest file"
+  },
+  "rampTick": {
+    "message": "Warn $1",
+    "description": "$1 is a line count with its unit"
+  },
+  "title": {
+    "message": "GitHub Lines options"
+  },
+  "lede": {
+    "message": "Visualises line counts on GitHub's file list, so bloated files stand out."
+  },
+  "tokens": {
+    "message": "Access tokens"
+  },
+  "tokensHint1": {
+    "message": "Without one, public repositories work at <strong>60 requests an hour</strong>. A token raises that to <strong>5,000</strong> and reaches private repositories. With several accounts, add one per <strong>owner</strong> — a token cannot read another account's private repositories."
+  },
+  "addToken": {
+    "message": "＋ Add a token"
+  },
+  "tokenLink": {
+    "message": "Create a fine-grained token"
+  },
+  "tokensHint3": {
+    "message": "— it needs only <code>Contents: Read-only</code>. Tokens stay in this machine's <code>chrome.storage.local</code> and go nowhere but <code>api.github.com</code>."
+  },
+  "tokenDefaultTitle": {
+    "message": "The token to use when no owner matches"
+  },
+  "tokenDefault": {
+    "message": "Default"
+  },
+  "tokenLabelPlaceholder": {
+    "message": "Label (e.g. personal / work)"
+  },
+  "tokenRemove": {
+    "message": "Remove"
+  },
+  "tokenRemoveLabel": {
+    "message": "Remove this token"
+  },
+  "tokenValue": {
+    "message": "Personal access token"
+  },
+  "tokenValuePlaceholder": {
+    "message": "github_pat_… or ghp_…"
+  },
+  "tokenOwners": {
+    "message": "Owners this token is for (comma separated)"
+  },
+  "tokenVerify": {
+    "message": "Verify and fill in the owners"
+  },
+  "thresholdsHint": {
+    "message": "A file past these line counts is coloured as a warning."
+  },
+  "warn": {
+    "message": "Warn (amber)"
+  },
+  "danger": {
+    "message": "Danger (red)"
+  },
+  "display": {
+    "message": "Display"
+  },
+  "showBars": {
+    "message": "Show proportion bars on the file list"
+  },
+  "showTreemap": {
+    "message": "Show the treemap button"
+  },
+  "counting": {
+    "message": "Line counting"
+  },
+  "modeAuto": {
+    "message": "<strong>Automatic</strong> — fetch as soon as the page opens"
+  },
+  "modeManual": {
+    "message": "<strong>Manual</strong> — fetch nothing on open. Pick lines or size on the strip above the list and press the button; the row checkboxes narrow what it fetches"
+  },
+  "modeOff": {
+    "message": "<strong>Off</strong> — estimates only, one API request per view"
+  },
+  "modeHint": {
+    "message": "In every mode, files counted before show their real value from the cache, without an API request."
+  },
+  "maxFetch": {
+    "message": "Fetch limit per view"
+  },
+  "concurrency": {
+    "message": "Parallel requests"
+  },
+  "cacheHint": {
+    "message": "Counts are cached under the file's blob SHA. A git blob SHA is a hash of the content, so a file whose content has not changed is never fetched again, whatever the branch or commit."
+  },
+  "respectGitattributes": {
+    "message": "Respect <code>linguist-generated</code> / <code>linguist-vendored</code> in <code>.gitattributes</code>"
+  },
+  "excludeGenerated": {
+    "message": "Exclude files matching the patterns below"
+  },
+  "patterns": {
+    "message": "Exclude patterns (one glob per line)"
+  },
+  "patternsHint": {
+    "message": "Binaries (images, fonts, archives and the like) are recognised by extension and always excluded."
+  },
+  "clearCache": {
+    "message": "Clear the cache"
+  },
+  "reset": {
+    "message": "Restore defaults"
+  },
+  "tokenEmpty": {
+    "message": "No token entered"
+  },
+  "verifying": {
+    "message": "Checking…"
+  },
+  "tokenInvalid": {
+    "message": "The token is not valid"
+  },
+  "verifyHttp": {
+    "message": "Check failed (HTTP $1)",
+    "description": "$1 is an HTTP status code"
+  },
+  "verifyFailed": {
+    "message": "Check failed: $1",
+    "description": "$1 is an error message"
+  },
+  "ownersFound": {
+    "message": "reaches: $1",
+    "description": "$1 is a list of owner names"
+  },
+  "ownersMore": {
+    "message": "$1 and $2 more",
+    "description": "$1 is a list of names, $2 how many are not shown"
+  },
+  "ownersNone": {
+    "message": "could not work out which owners it reaches — fill them in yourself"
+  },
+  "tokenWritable": {
+    "message": " / ⚠ includes write access ($1)",
+    "description": "$1 is a list of permissions"
+  },
+  "tokenClassic": {
+    "message": " / classic (read only)"
+  },
+  "verifyOk": {
+    "message": "valid as $1 — $2 ($3/$4 requests left this hour)$5",
+    "description": "$1 login, $2 what it reaches, $3/$4 requests left, $5 a note about its kind"
+  },
+  "saved": {
+    "message": "Saved"
+  },
+  "cacheStats": {
+    "message": "$1 line counts / $2 trees / $3 texts",
+    "description": "$1, $2, $3 are entry counts"
+  },
+  "cacheStatsFailed": {
+    "message": "Could not read the cache"
+  },
+  "cacheCleared": {
+    "message": "Cache cleared"
+  },
+  "resetDone": {
+    "message": "Defaults restored"
+  },
+  "lang": {
+    "message": "en",
+    "description": "The BCP 47 tag for this catalogue, for the options page's lang attribute"
+  },
+  "advanced": {
+    "message": "Advanced"
+  },
+  "autosave": {
+    "message": "Changes are saved as you make them."
+  },
+  "language": {
+    "message": "Language"
+  },
+  "languageAuto": {
+    "message": "Follow the browser"
+  },
+  "setupGuide": {
+    "message": "Setup and usage guide"
+  },
+  "rampFileStartSize": {
+    "message": "File 0 B"
+  },
+  "apiLeft": {
+    "message": "API $1/$2"
+  },
+  "apiLeftTitleAnon": {
+    "message": "$1 of $2 requests left this hour, for this IP.\nA token in the options raises it to 5,000, per account.$3"
+  },
+  "apiLeftTitle": {
+    "message": "$1 of $2 requests left this hour, on the account behind $4.\nThe limit is per account, so anything else signed in as you shares it.$3"
+  },
+  "apiResetsIn": {
+    "message": "\nResets in about $1 min."
+  },
+  "errAttributes": {
+    "message": "Some exclusion rules could not be read — generated files may be counted"
+  },
+  "statusNoDirectory": {
+    "message": "This directory is not in the listing that came back"
+  }
+}

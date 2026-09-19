@@ -1,7 +1,7 @@
 /* Tests.
 
    Two halves:
-     - pure logic (globs, .gitattributes, rollups, treemap layout)
+     - pure logic (globs, .gitattributes, estimator, rollups, treemap layout)
      - DOM behaviour against a trimmed capture of a real GitHub page, so that
        the day GitHub reshuffles its markup, this fails instead of the bars
        silently vanishing.
@@ -75,7 +75,17 @@ function installDom(html, url) {
     configurable: true,
   });
   globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+  // jsdom has no scrollIntoView at all, and calling a missing one throws where
+  // a browser would simply scroll.
+  w.Element.prototype.scrollIntoView = function () {};
   globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+  // jsdom lays nothing out. Table cells report a height, since the column head
+  // asks for one — unless the row is marked collapsed, as GitHub's repository
+  // root renders its header row.
+  w.HTMLTableCellElement.prototype.getBoundingClientRect = function () {
+    const collapsed = this.closest('thead')?.hasAttribute('data-test-collapsed');
+    return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: collapsed ? 0 : 100, height: collapsed ? 0 : 40 };
+  };
   return dom;
 }
 
@@ -90,13 +100,30 @@ async function waitFor(predicate, timeoutMs, label) {
   throw new Error(`timed out waiting for ${label}`);
 }
 
+/* The catalogue the extension would resolve to. Tests run against the default
+   locale, and assert through `msg()` rather than against literal text, so they
+   say what the UI means instead of what one translation of it reads. */
+const MESSAGES = JSON.parse(
+  fs.readFileSync(path.join(ROOT, '_locales/en/messages.json'), 'utf8')
+);
+
 globalThis.chrome = {
   storage: {
     local: { get: async () => ({}), set: async () => {}, remove: async () => {} },
     onChanged: { addListener() {} },
   },
   runtime: { sendMessage() {}, lastError: null },
+  i18n: {
+    getMessage(key, subs) {
+      const entry = MESSAGES[key];
+      if (!entry) return '';
+      const list = Array.isArray(subs) ? subs : (subs === undefined ? [] : [subs]);
+      return entry.message.replace(/\$(\d)/g, (_, i) => list[Number(i) - 1] ?? '');
+    },
+  },
 };
+
+const msg = (key, ...subs) => chrome.i18n.getMessage(key, subs.map(String));
 
 const fixtureHtml = fs.existsSync(FIXTURE) ? fs.readFileSync(FIXTURE, 'utf8') : null;
 if (JSDOM && !fixtureHtml) {
@@ -112,6 +139,7 @@ function load(rel) {
 
 for (const file of [
   'src/lib/namespace.js',
+  'src/lib/i18n.js',
   'src/lib/patterns.js',
   'src/lib/settings.js',
   'src/content/util.js',
@@ -220,6 +248,26 @@ check('gitattributes: comments and attribute-less lines are ignored', () => {
   assertEqual(rules.length, 0, 'no linguist attributes present');
 });
 
+/* ------------------------------------------------------------- estimator */
+
+check('ratio learner falls back to the per-language table', () => {
+  const learner = patterns.createRatioLearner();
+  assertEqual(learner.estimate('src/a.ts', 3300), 100); // ts defaults to 33 b/line
+});
+
+check('ratio learner adapts once it has evidence', () => {
+  const learner = patterns.createRatioLearner();
+  learner.observe('src/a.ts', 1000, 100); // this repo really runs 10 bytes/line
+  assertEqual(learner.estimate('src/b.ts', 1000), 100, 'learned ratio applied');
+  assertEqual(learner.estimate('src/b.py', 3000), 100, 'py still uses the table');
+});
+
+check('ratio learner ignores samples too small to be evidence', () => {
+  const learner = patterns.createRatioLearner();
+  learner.observe('src/a.ts', 1000, 2);
+  assertEqual(learner.estimate('src/b.ts', 3300), 100, 'still the default 33 b/l');
+});
+
 /* -------------------------------------------------------- tree + rollup */
 
 function sampleTree() {
@@ -241,21 +289,55 @@ check('buildTree creates implicit parent directories', () => {
   assertEqual(index.get('src/ui/Button.tsx').name, 'Button.tsx');
 });
 
+check('a zero-byte file is exact at zero, not an estimate of one', () => {
+  const { root, index } = store.buildTree([
+    { path: 'a/.gitkeep', type: 'file', size: 0, sha: 's0' },
+    { path: 'a/real.ts', type: 'file', size: 320, sha: 's1' },
+  ]);
+  const empty = index.get('a/.gitkeep');
+  assert(empty.exact, 'nothing will ever fetch it, so it is exact as built');
+  index.get('a/real.ts').lines = 10;
+  index.get('a/real.ts').exact = true;
+  store.rollup(root);
+  assertEqual(index.get('a').total, 10, 'and contributes nothing to the total');
+  assert(index.get('a').allExact, 'so the directory is not marked approximate forever');
+});
+
+check('rollup carries the largest file up the tree', () => {
+  const { root, index } = store.buildTree([
+    { path: 'a/small.ts', type: 'file', size: 100, sha: 's1' },
+    { path: 'a/deep/big.ts', type: 'file', size: 100, sha: 's2' },
+    { path: 'b/mid.ts', type: 'file', size: 100, sha: 's3' },
+    { path: 'b/blob.png', type: 'file', size: 100, sha: 's4' },
+  ]);
+  index.get('a/small.ts').lines = 40;
+  index.get('a/deep/big.ts').lines = 900;
+  index.get('b/mid.ts').lines = 120;
+  index.get('b/blob.png').lines = 5000;
+  index.get('b/blob.png').excluded = true;
+  store.rollup(root);
+
+  assertEqual(index.get('a').maxFile, 900, 'a directory reports its worst descendant, however deep');
+  assertEqual(index.get('a/deep').maxFile, 900, 'including the one that holds it');
+  assertEqual(index.get('b').maxFile, 120, 'an excluded file is not a file for this purpose');
+  assertEqual(root.maxFile, 900, 'and the root sees the worst of all');
+});
+
 check('rollup sums descendants and excludes binaries', () => {
   const { root, index } = sampleTree();
+  const learner = patterns.createRatioLearner();
   const isExcluded = patterns.compileExcludes(patterns.DEFAULT_EXCLUDES);
 
   for (const node of index.values()) {
     if (node.type !== 'file') continue;
     node.binary = patterns.isBinary(node.path);
     node.excluded = node.binary || isExcluded(node.path);
-    node.lines = ({ a: 100, b: 50, c: 30, e: 10 })[node.sha] || 0;
-    node.exact = true;
+    node.lines = node.excluded ? 0 : learner.estimate(node.path, node.size);
   }
   store.rollup(root);
 
-  assertEqual(index.get('src/api.ts').lines, 100, 'api.ts exact count');
-  assertEqual(index.get('src/util.ts').lines, 50, 'util.ts exact count');
+  assertEqual(index.get('src/api.ts').lines, 100, 'api.ts estimate');
+  assertEqual(index.get('src/util.ts').lines, 50, 'util.ts estimate');
   assertEqual(index.get('src/ui').total, 30, 'nested dir total');
   assertEqual(index.get('src').total, 180, 'src total includes nested dir');
   assertEqual(index.get('logo.png').total, 0, 'binary contributes nothing');
@@ -272,13 +354,169 @@ check('allExact is false until every descendant is exact', () => {
   index.get('src/ui/Button.tsx').exact = false;
   store.rollup(root);
 
-  assertEqual(index.get('src/ui').allExact, false, 'dir holding an unknown count');
+  assertEqual(index.get('src/ui').allExact, false, 'dir holding the estimate');
   assertEqual(index.get('src').allExact, false, 'propagates upward');
   assertEqual(root.allExact, false, 'reaches the root');
 
   index.get('src/ui/Button.tsx').exact = true;
   store.rollup(root);
   assertEqual(root.allExact, true, 'clears once everything is exact');
+});
+
+/* ------------------------------------------------------------ catalogues */
+
+/* The two catalogues are edited by hand and read by Chrome, which fails
+   silently: a missing key renders as an empty string, and a placeholder that
+   one locale has and the other does not drops a number out of a sentence in
+   just that language. */
+
+const LOCALES = ['en', 'ja'];
+const CATALOGUES = Object.fromEntries(LOCALES.map((l) => [
+  l, JSON.parse(fs.readFileSync(path.join(ROOT, `_locales/${l}/messages.json`), 'utf8')),
+]));
+
+const placeholdersIn = (s) => [...new Set((s.match(/\$\d/g) || []))].sort().join(',');
+
+check('every locale carries the same keys', () => {
+  const [a, b] = LOCALES;
+  const missing = Object.keys(CATALOGUES[a]).filter((k) => !CATALOGUES[b][k]);
+  const extra = Object.keys(CATALOGUES[b]).filter((k) => !CATALOGUES[a][k]);
+  assertEqual(missing.join(', '), '', `keys missing from ${b}`);
+  assertEqual(extra.join(', '), '', `keys missing from ${a}`);
+});
+
+check('no message is empty, and the placeholders line up across locales', () => {
+  for (const [key, entry] of Object.entries(CATALOGUES.en)) {
+    assert(entry.message.trim().length > 0, `${key} is empty in en`);
+    const other = CATALOGUES.ja[key];
+    assert(other && other.message.trim().length > 0, `${key} is empty in ja`);
+    assertEqual(placeholdersIn(other.message), placeholdersIn(entry.message),
+      `${key} takes different substitutions in ja`);
+  }
+});
+
+check('every key the extension asks for exists', () => {
+  const sources = [];
+  (function walk(dir) {
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name);
+      if (fs.statSync(full).isDirectory()) walk(full);
+      else if (/\.(js|html)$/.test(name)) sources.push(full);
+    }
+  })(path.join(ROOT, 'src'));
+  sources.push(path.join(ROOT, 'manifest.json'));
+
+  const asked = new Map(); // key -> where it was asked for
+  for (const file of sources) {
+    const text = fs.readFileSync(file, 'utf8');
+    const where = path.relative(ROOT, file);
+    for (const [, key] of text.matchAll(/\bt\('([A-Za-z][\w]*)'/g)) asked.set(key, where);
+    for (const [, key] of text.matchAll(/\bcount\('([A-Za-z][\w]*)'/g)) {
+      asked.set(key, where);
+      asked.set(`${key}One`, where); // count() declines by appending One
+    }
+    for (const [, key] of text.matchAll(/data-i18n(?:-\w+)?="([A-Za-z][\w]*)"/g)) asked.set(key, where);
+    for (const [, key] of text.matchAll(/__MSG_([A-Za-z][\w]*)__/g)) asked.set(key, where);
+  }
+
+  assert(asked.size > 40, `the scan found the call sites (${asked.size})`);
+  const unknown = [...asked].filter(([key]) => !CATALOGUES.en[key])
+    .map(([key, where]) => `${key} (${where})`);
+  assertEqual(unknown.join(', '), '', 'keys asked for but not in the catalogue');
+});
+
+/* --------------------------------------------------------- colour ramp */
+
+/* The light-theme tokens the ramp falls back to, as hues. */
+const HUE_OK = 212.4;
+const HUE_WARN = 42.4;
+const HUE_DANGER = 355.8;
+const THRESHOLDS = { warnLines: 500, dangerLines: 800 };
+
+function hueOf(colour) {
+  const m = /^hsl\(([\d.]+) /.exec(colour);
+  if (!m) throw new Error(`not an hsl colour: ${colour}`);
+  return Number(m[1]);
+}
+
+function lightnessOf(colour) {
+  const m = /^hsl\([\d.]+ [\d.]+% ([\d.]+)%/.exec(colour);
+  if (!m) throw new Error(`not an hsl colour: ${colour}`);
+  return Number(m[1]);
+}
+
+function near(a, b, tol, what) {
+  assert(Math.abs(a - b) <= tol, `${what}: ${a} is not within ${tol} of ${b}`);
+}
+
+check('the ramp lands on the tokens at zero and at each threshold', () => {
+  near(hueOf(inline.lineColor(0, THRESHOLDS)), HUE_OK, 1, 'zero lines');
+  near(hueOf(inline.lineColor(500, THRESHOLDS)), HUE_WARN, 1, 'the warn threshold');
+  near(hueOf(inline.lineColor(800, THRESHOLDS)), HUE_DANGER, 1, 'the danger threshold');
+});
+
+check('the ramp is continuous between them and clamps above', () => {
+  const mid = hueOf(inline.lineColor(250, THRESHOLDS));
+  assert(mid < HUE_OK && mid > HUE_WARN, `half way to the warn threshold sits between the two hues (got ${mid})`);
+  const late = hueOf(inline.lineColor(650, THRESHOLDS));
+  assert(late < HUE_WARN, `past it the ramp keeps descending towards red (got ${late})`);
+  assertEqual(inline.lineColor(5000, THRESHOLDS), inline.lineColor(800, THRESHOLDS),
+    'everything past the danger threshold is the same red');
+});
+
+check('the ramp follows the configured thresholds', () => {
+  const tight = { warnLines: 50, dangerLines: 80 };
+  near(hueOf(inline.lineColor(50, tight)), HUE_WARN, 1, 'a warn threshold of 50 lines');
+  assertEqual(inline.lineColor(80, tight), inline.lineColor(800, THRESHOLDS), 'danger is the same red either way');
+  // Thresholds the wrong way round must not divide by zero or go backwards.
+  const inverted = { warnLines: 900, dangerLines: 100 };
+  assert(/^hsl\(/.test(inline.lineColor(500, inverted)), 'an inverted pair still yields a colour');
+});
+
+check('lineColor carries an alpha, and rampStops spans the ramp', () => {
+  assert(/ \/ 0.55\)$/.test(inline.lineColor(100, THRESHOLDS, 0.55)), 'alpha is passed through');
+  const stops = inline.rampStops(THRESHOLDS, 4);
+  assertEqual(stops.length, 5, 'one stop more than the steps asked for');
+  assert(stops[0].endsWith(' 0%') && stops[4].endsWith(' 100%'), 'running end to end');
+  near(hueOf(stops[0]), HUE_OK, 1, 'the first stop');
+  near(hueOf(stops[4]), HUE_DANGER, 1, 'the last stop');
+});
+
+check('sizes ramp on the same thresholds, read at a line\'s length', () => {
+  const perLine = patterns.DEFAULT_BYTES_PER_LINE;
+  const bytes = (n) => ({ type: 'file', bytes: n * perLine, excluded: false });
+
+  assertEqual(inline.METRICS.bytes.fill(bytes(0), THRESHOLDS), inline.lineColor(0, THRESHOLDS),
+    'nothing in it is the start of the ramp');
+  assertEqual(inline.METRICS.bytes.fill(bytes(500), THRESHOLDS), inline.lineColor(500, THRESHOLDS),
+    'a file that is amber by its lines is amber by its size');
+  assertEqual(inline.METRICS.bytes.fill(bytes(900), THRESHOLDS), inline.lineColor(800, THRESHOLDS),
+    'and past danger it is the same red');
+  assertEqual(inline.METRICS.bytes.severity(bytes(900), THRESHOLDS), 'danger', 'the number is flagged too');
+
+  const dir = { type: 'dir', maxFileBytes: 500 * perLine };
+  assertEqual(inline.METRICS.bytes.fill(dir, THRESHOLDS), inline.dirColor(500, THRESHOLDS),
+    'a directory goes by the largest file inside it, in bytes');
+  assertEqual(inline.METRICS.bytes.fill({ type: 'file', bytes: 999, excluded: true }, THRESHOLDS), '',
+    'an excluded file is left to CSS, as in the lines view');
+});
+
+check('directories ramp in violet, on the largest file inside them', () => {
+  const none = inline.dirColor(0, THRESHOLDS);
+  const some = inline.dirColor(500, THRESHOLDS);
+  const bad = inline.dirColor(800, THRESHOLDS);
+
+  for (const [colour, what] of [[none, 'empty'], [some, 'at warn'], [bad, 'at danger']]) {
+    const h = hueOf(colour);
+    assert(h > 240 && h < 290, `a directory stays violet, never a file's hue (${what}: ${h})`);
+  }
+  // Light theme: deeper as the worst file grows. The dark tokens run the other
+  // way, which is why the direction is not what is asserted — the distance is.
+  assert(lightnessOf(none) > lightnessOf(some) && lightnessOf(some) > lightnessOf(bad),
+    'and deepens with it');
+  assertEqual(inline.dirColor(99999, THRESHOLDS), bad, 'past danger every directory is the same');
+  assertEqual(inline.dirColor(500, THRESHOLDS), inline.dirColor(50, { warnLines: 50, dangerLines: 80 }),
+    'the thresholds place it, so a tighter pair shifts the same colour earlier');
 });
 
 /* ----------------------------------------------------------- treemap */
@@ -391,15 +629,45 @@ check('settings: a dangling defaultTokenId falls back to the first token', () =>
   assertEqual(s.defaultTokenId, 'a');
 });
 
-check('settings: the exact-lines boolean migrates to a mode', () => {
+check('settings: the exact-lines boolean migrates, and only it', () => {
   assertEqual(settings.normalise({ fetchExactLines: false }).exactLinesMode, 'off');
-  assertEqual(settings.normalise({ fetchExactLines: true }).exactLinesMode, 'auto');
-  assertEqual(settings.normalise({}).exactLinesMode, 'manual', 'never configured');
+  assertEqual(settings.normalise({ fetchExactLines: true }).exactLinesMode, 'auto',
+    'someone who had it on keeps the fetching they had');
   assertEqual(settings.normalise({ fetchExactLines: false }).fetchExactLines, undefined,
     'the old field is dropped');
+
+  // A config carrying neither key is a new install, not a migration.
+  assertEqual(settings.normalise({}).exactLinesMode, 'manual', 'never configured');
+  assertEqual(settings.normalise(undefined).exactLinesMode, 'manual', 'nothing stored at all');
 });
 
-check('settings: an unknown exact-lines mode falls back to manual', () => {
+check('settings: a number the options page could not read is left alone', () => {
+  // `Number('')` is 0, which passed the old guard — the options page writes
+  // nothing for an emptied field, so the stored value survives being retyped.
+  const stored = { warnLines: 500, dangerLines: 800, maxExactFetch: 300 };
+  for (const key of Object.keys(stored)) {
+    assertEqual(settings.normalise({ ...stored })[key], stored[key], `${key} round-trips`);
+  }
+  assertEqual(settings.normalise({ ...stored, warnLines: 0 }).warnLines, 0,
+    'the store keeps what it is given; the options page is what refuses a zero');
+});
+
+check('the ramp answers the same whether it is asked once or a hundred times', () => {
+  // The cached answer is what a row's bar is painted from, so a stale one would
+  // be a wrong colour rather than a slow one.
+  const first = inline.lineColor(600, THRESHOLDS);
+  for (let i = 0; i < 100; i++) assertEqual(inline.lineColor(600, THRESHOLDS), first, 'stable');
+  assertEqual(inline.dirColor(600, THRESHOLDS), inline.dirColor(600, THRESHOLDS), 'and for directories');
+});
+
+check('each reading says where its own warn threshold falls', () => {
+  const perLine = patterns.DEFAULT_BYTES_PER_LINE;
+  assertEqual(inline.METRICS.lines.warnAt(THRESHOLDS), msg('unitLines', '500'), 'lines, in lines');
+  assertEqual(inline.METRICS.bytes.warnAt(THRESHOLDS), `${(500 * perLine / 1024).toFixed(1)} KB`,
+    'and size, in bytes');
+});
+
+check('settings: an unknown exact-lines mode falls back to the default', () => {
   assertEqual(settings.normalise({ exactLinesMode: 'nonsense' }).exactLinesMode, 'manual');
   for (const mode of ['auto', 'manual', 'off']) {
     assertEqual(settings.normalise({ exactLinesMode: mode }).exactLinesMode, mode);
@@ -409,8 +677,8 @@ check('settings: an unknown exact-lines mode falls back to manual', () => {
 function twoAccounts() {
   return settings.normalise({
     tokens: [
-      { id: 'personal', label: '個人', token: 'ghp_personal', owners: ['ebi-oishii'] },
-      { id: 'work', label: '仕事', token: 'ghp_work', owners: ['Acme-Corp', 'acme-labs'] },
+      { id: 'personal', label: 'personal', token: 'ghp_personal', owners: ['ebi-oishii'] },
+      { id: 'work', label: 'work', token: 'ghp_work', owners: ['Acme-Corp', 'acme-labs'] },
     ],
     defaultTokenId: 'personal',
   });
@@ -594,7 +862,7 @@ domCheck('findRows returns real entries with both responsive name cells', () => 
     );
     assert(row.path.startsWith('source/'), `${row.name}: path is prefixed with the directory`);
     assert(['dir', 'file'].includes(row.type), `${row.name}: has a type`);
-    assert(!row.name.includes('/'), `${row.name}: bare entry name`);
+    assertEqual(row.path, `source/${row.name}`, `${row.name}: path and name agree`);
   }
   assert(rows.some((r) => r.type === 'dir'), 'at least one directory');
   assert(rows.some((r) => r.type === 'file'), 'at least one file');
@@ -602,6 +870,54 @@ domCheck('findRows returns real entries with both responsive name cells', () => 
 
   const names = rows.map((r) => r.name);
   assertEqual(new Set(names).size, names.length, 'no duplicate rows');
+});
+
+domCheck('findRows reads a collapsed row from its href, not its label', () => {
+  installDom(fixtureHtml, FIXTURE_URL);
+  const ctx = page.getContext();
+
+  /* GitHub folds a chain of single-child directories into one row: the text is
+     the whole chain, and the title says so in words rather than naming it. */
+  const tbody = document.querySelector('table[aria-labelledby="folders-and-files"] tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="react-directory-row-name-cell-small-screen">
+      <div class="react-directory-filename-column">
+        <a title="This path skips through empty directories" class="Link--primary"
+           href="/sindresorhus/got/tree/main/source/deep/nested">source/deep/nested</a>
+      </div>
+    </td>
+    <td class="react-directory-row-name-cell-large-screen">
+      <div class="react-directory-filename-column">
+        <a title="This path skips through empty directories" class="Link--primary"
+           href="/sindresorhus/got/tree/main/source/deep/nested">source/deep/nested</a>
+      </div>
+    </td>`;
+  tbody.appendChild(tr);
+
+  const collapsed = page.findRows(ctx).find((r) => r.el === tr);
+  assert(collapsed, 'the collapsed row is not skipped');
+  assertEqual(collapsed.path, 'source/deep/nested', 'its path comes from the href');
+  assertEqual(collapsed.name, 'deep/nested', 'and it reads as the chain it stands for');
+  assertEqual(collapsed.type, 'dir', 'a tree link is a directory');
+  tr.remove();
+});
+
+domCheck('findRows ignores links that leave the directory being shown', () => {
+  installDom(fixtureHtml, FIXTURE_URL);
+  const ctx = page.getContext();
+  const tbody = document.querySelector('table[aria-labelledby="folders-and-files"] tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="react-directory-row-name-cell-large-screen">
+      <div class="react-directory-filename-column">
+        <a title="elsewhere" class="Link--primary" href="/sindresorhus/got/tree/main/test">test</a>
+      </div>
+    </td>`;
+  tbody.appendChild(tr);
+
+  assert(!page.findRows(ctx).some((r) => r.el === tr), 'a sibling directory is not a row here');
+  tr.remove();
 });
 
 domCheck('render injects an aligned bar into every name cell', () => {
@@ -619,7 +935,7 @@ domCheck('render injects an aligned bar into every name cell', () => {
   }));
   const { root, index } = store.buildTree(entries);
   for (const node of index.values()) {
-    if (node.type === 'file') { node.lines = Math.round(node.size / 32); node.exact = true; }
+    if (node.type === 'file') node.lines = Math.round(node.size / 32);
   }
   store.rollup(root);
 
@@ -670,7 +986,7 @@ domCheck('render is idempotent — repeated passes do not duplicate bars', () =>
       type: 'file', size: 2000, sha: `sha-${r.name}`,
     }))
   );
-  for (const node of index.values()) if (node.type === 'file') { node.lines = 60; node.exact = true; }
+  for (const node of index.values()) if (node.type === 'file') node.lines = 60;
   store.rollup(root);
 
   const state = { ctx, settings: settings.DEFAULTS, status: 'ready', root, index, progress: { done: 0, total: 0 } };
@@ -690,7 +1006,7 @@ domCheck('clearRows and removeSummary leave the page clean', () => {
   const { root, index } = store.buildTree(
     rows.map((r) => ({ path: r.type === 'dir' ? `${r.path}/i.ts` : r.path, type: 'file', size: 2000, sha: r.name }))
   );
-  for (const node of index.values()) if (node.type === 'file') { node.lines = 60; node.exact = true; }
+  for (const node of index.values()) if (node.type === 'file') node.lines = 60;
   store.rollup(root);
 
   inline.render({ ctx, settings: settings.DEFAULTS, status: 'ready', root, index, progress: { done: 0, total: 0 } }, {});
@@ -732,6 +1048,10 @@ const STUB_TREE = [
 ];
 
 let transportCalls = [];
+let stubTreeCached = false; // whether a cache-only TREE probe hits
+let stubTreeFails = null;   // an error every TREE request answers with, while set
+let stubAttributes = null;  // what BLOB_TEXT answers, when the tree has one
+let stubTreeTruncated = false; // the tree comes back cut short, and the top-up fails
 
 function stubTransport({ treeDelayMs = 0 } = {}) {
   const calls = [];
@@ -740,11 +1060,24 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
     calls.push(msg);
     switch (msg.type) {
       case 'TREE':
-        if (msg.cacheOnly) return { ok: false, error: 'cache_miss' };
+        if (stubTreeFails) return { ok: false, error: stubTreeFails };
+        if (msg.cacheOnly && !stubTreeCached) return { ok: false, error: 'not_cached' };
+        // The non-recursive top-up, asked for only when the tree was truncated.
+        if (msg.recursive === false) return { ok: false, error: 'not_found' };
         if (treeDelayMs) await sleep(treeDelayMs);
-        return { ok: true, entries: STUB_TREE, truncated: false };
+        return { ok: true, entries: STUB_TREE, truncated: stubTreeTruncated };
       case 'CACHED_LINES':
         return { ok: true, lines: {} };
+      case 'RATE':
+        return { ok: true, limit: 5000, remaining: 4987, reset: Date.now() + 1800000,
+                 authenticated: true, label: 'scoped' };
+      case 'BLOB_TEXT':
+        return stubAttributes || { ok: false, error: 'not_cached' };
+      case 'LOCALE': {
+        const file = path.join(ROOT, `_locales/${msg.locale}/messages.json`);
+        if (!fs.existsSync(file)) return { ok: false, error: 'unknown_locale' };
+        return { ok: true, messages: JSON.parse(fs.readFileSync(file, 'utf8')) };
+      }
       case 'LINES': {
         const entry = STUB_TREE.find((e) => e.sha === msg.sha);
         return { ok: true, lines: Math.round((entry ? entry.size : 0) / 30) };
@@ -761,7 +1094,20 @@ function stubTransport({ treeDelayMs = 0 } = {}) {
    still describes the directory the page was first loaded with. Anything that
    reads the current directory out of that payload will silently label the new
    rows with the old directory's paths. */
+/* The directory the last navigateDom put on screen. main.js rebuilds the view
+   when the context changes, and only then — so navigating to the directory
+   already showing silently reads the previous test's finished view. That has
+   caught tests out twice; it stops here. */
+let shownPath = null;
+
 function navigateDom(dom, dirPath, entries) {
+  if (dirPath === shownPath) {
+    throw new Error(
+      `navigateDom("${dirPath}") from the same directory — the view is not rebuilt, `
+      + 'so this would read the previous one. Use another directory.'
+    );
+  }
+  shownPath = dirPath;
   const doc = dom.window.document;
 
   const tbody = doc.querySelector('table[aria-labelledby="folders-and-files"] tbody');
@@ -799,18 +1145,20 @@ function renderedPaths() {
   )].sort();
 }
 
+/* These are about the render path, so they run in the mode that fetches
+   without being asked. Manual — the default, and what most of the rest of this
+   file exercises — comes after them. */
 await domCheckAsync('the strip shows up while the tree is still in flight', async () => {
-  await settings.set({ exactLinesMode: 'auto' });
   installDom(fixtureHtml, FIXTURE_URL);
   stubTransport({ treeDelayMs: 700 });
+  await settings.set({ exactLinesMode: 'auto' });
   load('src/content/main.js');
 
   await waitFor(() => document.getElementById(inline.SUMMARY_ID), 3000, 'summary strip');
-  assert([...document.querySelectorAll('.ghl-num')].every((n) => n.textContent === '—'),
-    'unknown counts while the tree is loading');
+  assertEqual(renderedPaths().length, 0, 'no bars yet — the tree has not arrived');
 
   const status = document.querySelector('.ghl-summary-status').textContent;
-  assert(/読み込み中/.test(status), `status should report loading, got "${status}"`);
+  assertEqual(status, msg('statusLoading'), 'the status reports loading');
   assert(
     document.querySelector('[data-ghl-action="treemap"]').disabled,
     'treemap button is disabled until there is data'
@@ -818,7 +1166,7 @@ await domCheckAsync('the strip shows up while the tree is still in flight', asyn
 });
 
 await domCheckAsync('main paints the directory it lands on', async () => {
-  await waitFor(() => document.querySelector('.ghl-cell[data-state="file"]'), 6000, 'exact counts on first paint');
+  await waitFor(() => renderedPaths().length > 0, 6000, 'bars on first paint');
 
   const paths = renderedPaths();
   assert(paths.includes('source/create.ts'), `expected source/create.ts, got ${paths}`);
@@ -895,51 +1243,356 @@ await domCheckAsync('navigating back up rebuilds the parent view', async () => {
   assert(!paths.some((p) => p.startsWith('source/as-promise/')), 'stale child rows are gone');
 });
 
-await domCheckAsync('manual mode makes no API requests and waits for the button', async () => {
+const fetchButton = () => document.querySelector('[data-ghl-action="fetch"]');
+const metricButton = (key) => document.querySelector(`[data-ghl-metric="${key}"]`);
+/* TREE requests that would hit the API — manual mode's cache-only probes do not count. */
+const treeFetches = (calls) => calls.filter((c) => c.type === 'TREE' && !c.cacheOnly);
+
+/* Manual mode from idle: fetch the tree via the size reading of the button,
+   then flip the toggle back to lines so the count button is on offer. */
+async function loadTreeViaSizes() {
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+  metricButton('bytes').click();
+  await waitFor(() => fetchButton().textContent === msg('fetchSizes'), 3000, 'the button to offer sizes');
+  fetchButton().click();
+  await waitFor(() => renderedPaths().length > 0, 6000, 'the tree');
+  metricButton('lines').click();
+}
+
+const rowPick = (path) => document.querySelector(`.ghl-row-pick[data-ghl-path="${path}"]`);
+
+function tick(path, on) {
+  const pick = rowPick(path);
+  pick.checked = on;
+  pick.dispatchEvent(new currentDom.window.Event('change', { bubbles: true }));
+}
+
+await domCheckAsync('manual mode fetches nothing — not even the tree — until asked', async () => {
   await settings.set({ exactLinesMode: 'manual' });
+  assertEqual(settings.DEFAULTS.exactLinesMode, 'manual', 'which is what a new install gets');
   const before = transportCalls.length;
 
   navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+
+  assertEqual(treeFetches(transportCalls.slice(before)).length, 0, 'no tree request on open');
+  assert(transportCalls.slice(before).some((c) => c.type === 'TREE' && c.cacheOnly), 'only the cache was asked');
+  assertEqual(renderedPaths().length, 0, 'no bars yet');
+  const idlePicks = [...document.querySelectorAll('.ghl-row-pick[data-pick="on"]')];
+  assertEqual(new Set(idlePicks.map((p) => p.dataset.ghlPath)).size, 1, 'the row already has its checkbox');
+  assert(idlePicks.every((p) => p.checked), 'ticked by default');
+  const host = idlePicks[0].parentElement;
+  assert(host.firstElementChild === idlePicks[0], 'the checkbox leads the name cell');
+  const heads = [...document.querySelectorAll('.ghl-col-head')];
+  assertEqual(heads.length, 2, 'one head per "Name" header cell (small and large screen)');
+  const head = heads[0];
+  assert(head.parentElement.tagName === 'TH' && /^Name$/.test(head.parentElement.textContent.trim()) &&
+    head.parentElement.firstChild === head, 'the icon heads the column from the "Name" header cell');
+  assert(head.querySelector('.ghl-icon svg'), 'and it is the extension icon');
+  const headAll = head.querySelector('[data-ghl-action="pick-all"]');
+  assert(headAll && headAll.checked && !headAll.indeterminate, 'with the all-rows checkbox under it, ticked');
+  assert(document.querySelector('.ghl-pick-all').hidden, "the strip's fallback all-rows toggle stays hidden while the head has one");
+  assert(!document.querySelector('.ghl-metric').hidden, 'the metric toggle is up, saying what the button fetches');
+  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'it opens on lines');
+  assertEqual(fetchButton().textContent, msg('fetchLines'), 'the button reads the toggle');
+  assert(fetchButton().classList.contains('ghl-btn-primary') && !fetchButton().disabled, 'primary for lines');
+  assert(!/\d/.test(fetchButton().textContent), `no count before the tree is known (${fetchButton().textContent})`);
+
+  metricButton('bytes').click();
+  await waitFor(() => fetchButton().textContent === msg('fetchSizes'), 3000, 'the button to follow the toggle');
+  assert(!fetchButton().classList.contains('ghl-btn-primary'), 'plain for sizes');
+  const status = document.querySelector('.ghl-summary-status').textContent;
+  assertEqual(status, msg('statusIdle'), 'the status says nothing has been fetched');
+});
+
+domCheck('the checkbox column finds its header without reading English', () => {
+  /* GitHub's own interface has a language too. The name columns are the ones
+     the rows put their name cells in, whatever the header says. */
+  const heads = [...document.querySelectorAll('table[aria-labelledby="folders-and-files"] thead th')];
+  const named = heads.filter((th) => th.textContent.trim() === 'Name');
+  assert(named.length >= 1, 'the fixture is in English to start with');
+  const before = named.map((th) => th.textContent);
+  // Every subdirectory page opens with the go-to-parent row, which spans the
+  // table and carries no name cell.
+  const tbody = document.querySelector('table[aria-labelledby="folders-and-files"] tbody');
+  const parent = document.createElement('tr');
+  parent.innerHTML = '<td colspan="3" class="f5 text-normal"><a href="/sindresorhus/got/tree/main">..</a></td>';
+  tbody.insertBefore(parent, tbody.firstChild);
+  try {
+    for (const th of named) th.textContent = '名前';
+    const found = GHL.page.findNameHeaders();
+    assertEqual(found.length, named.length, 'the same header cells are found');
+    assert(found.every((th) => named.includes(th)), 'and they are the name columns, not the commit ones');
+  } finally {
+    named.forEach((th, i) => { th.textContent = before[i]; });
+    parent.remove();
+  }
+});
+
+await domCheckAsync('pressing the size button fetches the tree and shows sizes', async () => {
+  const before = transportCalls.length;
+  fetchButton().click();
+  // The strip must not blink while the tree is in flight: same controls, same places.
+  assert(!document.querySelector('.ghl-metric').hidden, 'the toggle stays up while loading');
+  assert(!fetchButton().hidden && fetchButton().textContent === msg('fetchBusy'),
+    `the button reads as busy (${fetchButton().textContent})`);
+  assert(document.querySelectorAll('.ghl-col-head').length === 2, 'the column head stays');
   await waitFor(
     () => renderedPaths().includes('source/core/options.ts'),
     6000,
     'bars for the new directory'
   );
 
-  const fetched = transportCalls.slice(before).filter((c) => !c.cacheOnly && ['TREE', 'LINES', 'BLOB_TEXT'].includes(c.type));
-  assertEqual(fetched.length, 0, 'no metadata or contents fetched without being asked');
+  assertEqual(treeFetches(transportCalls.slice(before)).length, 1, 'exactly one tree request');
+  const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
+  assertEqual(fetched.length, 0, 'no line counts fetched without being asked');
+  assert(!fetchButton().hidden && fetchButton().disabled && fetchButton().textContent === msg('fetchDone'),
+    `nothing left to fetch for sizes: the button stays put, disabled, as done (${fetchButton().textContent})`);
 
   const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
-  assertEqual(cell.querySelector('.ghl-num').textContent, '—', 'unknown, without an estimate');
-  assertEqual(cell.querySelector('.ghl-pct').textContent, '', 'no invented percentage');
-
-  const button = document.querySelector('[data-ghl-action="fetch"]');
-  assert(button && !button.hidden, 'the fetch button is offered');
-  assert(/行数を取得/.test(button.textContent), `button is labelled (${button.textContent})`);
-  assertEqual(button.textContent, '行数を取得', 'file count is unknown until the tree is fetched');
+  assertEqual(cell.querySelector('.ghl-num').textContent, '117.2 KB', 'the row shows its size');
+  // 120,000 bytes is far past the danger threshold read at a line's length.
+  assertEqual(cell.dataset.severity, 'danger', 'sizes ramp on the same thresholds, read in bytes');
+  assert(/^(hsl|rgb)a?\(/.test(cell.querySelector('.ghl-bar-fill').style.background),
+    'so the bar is coloured here too');
+  assertEqual(metricButton('bytes').getAttribute('aria-pressed'), 'true', 'the toggle says size');
+  const stats = document.querySelector('.ghl-summary-stats').textContent;
+  assert(/117\.2 KB/.test(stats), `the strip totals in bytes too (${stats})`);
 });
 
-await domCheckAsync('pressing the button fetches metadata and exact counts', async () => {
+await domCheckAsync('flipping the toggle to lines shows estimates and offers the count button, fetching nothing', async () => {
+  const before = transportCalls.length;
+  metricButton('lines').click();
+  await waitFor(
+    () => {
+      const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
+      return cell && cell.querySelector('.ghl-num').textContent.startsWith('~');
+    },
+    3000,
+    'the estimate to show'
+  );
+  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'the toggle says lines');
+  assertEqual(transportCalls.length, before, 'switching the view fetches nothing');
+  const bar = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"] .ghl-bar-fill');
+  assert(/^(hsl|rgb)a?\(/.test(bar.style.background), `the bar takes its colour from the ramp (${bar.style.background})`);
+  const dirBar = document.querySelector('.ghl-cell[data-state="dir"] .ghl-bar-fill');
+  if (dirBar) assert(/^(hsl|rgb)a?\(/.test(dirBar.style.background), 'directories are coloured too');
+
+  const button = fetchButton();
+  assert(button && !button.hidden, 'the fetch button is offered');
+  assertEqual(button.textContent, msg('fetchLinesCount', 1), 'the button is labelled with what it will fetch');
+});
+
+await domCheckAsync('pressing the button fetches, and the estimate becomes exact', async () => {
   const before = transportCalls.length;
   document.querySelector('[data-ghl-action="fetch"]').click();
-  document.dispatchEvent(new currentDom.window.Event('soft-nav:end'));
 
   await waitFor(
     () => {
       const cell = document.querySelector('.ghl-cell[data-ghl-path="source/core/options.ts"]');
-      return cell && cell.querySelector('.ghl-num').textContent === '4,000';
+      return cell && !cell.querySelector('.ghl-num').textContent.startsWith('~');
     },
     6000,
-    'the exact count to appear'
+    'the estimate to be replaced'
   );
 
   const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 1, 'exactly the queued file was fetched');
-  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'TREE' && !c.cacheOnly).length,
-    1, 'the tree is fetched after the click');
 
   const button = document.querySelector('[data-ghl-action="fetch"]');
-  assert(button.hidden, 'the button goes away once there is nothing left to fetch');
+  assert(!button.hidden && button.disabled && button.textContent === msg('fetchDone'),
+    `the button stays put, disabled, as done (${button.textContent})`);
+  const pick = rowPick('source/core/options.ts');
+  assert(pick && pick.dataset.pick === 'on' && !pick.disabled && pick.checked, 'the checkbox stays, live');
+  const headAll = document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]');
+  assert(headAll && !headAll.disabled && headAll.checked, 'so does the column head');
+});
+
+await domCheckAsync('rows unticked before anything is fetched are left out of a cold-start fetch', async () => {
+  const before = transportCalls.length;
+  navigateDom(currentDom, 'source/as-promise', [
+    { name: 'index.ts', type: 'file' },
+    { name: 'types.ts', type: 'file' },
+  ]);
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+  await waitFor(() => rowPick('source/as-promise/types.ts'), 3000, 'idle checkboxes');
+  assertEqual(fetchButton().textContent, msg('fetchLines'), 'a fresh view opens on lines');
+
+  tick('source/as-promise/types.ts', false);
+  await waitFor(() => document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]').indeterminate, 3000, 'the all-rows box to go indeterminate');
+  fetchButton().click();
+
+  await waitFor(
+    () => {
+      const cell = document.querySelector('.ghl-cell[data-ghl-path="source/as-promise/index.ts"] .ghl-num');
+      return cell && /^\d/.test(cell.textContent);
+    },
+    6000,
+    'an exact count without a separate sizes step'
+  );
+  assertEqual(treeFetches(transportCalls.slice(before)).length, 1, 'one tree request');
+  assertEqual(
+    transportCalls.slice(before).filter((c) => c.type === 'LINES').map((c) => c.sha).join(' '),
+    'sha-ap-index',
+    'only the ticked file was fetched'
+  );
+  assert(!fetchButton().hidden && fetchButton().disabled, 'the unticked leftover keeps the button up, disabled');
+  assertEqual(metricButton('lines').getAttribute('aria-pressed'), 'true', 'asking for counts shows counts');
+  assert(document.querySelector('.ghl-col-head'), 'the column head stays while checkboxes are offered');
+});
+
+await domCheckAsync('manual mode puts a ticked checkbox on every row with something to fetch', async () => {
+  navigateDom(currentDom, 'source', [
+    { name: 'as-promise', type: 'dir' },
+    { name: 'core', type: 'dir' },
+    { name: 'create.ts', type: 'file' },
+    { name: 'index.ts', type: 'file' },
+    { name: 'types.ts', type: 'file' },
+  ]);
+  await loadTreeViaSizes();
+  await waitFor(
+    () => fetchButton() && !fetchButton().hidden && renderedPaths().includes('source/create.ts'),
+    6000,
+    'the fetch button for the parent directory'
+  );
+
+  assert(/6/.test(fetchButton().textContent),
+    `the count covers files in subdirectories too (${fetchButton().textContent})`);
+
+  const picked = [...document.querySelectorAll('.ghl-row-pick[data-pick="on"]')];
+  assertEqual(new Set(picked.map((p) => p.dataset.ghlPath)).size, 5, 'every row offers a checkbox');
+  assert(picked.every((p) => p.checked), 'all ticked by default');
+});
+
+await domCheckAsync('unticking a row takes its files out of the count', async () => {
+  tick('source/core', false);
+  await waitFor(() => /5/.test(fetchButton().textContent), 3000, "the directory's file leaving the count");
+  assert(
+    [...document.querySelectorAll('.ghl-row-pick[data-ghl-path="source/core"]')].every((p) => !p.checked),
+    'both name cells of the row show it unticked'
+  );
+  assertEqual(document.querySelector('.ghl-cell[data-ghl-path="source/core"]').dataset.state, 'off',
+    'the unticked row loses its bar and number');
+  assert(document.querySelector('.ghl-summary-stats').textContent.includes(msg('unitFiles', 5)),
+    `the strip counts only the ticked rows (${document.querySelector('.ghl-summary-stats').textContent})`);
+
+  tick('source/create.ts', false);
+  await waitFor(() => /4/.test(fetchButton().textContent), 3000, 'the file leaving the count');
+  assert(document.querySelector('.ghl-summary-stats').textContent.includes(msg('unitFiles', 4)),
+    'and follows the second untick');
+});
+
+await domCheckAsync('pressing the button fetches only the ticked rows', async () => {
+  const before = transportCalls.length;
+  fetchButton().click();
+  await waitFor(
+    () => transportCalls.slice(before).filter((c) => c.type === 'LINES').length >= 4 &&
+      fetchButton().textContent !== msg('fetchBusy'),
+    6000,
+    'the fetch to finish'
+  );
+
+  const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES').map((c) => c.sha).sort();
+  assertEqual(fetched.join(' '), 'sha-ap-index sha-ap-types sha-index sha-types',
+    'nothing from core/ or create.ts was requested');
+
+  const button = fetchButton();
+  assert(!button.hidden && button.disabled && /0/.test(button.textContent),
+    `the button stays for the unticked leftovers, disabled with nothing picked (${button.textContent})`);
+  const done = rowPick('source/index.ts');
+  assert(done.dataset.pick === 'on' && !done.disabled && done.checked, 'a fetched row keeps its checkbox, live');
+  const stats = document.querySelector('.ghl-summary-stats').textContent;
+  assert(stats.startsWith(msg('unitLines', '763')) && stats.includes(msg('unitFiles', 4)),
+    `the total is over the ticked rows only, and exact (${stats})`);
+
+  tick('source/core', true);
+  await waitFor(() => !fetchButton().disabled, 3000, 'the button to re-enable');
+  assert(/1/.test(fetchButton().textContent), `re-ticking brings its file back (${fetchButton().textContent})`);
+});
+
+await domCheckAsync("the column head's checkbox ticks or unticks every row at once", async () => {
+  const all = document.querySelector('.ghl-col-head [data-ghl-action="pick-all"]');
+  assert(all, 'the all-rows checkbox is offered');
+  assert(all.indeterminate && !all.checked, 'a mixed selection shows as indeterminate');
+
+  all.click();
+  await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'every leftover row to be ticked');
+  assert(all.checked && !all.indeterminate, 'fully ticked');
+
+  all.click();
+  await waitFor(() => fetchButton().disabled, 3000, 'the button to disable with nothing ticked');
+  assert(!all.checked && !all.indeterminate, 'fully unticked');
+  assert(
+    [...document.querySelectorAll('.ghl-row-pick[data-pick="on"]')].every((p) => !p.checked),
+    'every row follows'
+  );
+  assertEqual(document.querySelectorAll('.ghl-cell[data-state="off"]').length, 10, 'and every bar is gone (two cells a row)');
+
+  all.click();
+  await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'back to all ticked');
+});
+
+await domCheckAsync('on the repository root, where the header row has no height, the head moves to the latest-commit box', async () => {
+  const table = document.querySelector('table[aria-labelledby="folders-and-files"]');
+  table.tHead.setAttribute('data-test-collapsed', '');
+  const box = document.createElement('div');
+  box.setAttribute('data-testid', 'latest-commit');
+  box.innerHTML = '<div class="avatar">author</div>';
+  table.parentElement.insertBefore(box, table);
+
+  tick('source/core', false);
+  await waitFor(() => box.firstElementChild?.classList.contains('ghl-col-head'), 3000, 'the head to move into the box');
+  assertEqual(document.querySelectorAll('.ghl-col-head').length, 1, 'and to leave the header cells');
+  assert(document.querySelector('#ghl-summary .ghl-pick-all').hidden, "the strip's copy stays hidden");
+  assert(box.querySelector('[data-ghl-action="pick-all"]').indeterminate, 'mirroring the rows');
+
+  box.remove();
+  table.tHead.removeAttribute('data-test-collapsed');
+  tick('source/core', true);
+  await waitFor(() => document.querySelectorAll('thead th > .ghl-col-head').length === 2, 3000, 'the head to return to the header cells');
+});
+
+await domCheckAsync('without a table header the all-rows checkbox falls back to the strip', async () => {
+  document.querySelector('table[aria-labelledby="folders-and-files"] thead').remove();
+  tick('source/core', false);
+  await waitFor(() => !document.querySelector('.ghl-col-head'), 3000, 'the head to go');
+  const strip = document.querySelector('#ghl-summary .ghl-pick-all');
+  assert(!strip.hidden, "the strip's copy shows");
+  const box = strip.querySelector('[data-ghl-action="pick-all"]');
+  assert(box.indeterminate, 'and mirrors the rows');
+  box.click();
+  await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'it drives the rows too');
+});
+
+await domCheckAsync('a commit already in the cache shows in manual mode without a press', async () => {
+  stubTreeCached = true;
+  const before = transportCalls.length;
+  navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+  await waitFor(() => renderedPaths().includes('source/core/options.ts'), 6000, 'bars without pressing anything');
+
+  const trees = transportCalls.slice(before).filter((c) => c.type === 'TREE');
+  assert(trees.length >= 1 && trees.every((c) => c.cacheOnly), 'the tree was only ever asked for from the cache');
+  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'LINES').length, 0, 'and no counts were fetched');
+  assertEqual(fetchButton().textContent, msg('fetchLinesCount', 1),
+    'the count button is on offer for what is not cached');
+  stubTreeCached = false;
+});
+
+await domCheckAsync('a pinned locale replaces every label, and clearing it hands them back', async () => {
+  const ja = JSON.parse(fs.readFileSync(path.join(ROOT, '_locales/ja/messages.json'), 'utf8'));
+
+  await settings.set({ locale: 'ja' });
+  await GHL.i18n.load();
+  assertEqual(inline.METRICS.lines.label, ja.metricLines.message, 'the metric toggle speaks the chosen language');
+  assertEqual(GHL.t('fetchLinesCount', 3), ja.fetchLinesCount.message.replace('$1', '3'),
+    'and so do the substituted ones');
+
+  await settings.set({ locale: '' });
+  await GHL.i18n.load();
+  assertEqual(inline.METRICS.lines.label, msg('metricLines'), 'clearing it follows the browser again');
+
+  await settings.set({ locale: 'kl' });
+  assertEqual((await settings.get()).locale, '', 'a locale with no catalogue is not a setting');
 });
 
 await domCheckAsync('off mode never fetches and offers no button', async () => {
@@ -956,11 +1609,351 @@ await domCheckAsync('off mode never fetches and offers no button', async () => {
     'bars for the new directory'
   );
 
-  const fetched = transportCalls.slice(before).filter((c) => !c.cacheOnly && ['TREE', 'LINES', 'BLOB_TEXT'].includes(c.type));
+  const fetched = transportCalls.slice(before).filter((c) => c.type === 'LINES');
   assertEqual(fetched.length, 0, 'nothing fetched');
   assert(document.querySelector('[data-ghl-action="fetch"]').hidden, 'no button offered');
+  assert(!document.querySelector('.ghl-col-head'), 'no column head without checkboxes');
+  assert(!document.querySelector('.ghl-row-pick:not([data-pick="none"])'), 'no checkboxes outside manual mode');
 
   await settings.set({ exactLinesMode: 'auto' });
+});
+
+await domCheckAsync('the strip reports what is left of the API budget', async () => {
+  await settings.set({ exactLinesMode: 'auto' });
+  navigateDom(currentDom, 'source', [
+    { name: 'create.ts', type: 'file' },
+    { name: 'index.ts', type: 'file' },
+  ]);
+  await waitFor(
+    () => { const n = document.querySelector('.ghl-rate'); return n && !n.hidden; },
+    6000,
+    'the budget to appear once something has been spent'
+  );
+
+  const rate = document.querySelector('.ghl-rate');
+  assertEqual(rate.querySelector('.ghl-rate-value').textContent, msg('apiLeft', '4,987', '5,000'),
+    'it reads remaining out of the limit');
+  assertEqual(rate.dataset.tone, 'ok', 'with plenty left, it is quiet');
+  const note = rate.querySelector('.ghl-rate-note').textContent;
+  assert(note.includes('scoped'), `the note names the account it belongs to (${note})`);
+  assert(/\d+/.test(note.split('\n').pop()), 'and says when it comes back');
+  assert(rate.getAttribute('tabindex') === '0', 'and is reachable from the keyboard');
+  await settings.set({ exactLinesMode: 'manual' });
+});
+
+await domCheckAsync('a failed fetch leaves something to press, and pressing it starts over', async () => {
+  /* The message says to wait and try again, so there has to be something to
+     try again with — and it has to read what it could not read the first time. */
+  await settings.set({ exactLinesMode: 'manual' });
+  navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+
+  // Every test after this one shares the stub, so the failure is taken back
+  // whatever happens here.
+  try {
+    stubTreeFails = 'rate_limit';
+    fetchButton().click();
+    await waitFor(
+      () => document.querySelector('.ghl-summary-status').dataset.tone === 'error',
+      6000,
+      'the failure to be reported'
+    );
+    const button = fetchButton();
+    assert(!button.hidden && !button.disabled, 'the button is still there to press');
+    assert(!/\d/.test(button.textContent), `and offers the whole thing again (${button.textContent})`);
+  } finally {
+    stubTreeFails = null;
+  }
+
+  const button = fetchButton();
+  const before = transportCalls.length;
+  button.click();
+  await waitFor(() => renderedPaths().includes('source/core/options.ts'), 6000, 'the retry to land');
+  assert(treeFetches(transportCalls.slice(before)).length >= 1, 'which asked for the tree again');
+  assertEqual(document.querySelector('.ghl-summary-status').dataset.tone, 'ok', 'and the error is gone');
+});
+
+await domCheckAsync('an exclusion rule that could not be read is read again on the next press', async () => {
+  /* Counting a repository's generated files as if they were not is a wrong
+     number, so a rule that went unread is not something to carry on from. */
+  STUB_TREE.push({ path: 'source/as-promise/.gitattributes', type: 'file', size: 40, sha: 'sha-attrs' });
+  try {
+    stubAttributes = { ok: false, error: 'rate_limit' };
+    stubTreeCached = true;
+    navigateDom(currentDom, 'source/as-promise', [
+      { name: 'index.ts', type: 'file' },
+      { name: 'types.ts', type: 'file' },
+    ]);
+    await waitFor(() => renderedPaths().includes('source/as-promise/types.ts'), 6000, 'the cached view');
+
+    const button = fetchButton();
+    assert(!button.hidden, 'the button is offered even though the tree came from the cache');
+    assert(!/\d/.test(button.textContent),
+      `because what it would count is not yet trustworthy (${button.textContent})`);
+
+    stubAttributes = { ok: true, text: 'types.ts linguist-generated=true\n' };
+    const before = transportCalls.length;
+    button.click();
+    await waitFor(
+      () => transportCalls.slice(before).some((c) => c.type === 'BLOB_TEXT' && !c.cacheOnly),
+      6000,
+      'the rules to be read for real'
+    );
+    await waitFor(
+      () => document.querySelector('.ghl-cell[data-ghl-path="source/as-promise/types.ts"]')?.dataset.state === 'excluded',
+      6000,
+      'and applied — the file the repository calls generated stops being counted'
+    );
+  } finally {
+    stubAttributes = null;
+    stubTreeCached = false;
+    STUB_TREE.pop();
+  }
+});
+
+await domCheckAsync('a collapsed row takes the files it stands for with it', async () => {
+  /* GitHub folds a chain of single-child directories into one row, so a row is
+     not always one segment below the directory being shown — and what the row
+     stands for has to follow the row, not that assumption.
+
+     The stub tree and the document are shared with every test after this one,
+     so what this one adds, it takes back — failure or not. */
+  const tbody = document.querySelector('table[aria-labelledby="folders-and-files"] tbody');
+  const tr = document.createElement('tr');
+  STUB_TREE.push({ path: 'source/core/utils/deep/buried.ts', type: 'file', size: 4000, sha: 'sha-buried' });
+  try {
+    await settings.set({ exactLinesMode: 'manual' });
+    navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+
+    tr.innerHTML = `
+      <td class="react-directory-row-name-cell-large-screen">
+        <div class="react-directory-filename-column">
+          <a title="This path skips through empty directories" class="Link--primary"
+             href="/sindresorhus/got/tree/main/source/core/utils/deep">utils/deep</a>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+
+    await loadTreeViaSizes();
+    await waitFor(() => /2/.test(fetchButton().textContent), 6000,
+      () => `both files counted on the button (${fetchButton().textContent})`);
+
+    tick('source/core/utils/deep', false);
+    await waitFor(() => /1/.test(fetchButton().textContent), 3000,
+      () => `unticking the collapsed row drops its file (${fetchButton().textContent})`);
+    const stats = document.querySelector('.ghl-summary-stats').textContent;
+    assert(stats.includes(msg('unitFilesOne', 1)), `and drops it from the totals too (${stats})`);
+
+    tick('source/core/utils/deep', true);
+    await waitFor(() => /2/.test(fetchButton().textContent), 3000, 'ticking it brings the file back');
+
+    /* And the strip's segment for that child points at the row it was folded
+       into: the segment is named for "utils", the row for the whole chain. */
+    const segment = [...document.querySelectorAll('.ghl-stack .ghl-seg-clickable')]
+      .find((seg) => seg.title.startsWith('utils'));
+    assert(segment, 'the strip has a segment for the folded row');
+    segment.dispatchEvent(new currentDom.window.Event('click', { bubbles: true }));
+    const flashed = [...document.querySelectorAll('.ghl-cell.ghl-flash')];
+    assert(flashed.length && flashed.every((c) => c.dataset.ghlPath === 'source/core/utils/deep'),
+      'clicking the segment reaches the row it stands for');
+    /* A row has a name cell per breakpoint and shows one of them — the hidden
+       one comes first in the markup, so flashing only the first flashes
+       nothing the reader can see. */
+    const named = [...document.querySelectorAll('.ghl-cell[data-ghl-path="source/core/options.ts"]')];
+    assert(named.length > 1, 'the fixture has a cell per breakpoint to get this wrong with');
+    const seg = [...document.querySelectorAll('.ghl-stack .ghl-seg-clickable')]
+      .find((x) => x.title.startsWith('options.ts'));
+    seg.dispatchEvent(new currentDom.window.Event('click', { bubbles: true }));
+    assertEqual(document.querySelectorAll('.ghl-cell[data-ghl-path="source/core/options.ts"].ghl-flash').length,
+      named.length, 'so every cell of the row flashes');
+  } finally {
+    STUB_TREE.pop();
+    tr.remove();
+  }
+});
+
+await domCheckAsync('a size fetch that failed offers sizes again, not a line count', async () => {
+  /* The button says what a press will do; the press has to do that. Decided in
+     two places they drift, and a press offering one request spends three
+     hundred on the other reading. */
+  await settings.set({ exactLinesMode: 'manual' });
+  navigateDom(currentDom, 'source/as-promise', [
+    { name: 'index.ts', type: 'file' },
+    { name: 'types.ts', type: 'file' },
+  ]);
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+  metricButton('bytes').click();
+  await waitFor(() => fetchButton().textContent === msg('fetchSizes'), 3000, 'the button to offer sizes');
+
+  try {
+    stubTreeFails = 'rate_limit';
+    fetchButton().click();
+    await waitFor(
+      () => document.querySelector('.ghl-summary-status').dataset.tone === 'error',
+      6000,
+      'the failure to be reported'
+    );
+    assertEqual(fetchButton().textContent, msg('fetchSizes'), 'it still offers sizes');
+  } finally {
+    stubTreeFails = null;
+  }
+
+  const before = transportCalls.length;
+  fetchButton().click();
+  await waitFor(() => renderedPaths().includes('source/as-promise/index.ts'), 6000, 'the retry to land');
+  assertEqual(transportCalls.slice(before).filter((c) => c.type === 'LINES').length, 0,
+    'and it bought the one tree request it offered, not a file per row');
+  assertEqual(metricButton('bytes').getAttribute('aria-pressed'), 'true', 'the reading stays on sizes');
+  assertEqual(fetchButton().textContent, msg('fetchDone'), 'with nothing left on it');
+});
+
+await domCheckAsync('a repository with more exclusion files than it reads still settles', async () => {
+  /* Stopping at twenty is this extension's own limit, not something reading
+     again would get past — so it is said once and done with, not turned into a
+     button that offers to read for ever. */
+  const added = [];
+  for (let i = 0; i < 21; i++) {
+    added.push({ path: `source/pkg${i}/.gitattributes`, type: 'file', size: 20, sha: `sha-attr-${i}` });
+  }
+  STUB_TREE.push(...added);
+  try {
+    stubAttributes = { ok: true, text: '' };
+    await settings.set({ exactLinesMode: 'manual' });
+    navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(() => fetchButton().textContent === msg('fetchDone'), 8000, 'the button to settle');
+    assert(fetchButton().disabled, 'with nothing left to press');
+    assertEqual(document.querySelector('.ghl-summary-status').textContent, msg('errAttributes'),
+      'while the strip still says the rules were cut short');
+  } finally {
+    stubAttributes = null;
+    STUB_TREE.length -= added.length;
+  }
+});
+
+await domCheckAsync("a truncated tree's directory totals stay marked as estimates", async () => {
+  /* The tree came back cut short, so a directory's descendants are not all in
+     it. Every count present can be exact and the total still be short of the
+     truth — which is what the `~` says. */
+  await settings.set({ exactLinesMode: 'manual' });
+  try {
+    stubTreeTruncated = true;
+    navigateDom(currentDom, 'source', [
+      { name: 'core', type: 'dir' },
+      { name: 'create.ts', type: 'file' },
+    ]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(() => renderedPaths().includes('source/create.ts'), 8000, 'the counts to land');
+
+    const file = document.querySelector('.ghl-cell[data-ghl-path="source/create.ts"] .ghl-num');
+    assert(!file.textContent.startsWith('~'), `a file that was counted is exact (${file.textContent})`);
+    const dir = document.querySelector('.ghl-cell[data-ghl-path="source/core"] .ghl-num');
+    assert(dir.textContent.startsWith('~'),
+      `a directory that may be missing descendants is not (${dir.textContent})`);
+    /* And the strip, whose figure is recomputed over the ticked rows: a
+       directory holding nothing but counted files is still short of whatever
+       the truncated tree left out of it. */
+    navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(() => renderedPaths().includes('source/core/options.ts'), 8000, 'the counts to land');
+    const stats = document.querySelector('.ghl-summary-stats').textContent;
+    assert(stats.trimStart().startsWith('~'),
+      `the strip marks the directory's own total as an estimate too (${stats})`);
+  } finally {
+    stubTreeTruncated = false;
+  }
+});
+
+await domCheckAsync('a directory the tree left out counts nothing, and does not stick', async () => {
+  /* A truncated tree may not carry the directory on screen. The repository
+     root is not a stand-in for it: its totals are the wrong ones, and fetching
+     its files spends the budget on rows nobody is looking at. */
+  await settings.set({ exactLinesMode: 'manual' });
+  try {
+    stubTreeTruncated = true;
+    navigateDom(currentDom, 'source/missing', [{ name: 'ghost.ts', type: 'file' }]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    const before = transportCalls.length;
+    fetchButton().click();
+    await waitFor(
+      () => document.querySelector('.ghl-summary-status').textContent === msg('statusNoDirectory'),
+      6000,
+      'the strip to say the directory is not in what came back'
+    );
+    assertEqual(transportCalls.slice(before).filter((c) => c.type === 'LINES').length, 0,
+      'and nothing from the rest of the repository was fetched');
+    assert(document.querySelector('[data-ghl-action="treemap"]').disabled,
+      'with no treemap to open on it');
+  } finally {
+    stubTreeTruncated = false;
+  }
+
+  navigateDom(currentDom, 'source', [{ name: 'create.ts', type: 'file' }]);
+  await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+  fetchButton().click();
+  await waitFor(() => renderedPaths().includes('source/create.ts'), 6000, 'the next directory to draw');
+  assert(!document.querySelector('[data-ghl-action="treemap"]').disabled,
+    'the treemap comes back with it');
+  assertEqual(document.querySelector('.ghl-summary-status').textContent, '',
+    'and the message does not follow the reader around');
+});
+
+await domCheckAsync('a per-view limit of zero leaves nothing to press', async () => {
+  // "Fetch nothing" is a setting; the button has to read as done, not offer a
+  // count of zero that cannot be pressed.
+  await settings.set({ exactLinesMode: 'manual', maxExactFetch: 0 });
+  try {
+    navigateDom(currentDom, 'source/core', [{ name: 'options.ts', type: 'file' }]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(() => fetchButton().textContent === msg('fetchDone'), 8000, 'the button to read as done');
+    assert(fetchButton().disabled, 'and to be done');
+    const pick = rowPick('source/core/options.ts');
+    assertEqual(pick.title, msg('pickRow'),
+      `and the row does not claim files are left to fetch (${pick.title})`);
+  } finally {
+    await settings.set({ maxExactFetch: settings.DEFAULTS.maxExactFetch });
+  }
+});
+
+await domCheckAsync('unticking every row still leaves the unread rules readable', async () => {
+  /* Unticking narrows what gets counted. It says nothing about the exclusion
+     rules the view could not read — and if it disabled the one press that
+     re-reads them, the view could never be put right. */
+  STUB_TREE.push({ path: 'source/as-promise/.gitattributes', type: 'file', size: 40, sha: 'sha-attrs' });
+  try {
+    stubAttributes = { ok: false, error: 'rate_limit' };
+    await settings.set({ exactLinesMode: 'manual' });
+    navigateDom(currentDom, 'source/as-promise', [
+      { name: 'index.ts', type: 'file' },
+      { name: 'types.ts', type: 'file' },
+    ]);
+    await waitFor(() => { const b = fetchButton(); return b && !b.hidden; }, 6000, 'the fetch button');
+    fetchButton().click();
+    await waitFor(
+      () => renderedPaths().includes('source/as-promise/index.ts'),
+      8000,
+      'the tree, with the rules unread'
+    );
+
+    const all = document.querySelector('[data-ghl-action="pick-all"]');
+    all.checked = false;
+    all.dispatchEvent(new currentDom.window.Event('change', { bubbles: true }));
+    await waitFor(() => !rowPick('source/as-promise/index.ts').checked, 3000, 'every row unticked');
+    assert(!fetchButton().disabled,
+      `the press that would read them again is still there (${fetchButton().textContent})`);
+  } finally {
+    stubAttributes = null;
+    STUB_TREE.pop();
+    const all = document.querySelector('[data-ghl-action="pick-all"]');
+    if (all) {
+      all.checked = true;
+      all.dispatchEvent(new currentDom.window.Event('change', { bubbles: true }));
+    }
+  }
 });
 
 await domCheckAsync('leaving the file list tears the UI down', async () => {
@@ -972,252 +1965,6 @@ await domCheckAsync('leaving the file list tears the UI down', async () => {
     document.querySelectorAll(`#${inline.SUMMARY_ID}`).length, 0,
     'summary strip removed too'
   );
-});
-
-/* ---------------------------------------------------- cache-only contract */
-
-function workerHarness() {
-  const records = new Map();
-  const requests = [];
-  const context = vm.createContext({
-    GHL: globalThis.GHL,
-    importScripts() {},
-    chrome: { runtime: { onMessage: { addListener() {} } } },
-    setTimeout,
-    clearTimeout,
-    records,
-    fetch: async (url) => {
-      requests.push(url);
-      return {
-        ok: true,
-        headers: { get: () => null },
-        json: async () => ({ tree: [], truncated: false }),
-        text: async () => '*.ts linguist-generated=true',
-      };
-    },
-  });
-  vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/background/service-worker.js'), 'utf8'), context);
-  vm.runInContext(`
-    idbGet = async (store, key) => records.get(store + ':' + key);
-    idbPut = async (store, row) => records.set(store + ':' + (row.key || row.sha), row);
-    pruneTrees = async () => {};
-  `, context);
-  return { context, records, requests };
-}
-
-await checkAsync('worker: cache-only misses never reach fetch, even for a mutable ref', async () => {
-  const w = workerHarness();
-  for (const oid of ['a'.repeat(40), 'feature/new']) {
-    const result = await w.context.getTree({ owner: 'o', repo: 'r', oid, cacheOnly: true });
-    assertEqual(result.error, 'cache_miss');
-  }
-  assertEqual((await w.context.getBlobText({ sha: 'b', cacheOnly: true })).error, 'cache_miss');
-  assertEqual(w.requests.length, 0, 'no HTTP requests of any kind');
-});
-
-await checkAsync('worker: existing tree and attribute caches remain usable', async () => {
-  const w = workerHarness();
-  const oid = 'a'.repeat(40);
-  w.records.set(`trees:o/r@${oid}:r`, { entries: STUB_TREE, truncated: false });
-  w.records.set('texts:b', { text: '*.ts linguist-generated=true' });
-  const tree = await w.context.getTree({ owner: 'o', repo: 'r', oid, cacheOnly: true });
-  assertEqual(tree.entries, STUB_TREE);
-  assertEqual(tree.cached, true);
-  assertEqual((await w.context.getBlobText({ sha: 'b', cacheOnly: true })).cached, true);
-  assertEqual(w.requests.length, 0);
-});
-
-await checkAsync('worker: a cache probe does not join a concurrent network request', async () => {
-  const w = workerHarness();
-  const msg = { owner: 'o', repo: 'r', oid: 'a'.repeat(40) };
-  const network = w.context.getTree(msg);
-  const probe = w.context.getTree({ ...msg, cacheOnly: true });
-  assertEqual((await probe).error, 'cache_miss');
-  assertEqual((await network).ok, true);
-  assertEqual(w.requests.length, 1);
-  const textNetwork = w.context.getBlobText({ ...msg, sha: 'b' });
-  const textProbe = w.context.getBlobText({ ...msg, sha: 'b', cacheOnly: true });
-  assertEqual((await textProbe).error, 'cache_miss');
-  assertEqual((await textNetwork).ok, true);
-  assertEqual(w.requests.length, 2);
-});
-
-function dataTransport({ entries = STUB_TREE, cachedTree = false, lines = {}, texts = {}, truncated = false,
-  failTree = false, failLines = false, delayMs = 0 } = {}) {
-  const calls = [];
-  const network = [];
-  const control = { failTree, failLines };
-  globalThis.GHL.util.send = async (msg) => {
-    calls.push(msg);
-    if (!msg.cacheOnly && ['TREE', 'LINES', 'BLOB_TEXT'].includes(msg.type)) network.push(msg);
-    if (delayMs) await sleep(delayMs);
-    if (msg.type === 'TREE') {
-      if (msg.cacheOnly && !cachedTree) return { ok: false, error: 'cache_miss' };
-      if (!msg.cacheOnly && control.failTree) return { ok: false, error: 'rate_limit' };
-      return { ok: true, entries, truncated };
-    }
-    if (msg.type === 'BLOB_TEXT') {
-      if (msg.cacheOnly && texts[msg.sha] === undefined) return { ok: false, error: 'cache_miss' };
-      return { ok: true, text: texts[msg.sha] || '' };
-    }
-    if (msg.type === 'CACHED_LINES') return { ok: true, lines };
-    if (msg.type === 'LINES') {
-      if (control.failLines) return { ok: false, error: 'rate_limit' };
-      return { ok: true, lines: 10 };
-    }
-    return { ok: false, error: 'unexpected_message' };
-  };
-  return { calls, network, control };
-}
-
-async function loadedStore(mode = 'manual', patch = {}) {
-  await settings.set({ exactLinesMode: mode, maxExactFetch: 300, concurrency: 1, respectGitattributes: true, ...patch });
-  let state;
-  const handle = store.load({ owner: 'o', repo: 'r', oid: 'a'.repeat(40), path: 'source' }, (s) => { state = s; });
-  await waitFor(() => state && state.status !== 'loading', 3000, 'store initialization');
-  return { get state() { return state; }, handle };
-}
-
-await checkAsync('manual: a fully cached directory displays exact counts without a fetch', async () => {
-  const lines = Object.fromEntries(STUB_TREE.filter((e) => e.sha).map((e) => [e.sha, 10]));
-  const t = dataTransport({ cachedTree: true, lines });
-  const loaded = await loadedStore();
-  assertEqual(loaded.state.index.get('source').total, 60);
-  assertEqual(loaded.state.index.get('source').allExact, true);
-  assertEqual(loaded.state.status, 'ready');
-  assertEqual(t.network.length, 0);
-  loaded.handle.cancel();
-});
-
-await domCheckAsync('partial cached data never displays a directory total, percentage or treemap', async () => {
-  installDom(fixtureHtml, FIXTURE_URL);
-  const t = dataTransport({ cachedTree: true, lines: { 'sha-create': 25 } });
-  const loaded = await loadedStore();
-  loaded.state.ctx = page.getContext();
-  inline.render(loaded.state, {});
-  const file = document.querySelector('.ghl-cell[data-ghl-path="source/create.ts"]');
-  assertEqual(file.querySelector('.ghl-num').textContent, '25');
-  assertEqual(file.querySelector('.ghl-pct').textContent, '');
-  assertEqual(file.querySelector('.ghl-bar').style.visibility, 'hidden');
-  assertEqual(document.querySelector('.ghl-cell[data-ghl-path="source/core"] .ghl-num').textContent, '—');
-  assertEqual(document.querySelector('.ghl-summary-stats').textContent, '取得済み 1/6 ファイル');
-  assert(document.querySelector('.ghl-stack').hidden);
-  assert(document.querySelector('[data-ghl-action="treemap"]').disabled);
-  assertEqual(t.network.length, 0);
-  loaded.handle.cancel();
-});
-
-await checkAsync('manual: missing attributes wait for a click and then apply exclusions', async () => {
-  const entries = [...STUB_TREE, { path: '.gitattributes', type: 'file', size: 20, sha: 'attrs' }];
-  const texts = {};
-  const t = dataTransport({ entries, cachedTree: true, texts, lines: { 'sha-create': 25 } });
-  const loaded = await loadedStore();
-  assertEqual(loaded.state.needsMetadata, true);
-  assertEqual(loaded.state.index.get('source/create.ts').allExact, false);
-  assertEqual(t.network.length, 0);
-  texts.attrs = 'source/create.ts linguist-generated=true';
-  await loaded.handle.fetchExact();
-  assertEqual(loaded.state.index.get('source/create.ts').excluded, true);
-  assert(t.network.some((c) => c.type === 'BLOB_TEXT'));
-  assert(!t.network.some((c) => c.type === 'LINES' && c.sha === 'sha-create'));
-  loaded.handle.cancel();
-});
-
-await checkAsync('manual: cold-cache double clicks perform one metadata/count pass', async () => {
-  const t = dataTransport({ delayMs: 5 });
-  const loaded = await loadedStore();
-  const first = loaded.handle.fetchExact();
-  const second = loaded.handle.fetchExact();
-  assertEqual(first, second);
-  await first;
-  assertEqual(t.network.filter((c) => c.type === 'TREE').length, 1);
-  assertEqual(t.network.filter((c) => c.type === 'LINES').length, 6);
-  assertEqual(loaded.state.index.get('source').allExact, true);
-  loaded.handle.cancel();
-});
-
-await checkAsync('manual: a failed tree fetch stays retryable without automatic retries', async () => {
-  const t = dataTransport({ failTree: true });
-  const loaded = await loadedStore();
-  await loaded.handle.fetchExact();
-  assertEqual(loaded.state.status, 'error');
-  assertEqual(t.network.length, 1);
-  t.control.failTree = false;
-  await loaded.handle.fetchExact();
-  assertEqual(loaded.state.index.get('source').allExact, true);
-  loaded.handle.cancel();
-});
-
-await checkAsync('manual: rate limits preserve unknown counts and allow an explicit retry', async () => {
-  const t = dataTransport({ cachedTree: true, failLines: true });
-  const loaded = await loadedStore();
-  await loaded.handle.fetchExact();
-  assertEqual(loaded.state.status, 'pending');
-  assertEqual(loaded.state.warning.error, 'rate_limit');
-  assertEqual(t.network.filter((c) => c.type === 'LINES').length, 1);
-  assertEqual(loaded.state.index.get('source').total, 0);
-  assertEqual(loaded.state.index.get('source').allExact, false);
-  t.control.failLines = false;
-  await loaded.handle.fetchExact();
-  assertEqual(loaded.state.index.get('source').allExact, true);
-  loaded.handle.cancel();
-});
-
-await checkAsync('manual: each click respects the file limit and offers the next batch', async () => {
-  const t = dataTransport({ cachedTree: true });
-  const loaded = await loadedStore('manual', { maxExactFetch: 2 });
-  await loaded.handle.fetchExact();
-  assertEqual(t.network.length, 2);
-  assertEqual(loaded.state.pending, 2);
-  assertEqual(loaded.state.status, 'pending');
-  await loaded.handle.fetchExact();
-  assertEqual(t.network.length, 4);
-  await loaded.handle.fetchExact();
-  assertEqual(t.network.length, 6);
-  assertEqual(loaded.state.status, 'ready');
-  loaded.handle.cancel();
-});
-
-await checkAsync('off: missing attributes never cause network access', async () => {
-  const entries = [...STUB_TREE, { path: '.gitattributes', type: 'file', size: 20, sha: 'attrs' }];
-  const t = dataTransport({ entries, cachedTree: true });
-  const loaded = await loadedStore('off');
-  await loaded.handle.fetchExact();
-  assertEqual(t.network.length, 0);
-  assertEqual(loaded.state.status, 'ready');
-  loaded.handle.cancel();
-});
-
-await checkAsync('truncated trees and oversized files cannot produce complete totals', async () => {
-  dataTransport({ cachedTree: true, truncated: true, lines: Object.fromEntries(STUB_TREE.filter((e) => e.sha).map((e) => [e.sha, 10])) });
-  const truncated = await loadedStore();
-  assertEqual(truncated.state.index.get('source').allExact, false);
-  truncated.handle.cancel();
-
-  const entries = [
-    { path: 'source/empty.ts', type: 'file', size: 0, sha: 'empty' },
-    { path: 'source/large.ts', type: 'file', size: 3 * 1024 * 1024, sha: 'large' },
-    { path: 'source/submodule', type: 'file', size: null, sha: 'submodule' },
-  ];
-  const t = dataTransport({ entries });
-  const loaded = await loadedStore();
-  await loaded.handle.fetchExact();
-  assertEqual(loaded.state.index.get('source/empty.ts').allExact, true);
-  assertEqual(loaded.state.index.get('source/empty.ts').total, 0);
-  assertEqual(loaded.state.index.get('source/large.ts').allExact, false);
-  assertEqual(loaded.state.index.get('source/submodule').allExact, false);
-  assertEqual(loaded.state.index.get('source').allExact, false);
-  assertEqual(t.network.filter((c) => c.type === 'LINES').length, 0);
-  loaded.handle.cancel();
-});
-
-await checkAsync('navigation cancellation prevents further metadata or line requests', async () => {
-  const t = dataTransport({ delayMs: 30 });
-  const loaded = await loadedStore();
-  const fetching = loaded.handle.fetchExact();
-  loaded.handle.cancel();
-  await fetching;
-  assertEqual(t.network.length, 1, 'only the already-started tree request');
 });
 
 /* ---------------------------------------------------------------- report */

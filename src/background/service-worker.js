@@ -9,7 +9,7 @@
    storage, and it survives navigation. */
 'use strict';
 
-importScripts('../lib/namespace.js', '../lib/patterns.js', '../lib/settings.js');
+importScripts('../lib/namespace.js', '../lib/patterns.js', '../lib/settings.js', '../lib/i18n.js');
 
 const GHL = globalThis.GHL;
 const API = 'https://api.github.com';
@@ -118,7 +118,7 @@ const identities = new Map();
 function identity(id) {
   let state = identities.get(id);
   if (!state) {
-    state = { id, label: '', limit: null, remaining: null, reset: null, recent: [], pausedUntil: 0 };
+    state = { id, label: '', limit: null, remaining: null, reset: null, recent: [], pausedUntil: 0, askedAt: 0 };
     identities.set(id, state);
   }
   return state;
@@ -183,9 +183,12 @@ async function acquireSlot(state) {
    Memory only: relearning after the worker restarts costs one request. */
 const ownerToken = new Map();
 
+/* A token with neither label nor owner has no name to give. The word for
+   "a token" belongs to whoever shows the message: the content script knows
+   which language the reader chose, and this worker does not. */
 function describe(entry) {
   if (!entry) return '';
-  return entry.label || (entry.owners && entry.owners[0]) || 'トークン';
+  return entry.label || (entry.owners && entry.owners[0]) || '';
 }
 
 /* The token to try first, then any others worth trying if it cannot see the
@@ -271,6 +274,18 @@ async function ghFetchAs(entry, path, accept) {
   throw err;
 }
 
+/* The one endpoint that reports the budget without spending it. Its answer is
+   the same shape the headers carry, so it lands in the same place. */
+async function askRateLimit(entry, state) {
+  const res = await ghFetchAs(entry, '/rate_limit', 'application/vnd.github+json');
+  const body = await res.json();
+  const core = body && body.resources && body.resources.core;
+  if (!core) return;
+  state.limit = core.limit;
+  state.remaining = core.remaining;
+  state.reset = core.reset * 1000;
+}
+
 /* `owner` selects the identity; `fallback` allows trying the user's other
    accounts when the chosen one cannot see the repository. Only worth setting on
    the first request for a repository — the answer is then remembered. */
@@ -321,7 +336,7 @@ async function fetchTree(owner, repo, target, recursive) {
     entries: (json.tree || []).map((e) => ({
       path: e.path,
       type: e.type === 'tree' ? 'dir' : 'file',
-      size: e.size ?? null,
+      size: e.size || 0,
       sha: e.sha,
     })),
     truncated: !!json.truncated,
@@ -329,10 +344,15 @@ async function fetchTree(owner, repo, target, recursive) {
 }
 
 function getTree(msg) {
-  const { owner, repo, oid, recursive = true, path = '' } = msg;
-  return dedupe(`tree:${owner}/${repo}@${oid}:${recursive ? 'r' : path}:${!!msg.cacheOnly}`, () => loadTree(msg));
+  const { owner, repo, oid, recursive = true, path = '', cacheOnly = false } = msg;
+  return dedupe(
+    `tree:${owner}/${repo}@${oid}:${recursive ? 'r' : path}${cacheOnly ? ':c' : ''}`,
+    () => loadTree(msg)
+  );
 }
 
+/* `cacheOnly` answers from the cache or not at all — never with a request.
+   Manual mode uses it on page load, so a commit seen before shows at once. */
 async function loadTree({ owner, repo, oid, recursive = true, path = '', cacheOnly = false }) {
   let sha = oid;
   let immutable = SHA_RE.test(sha);
@@ -344,7 +364,7 @@ async function loadTree({ owner, repo, oid, recursive = true, path = '', cacheOn
     const hit = await idbGet('trees', keyFor(sha));
     if (hit) return { ok: true, entries: hit.entries, truncated: hit.truncated, cached: true };
   }
-  if (cacheOnly) return { ok: false, error: 'cache_miss' };
+  if (cacheOnly) return { ok: false, error: 'not_cached' };
 
   // Slashes must survive; only the individual segments get escaped.
   const suffix = recursive || !path
@@ -400,10 +420,10 @@ async function fetchBlobText({ owner, repo, sha }) {
 /* Used for .gitattributes, which is read on every directory view. Cached by
    SHA like everything else, so it costs one request per repository, ever. */
 function getBlobText(msg) {
-  return dedupe(`text:${msg.sha}:${!!msg.cacheOnly}`, async () => {
+  return dedupe(`text:${msg.sha}${msg.cacheOnly ? ':c' : ''}`, async () => {
     const hit = await idbGet('texts', msg.sha);
     if (hit) return { ok: true, text: hit.text, cached: true };
-    if (msg.cacheOnly) return { ok: false, error: 'cache_miss' };
+    if (msg.cacheOnly) return { ok: false, error: 'not_cached' };
 
     const text = await fetchBlobText(msg);
     if (text.length <= MAX_CACHED_TEXT) {
@@ -460,18 +480,57 @@ async function cacheStats() {
   return { ok: true, lines, trees, texts };
 }
 
+/* The packaged catalogue for one locale. Content scripts cannot read a
+   packaged file themselves without making `_locales` web-accessible, which
+   would hand it to every page as well. */
+async function getLocale({ locale }) {
+  if (!GHL.i18n.SUPPORTED.includes(locale)) return { ok: false, error: 'unknown_locale' };
+  const res = await fetch(chrome.runtime.getURL(`_locales/${locale}/messages.json`));
+  if (!res.ok) return { ok: false, error: 'not_found' };
+  return { ok: true, messages: await res.json() };
+}
+
 const HANDLERS = {
   TREE: getTree,
+  LOCALE: getLocale,
   LINES: getLines,
   CACHED_LINES: getCachedLines,
   BLOB_TEXT: getBlobText,
-  RATE: async () => ({
-    ok: true,
-    identities: [...identities.values()].map((s) => ({
-      id: s.id, label: s.label, limit: s.limit, remaining: s.remaining,
-      reset: s.reset, pausedUntil: s.pausedUntil,
-    })),
-  }),
+  /* What is left of the budget the given owner's requests come out of. Limits
+     are per account, so which account that is depends on the owner.
+
+     Every response carries the numbers in its headers, so most of the time
+     there is nothing to ask: this reads what the last one said. When there has
+     been no response — a page drawn entirely from the cache, a manual view that
+     has not fetched anything, a worker Chrome restarted — it asks GitHub, whose
+     `/rate_limit` is documented as not counting against the limit it reports.
+     One such question a minute per account is plenty. */
+  RATE: async ({ owner } = {}) => {
+    const [entry] = await tokenCandidates(owner, false);
+    const state = identity(entry ? entry.id : ANON);
+
+    /* Asking is free, so the cooldown is only there to keep a quiet tab from
+       asking on every view. A window that has already reset is worth asking
+       about whatever the cooldown says: what is held is not stale, it is
+       wrong — it would report a spent budget that has since come back. */
+    const expired = state.reset != null && state.reset < Date.now();
+    const unknown = state.limit == null;
+    if (expired || (unknown && Date.now() - state.askedAt > 60000)) {
+      state.askedAt = Date.now();
+      // Best effort: a budget nobody could ask about is not worth an error.
+      await askRateLimit(entry, state).catch(() => {});
+    }
+
+    return {
+      ok: true,
+      limit: state.limit,
+      remaining: state.remaining,
+      reset: state.reset,
+      pausedUntil: state.pausedUntil,
+      authenticated: !!entry,
+      label: describe(entry),
+    };
+  },
   CLEAR_CACHE: clearCache,
   CACHE_STATS: cacheStats,
   PING: async () => ({ ok: true }),
@@ -488,6 +547,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       message: err.message || String(err),
       reset: err.reset,
       authenticated: err.authenticated,
+      // Which token was tried: with several registered, the message is a
+      // mystery without it.
+      tokenLabel: err.tokenLabel,
     });
   });
   return true; // async response

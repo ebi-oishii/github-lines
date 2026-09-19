@@ -7,6 +7,10 @@
   --ghl-warn: #bf8700;
   --ghl-danger: #cf222e;
   --ghl-dir: #8250df;
+  /* A directory's own ramp, from "nothing big inside" to "holds a file past
+     the danger threshold". */
+  --ghl-dir-lo: #d7c9f7;
+  --ghl-dir-hi: #5b21b6;
   --ghl-muted: #8c959f;
   --ghl-track: rgba(140, 149, 159, 0.22);
   --ghl-surface: var(--bgColor-default, var(--color-canvas-default, #ffffff));
@@ -22,6 +26,8 @@
     --ghl-warn: #d29922;
     --ghl-danger: #f85149;
     --ghl-dir: #a371f7;
+    --ghl-dir-lo: #3f2d68;
+    --ghl-dir-hi: #c4a2ff;
     --ghl-muted: #8b949e;
     --ghl-track: rgba(139, 148, 158, 0.24);
   }
@@ -33,6 +39,8 @@ html[data-color-mode='light'] {
   --ghl-warn: #bf8700;
   --ghl-danger: #cf222e;
   --ghl-dir: #8250df;
+  --ghl-dir-lo: #d7c9f7;
+  --ghl-dir-hi: #5b21b6;
   --ghl-track: rgba(140, 149, 159, 0.22);
 }
 html[data-color-mode='dark'] {
@@ -40,6 +48,8 @@ html[data-color-mode='dark'] {
   --ghl-warn: #d29922;
   --ghl-danger: #f85149;
   --ghl-dir: #a371f7;
+  --ghl-dir-lo: #3f2d68;
+  --ghl-dir-hi: #c4a2ff;
   --ghl-track: rgba(139, 148, 158, 0.24);
 }
 
@@ -97,15 +107,121 @@ html[data-color-mode='dark'] {
   opacity: 0.72;
 }
 
-.ghl-cell[data-state='excluded'] .ghl-num {
+.ghl-cell[data-state='excluded'] .ghl-num,
+.ghl-cell[data-state='unknown'] .ghl-num {
   min-width: 0;
   font-style: italic;
   opacity: 0.6;
 }
 
-.ghl-cell[data-state='unknown'] .ghl-num {
-  opacity: 0.6;
+/* Manual mode's checkboxes: one at the head of each row, one in the strip.
+   `blank` keeps the column aligned on rows with nothing left to fetch; `none`
+   is every other state. */
+.ghl-pick,
+.ghl-row-pick {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  margin: 0 2px 0 0;
+  cursor: pointer;
+  accent-color: var(--ghl-ok);
 }
+.ghl-row-pick { margin-right: 32px; }
+.ghl-row-pick[data-pick='none'] { display: none; }
+
+/* An unticked row in manual mode: out of the picture, footprint kept. */
+.ghl-cell[data-state='off'] { visibility: hidden; }
+
+/* The checkbox column gets a vertical rule between the checkbox and GitHub's
+   file icon (13px box, 16px, rule, 16px, icon — GitHub's own cell padding),
+   drawn on every row that shows a checkbox. It overshoots the cell by a pixel
+   to cover the row border. */
+.react-directory-filename-column:has(> .ghl-row-pick:not([data-pick='none'])) {
+  position: relative;
+}
+.react-directory-filename-column:has(> .ghl-row-pick:not([data-pick='none']))::before {
+  content: '';
+  position: absolute;
+  left: 29px;
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  background: var(--ghl-border);
+  pointer-events: none;
+}
+
+/* The column's head: the icon stacked over the all-rows checkbox, placed
+   exactly over the rows' checkboxes, with the rule between checkbox and file
+   icon running its home's full height. Two homes, styled by context. */
+.ghl-col-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  box-sizing: border-box;
+}
+.ghl-col-head .ghl-icon { width: 14px; height: 14px; }
+.ghl-col-head .ghl-pick { margin: 0; }
+
+/* In the "Name" header cell (the header cell and the name cells share
+   GitHub's 16px padding). Taken out of the cell's flow and centred, so the
+   header row keeps its own height and its label never wraps; the cell's
+   padding makes the room instead, pushing "Name" to where the file icons
+   start. GitHub sets that padding from a stylesheet that can load after ours
+   at equal specificity — hence the !important. */
+th:has(> .ghl-col-head) {
+  position: relative;
+  padding-left: 61px !important;
+}
+th > .ghl-col-head {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 45px;
+}
+th:has(> .ghl-col-head)::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 45px;
+  width: 1px;
+  background: var(--ghl-border);
+}
+
+/* In the latest-commit box (the repository root), which is inset 4px from
+   the table cells. In flow, pushing the avatar to where the file icons
+   start. */
+[data-testid='latest-commit'] > .ghl-col-head {
+  position: relative;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 49px;
+  padding-left: 4px;
+}
+[data-testid='latest-commit'] > .ghl-col-head::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  left: 33px;
+  width: 1px;
+  background: var(--ghl-border);
+}
+
+/* The strip's all-rows toggle. */
+.ghl-pick-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--ghl-fg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ghl-pick-all[hidden] { display: none; }
 
 .ghl-flash {
   animation: ghl-flash 1.2s ease;
@@ -118,7 +234,8 @@ html[data-color-mode='dark'] {
 /* Keep GitHub's filename from eating the whole cell, so our bar can sit at a
    fixed right edge and stay aligned down the column. Scoped with :has() so we
    only touch rows we have actually injected into. */
-.react-directory-filename-column:has(> .ghl-cell) {
+.react-directory-filename-column:has(> .ghl-cell),
+.react-directory-filename-column:has(> .ghl-row-pick) {
   display: flex;
   align-items: center;
 }
@@ -151,14 +268,72 @@ html[data-color-mode='dark'] {
   margin-bottom: 7px;
 }
 
-.ghl-summary [hidden] { display: none; }
-.ghl-summary[data-complete='false'] .ghl-summary-head { margin-bottom: 0; }
-
 .ghl-summary-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--ghl-fg-muted);
   flex: 0 0 auto;
+}
+
+.ghl-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--ghl-muted);
+}
+.ghl-icon svg { width: 100%; height: 100%; }
+
+/* Lines | Size — what the bars measure. An iOS-style segmented control: a
+   grey pill with a raised thumb that slides under the selected reading. The
+   two segments are the same width so the thumb is exactly half the pill. */
+.ghl-metric {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--ghl-track);
+}
+.ghl-metric[hidden] { display: none; }
+.ghl-metric::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: 999px;
+  background: var(--ghl-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+  transition: transform 180ms ease;
+}
+.ghl-metric:has([data-ghl-metric='bytes'][aria-pressed='true'])::before {
+  transform: translateX(100%);
+}
+.ghl-metric button {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 56px;
+  width: 56px;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ghl-fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+.ghl-metric button:hover { color: var(--ghl-fg); }
+.ghl-metric button[aria-pressed='true'] {
+  color: var(--ghl-fg);
+  font-weight: 600;
 }
 
 .ghl-summary-stats {
@@ -191,8 +366,7 @@ html[data-color-mode='dark'] {
   cursor: pointer;
   text-decoration: none;
 }
-.ghl-btn:hover { background: var(--ghl-surface-alt); }
-.ghl-btn:disabled { opacity: 0.45; cursor: default; }
+.ghl-btn:not(:disabled):hover { background: var(--ghl-surface-alt); }
 .ghl-btn-quiet { background: transparent; }
 
 /* Manual mode's "fetch line counts" button — the one action the strip offers. */
@@ -202,7 +376,21 @@ html[data-color-mode='dark'] {
   border-color: transparent;
   font-weight: 600;
 }
-.ghl-btn-primary:hover { filter: brightness(1.1); background: var(--ghl-ok); }
+.ghl-btn-primary:not(:disabled):hover { filter: brightness(1.1); background: var(--ghl-ok); }
+/* No pointer-events rule: a disabled button fires no click anyway, and its
+   title is the only thing that says why it is disabled. */
+.ghl-btn:disabled { opacity: 0.55; cursor: default; }
+
+/* The fetch button's label changes with the toggle and gains a count; a fixed
+   footprint keeps the strip from reflowing on every flip. The floor has to
+   clear the longest label in *any* language — English runs about 20% wider
+   than Japanese here — or the button grows when the count appears and shoves
+   its neighbours along. */
+.ghl-btn-fetch {
+  min-width: 156px;
+  white-space: nowrap;
+  text-align: center;
+}
 
 .ghl-stack {
   display: flex;
@@ -226,6 +414,50 @@ html[data-color-mode='dark'] {
 .ghl-seg[data-tone='rest'] { background: var(--ghl-muted); opacity: 0.55; }
 .ghl-seg-clickable { cursor: pointer; }
 .ghl-seg-clickable:hover { filter: brightness(1.45); }
+
+.ghl-summary-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* What is left of the API budget, under the right-hand end of the bar, with
+   the detail in a tooltip of our own — see the comment where it is built. */
+.ghl-rate {
+  position: relative;
+  flex: 0 0 auto;
+  margin-top: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ghl-fg-muted);
+  white-space: nowrap;
+  cursor: help;
+}
+.ghl-rate[hidden] { display: none; }
+.ghl-rate[data-tone='warn'] { color: var(--ghl-warn); }
+.ghl-rate[data-tone='error'] { color: var(--ghl-danger); }
+.ghl-rate:focus-visible { outline: 2px solid var(--ghl-ok); outline-offset: 2px; }
+
+.ghl-rate-note {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 10;
+  display: none;
+  width: max-content;
+  max-width: 320px;
+  padding: 6px 9px;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-line;
+  color: var(--ghl-fg);
+  background: var(--ghl-surface);
+  border: 1px solid var(--ghl-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(31, 35, 40, 0.15);
+}
+.ghl-rate:hover .ghl-rate-note,
+.ghl-rate:focus-visible .ghl-rate-note { display: block; }
 
 .ghl-legend {
   display: flex;
@@ -254,6 +486,40 @@ html[data-color-mode='dark'] {
   flex: 0 0 auto;
 }
 .ghl-legend-item[data-tone='warn'] .ghl-legend-dot { background: var(--ghl-warn); }
+
+/* The treemap's legend: the colour ramps themselves — files, then folders —
+   each with the warn threshold ticked on it, between its two ends. */
+.ghl-ramps {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ghl-ramp {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: nowrap;
+}
+.ghl-ramp-end {
+  font-size: 11px;
+  color: var(--ghl-fg-muted);
+  white-space: nowrap;
+}
+.ghl-ramp-bar {
+  position: relative;
+  display: block;
+  width: 108px;
+  height: 8px;
+  border-radius: 4px;
+}
+.ghl-ramp-tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--ghl-surface);
+}
 .ghl-legend-item[data-tone='danger'] .ghl-legend-dot { background: var(--ghl-danger); }
 .ghl-legend-item[data-tone='dir'] .ghl-legend-dot { background: var(--ghl-dir); }
 .ghl-legend-item[data-tone='rest'] .ghl-legend-dot { background: var(--ghl-muted); }
@@ -374,7 +640,7 @@ html[data-color-mode='dark'] {
   padding: 0 5px;
   font-size: 10px;
   line-height: 16px;
-  color: var(--ghl-fg-muted);
+  color: var(--ghl-fg);
   background: var(--ghl-track);
   overflow: hidden;
   white-space: nowrap;

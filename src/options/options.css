@@ -39,6 +39,7 @@ body {
 .head { margin-bottom: 24px; }
 h1 { margin: 0 0 6px; font-size: 22px; }
 .lede { margin: 0; color: var(--fg-muted); }
+.guide { margin: 8px 0 0; font-size: 13px; }
 
 .card {
   padding: 18px 20px;
@@ -139,6 +140,25 @@ input:focus, textarea:focus {
   padding: 14px 0;
   background: linear-gradient(to top, var(--bg) 70%, transparent);
 }
+.foot .hint { margin: 0; }
+.spacer { flex: 1 1 auto; }
+
+/* The settings most people never touch, folded away behind one line. */
+.fold { padding: 0; }
+.fold > summary {
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style-position: inside;
+}
+.fold > summary::marker { color: var(--fg-muted); }
+.fold[open] > summary { border-bottom: 1px solid var(--border); }
+.fold-body { padding: 16px 20px 4px; }
+.fold-body > .hint:last-child { margin-bottom: 12px; }
+
+.cache-row { align-items: center; margin-bottom: 12px; }
+.cache-row .hint { margin: 0; }
 
 /* --------------------------------------------------------------- tokens */
 
@@ -174,6 +194,8 @@ input:focus, textarea:focus {
 }
 
 .btn.quiet {
+  flex: 0 0 auto;
+  white-space: nowrap;
   color: var(--fg-muted);
   border-color: transparent;
   background: transparent;

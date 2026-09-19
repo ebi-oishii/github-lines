@@ -133,15 +133,20 @@
      isolated world, so the page's own pushState calls are invisible to us. */
   function onNavigate(cb) {
     let last = location.href;
-    const check = () => {
-      if (location.href === last) return;
+    const fire = () => {
       last = location.href;
       cb();
+    };
+    // The backstop must not re-fire for a navigation the events already
+    // reported, or every soft navigation loads twice — and in manual mode the
+    // second load throws away whatever the user pressed after the first.
+    const check = () => {
+      if (location.href !== last) fire();
     };
     const checkSoon = GHL.util.debounce(check, 60);
 
     for (const evt of ['turbo:load', 'turbo:render', 'pjax:end', 'soft-nav:end']) {
-      document.addEventListener(evt, () => cb());
+      document.addEventListener(evt, fire);
     }
     window.addEventListener('popstate', checkSoon);
 
@@ -151,14 +156,5 @@
     });
   }
 
-  /* Re-run `cb` when the page's own React re-render wipes our injected nodes.
-     Debounced hard: GitHub mutates the DOM constantly. */
-  function onDomSettle(cb, ms = 250) {
-    const debounced = GHL.util.debounce(cb, ms);
-    const mo = new MutationObserver(debounced);
-    mo.observe(document.body, { childList: true, subtree: true });
-    return () => mo.disconnect();
-  }
-
-  GHL.util = { el, fmt, fmtCompact, fmtBytes, debounce, throttle, pool, send, onNavigate, onDomSettle };
+  GHL.util = { el, fmt, fmtCompact, fmtBytes, debounce, throttle, pool, send, onNavigate };
 })(globalThis.GHL);

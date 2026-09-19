@@ -1,4 +1,6 @@
-/* File classification and .gitattributes exclusions. */
+/* File classification: which paths to skip, and how many bytes a line of a
+   given language costs. Used to turn the byte sizes from the tree API into a
+   first-pass line estimate before exact counts arrive. */
 (function (GHL) {
   'use strict';
 
@@ -50,6 +52,25 @@
     '**/generated/**',
   ];
 
+  /* Median bytes per line, by extension. Only used until the real count for a
+     file arrives; `learnRatio` below refines these per repository. */
+  const BYTES_PER_LINE = {
+    js: 32, jsx: 32, mjs: 32, cjs: 32,
+    ts: 33, tsx: 33,
+    py: 30, rb: 28, go: 28, rs: 32, java: 35, kt: 33, swift: 33,
+    c: 28, h: 26, cpp: 30, hpp: 28, cc: 30, cs: 33, m: 30, mm: 30,
+    php: 32, scala: 34, clj: 28, ex: 28, exs: 28, erl: 30, hs: 30,
+    dart: 32, lua: 26, pl: 30, sh: 26, bash: 26, zsh: 26, fish: 26,
+    sql: 30, graphql: 24, proto: 28,
+    html: 42, htm: 42, vue: 34, svelte: 34, astro: 34,
+    css: 26, scss: 26, sass: 24, less: 26, styl: 24,
+    json: 26, yaml: 28, yml: 28, toml: 28, ini: 24, xml: 40, csv: 40,
+    md: 46, mdx: 46, rst: 44, txt: 44, adoc: 44,
+    tf: 30, tfvars: 28, dockerfile: 30, makefile: 28, gradle: 30,
+  };
+
+  const DEFAULT_BYTES_PER_LINE = 32;
+
   function extOf(path) {
     const base = path.slice(path.lastIndexOf('/') + 1);
     const dot = base.lastIndexOf('.');
@@ -96,6 +117,33 @@
     return function isExcluded(path) {
       for (const re of compiled) if (re.test(path)) return true;
       return false;
+    };
+  }
+
+  /* Per-repo learned ratios, so estimates for not-yet-fetched files converge on
+     the repo's real style rather than the generic table above. */
+  function createRatioLearner() {
+    const samples = new Map(); // ext -> { bytes, lines }
+
+    return {
+      observe(path, bytes, lines) {
+        if (!lines || lines < 5 || !bytes) return;
+        const ext = extOf(path);
+        const cur = samples.get(ext) || { bytes: 0, lines: 0 };
+        cur.bytes += bytes;
+        cur.lines += lines;
+        samples.set(ext, cur);
+      },
+      bytesPerLine(path) {
+        const ext = extOf(path);
+        const s = samples.get(ext);
+        // Require a little evidence before trusting the learned value.
+        if (s && s.lines >= 40) return s.bytes / s.lines;
+        return BYTES_PER_LINE[ext] || DEFAULT_BYTES_PER_LINE;
+      },
+      estimate(path, bytes) {
+        return Math.max(1, Math.round(bytes / this.bytesPerLine(path)));
+      },
     };
   }
 
@@ -180,9 +228,12 @@
     gitattrToRegExp,
     parseGitattributes,
     makeLinguistMatcher,
+    BYTES_PER_LINE,
+    DEFAULT_BYTES_PER_LINE,
     extOf,
     isBinary,
     globToRegExp,
     compileExcludes,
+    createRatioLearner,
   };
 })(globalThis.GHL);

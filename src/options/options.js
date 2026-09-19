@@ -1,6 +1,7 @@
 'use strict';
 
 const GHL = globalThis.GHL;
+const t = GHL.i18n.t;
 
 const $ = (id) => document.getElementById(id);
 
@@ -11,6 +12,10 @@ const CHECKBOXES = [
   'respectGitattributes',
 ];
 const NUMBERS = ['warnLines', 'dangerLines', 'maxExactFetch', 'concurrency'];
+// A threshold of zero would put every file past it, so zero is not an answer —
+// unlike a fetch limit of zero, which is a way of saying "fetch nothing".
+const LEAST = { warnLines: 1, dangerLines: 1, concurrency: 1, maxExactFetch: 0 };
+const SELECTS = ['locale'];
 
 function setStatus(node, text, tone) {
   node.textContent = text;
@@ -25,7 +30,7 @@ function flash(text, tone) {
 /* ------------------------------------------------------------------ tokens */
 
 function addTokenRow(entry) {
-  const row = $('token-row-template').content.firstElementChild.cloneNode(true);
+  const row = GHL.i18n.applyDom($('token-row-template').content.firstElementChild.cloneNode(true));
   row.dataset.id = entry.id || GHL.settings.newId();
   row.querySelector('.token-label').value = entry.label || '';
   row.querySelector('.token-value').value = entry.token || '';
@@ -35,6 +40,7 @@ function addTokenRow(entry) {
     row.remove();
     ensureOneRow();
     ensureDefaultChecked();
+    saveNow();
   });
   row.querySelector('.token-verify').addEventListener('click', () => verifyRow(row));
 
@@ -121,11 +127,11 @@ async function verifyRow(row) {
   const token = row.querySelector('.token-value').value.trim();
 
   if (!token) {
-    setStatus(status, 'トークンが未入力です', 'error');
+    setStatus(status, t('tokenEmpty'), 'error');
     return;
   }
 
-  setStatus(status, '確認中…', 'idle');
+  setStatus(status, t('verifying'), 'idle');
 
   const headers = {
     Accept: 'application/vnd.github+json',
@@ -136,11 +142,11 @@ async function verifyRow(row) {
   try {
     const user = await ghGet('/user', headers);
     if (user.status === 401) {
-      setStatus(status, 'トークンが無効です', 'error');
+      setStatus(status, t('tokenInvalid'), 'error');
       return;
     }
     if (!user.ok) {
-      setStatus(status, `確認に失敗しました (HTTP ${user.status})`, 'error');
+      setStatus(status, t('verifyHttp', user.status), 'error');
       return;
     }
 
@@ -174,11 +180,13 @@ async function verifyRow(row) {
     if (!row.querySelector('.token-label').value.trim()) {
       row.querySelector('.token-label').value = [...discovered][0] || login || '';
     }
+    saveNow(); // filled in by us, so nothing fired an input event
 
     const found = [...discovered];
+    const shown = found.slice(0, 4).join(', ');
     const summary = found.length
-      ? `対象: ${found.slice(0, 4).join(', ')}${found.length > 4 ? ` ほか${found.length - 4}件` : ''}`
-      : '対象のオーナーを特定できませんでした — 手動で入力してください';
+      ? t('ownersFound', found.length > 4 ? t('ownersMore', shown, found.length - 4) : shown)
+      : t('ownersNone');
 
     const writable = writeGranting(user.scopes);
     let kindNote = '';
@@ -186,19 +194,15 @@ async function verifyRow(row) {
     if (writable === null) {
       kindNote = ' / fine-grained';
     } else if (writable.length) {
-      kindNote = ` / ⚠ 書き込み権限を含みます（${writable.join(', ')}）`;
+      kindNote = t('tokenWritable', writable.join(', '));
       if (tone === 'ok') tone = 'warn';
     } else {
-      kindNote = ' / classic（読み取りのみ）';
+      kindNote = t('tokenClassic');
     }
 
-    setStatus(
-      status,
-      `${login} として有効 — ${summary}（残り ${user.remaining}/${user.limit} 回/時）${kindNote}`,
-      tone
-    );
+    setStatus(status, t('verifyOk', login, summary, user.remaining, user.limit, kindNote), tone);
   } catch (e) {
-    setStatus(status, `確認に失敗しました: ${e.message}`, 'error');
+    setStatus(status, t('verifyFailed', e.message), 'error');
   }
 }
 
@@ -217,6 +221,7 @@ async function fill() {
 
   for (const id of CHECKBOXES) $(id).checked = !!s[id];
   for (const id of NUMBERS) $(id).value = s[id];
+  for (const id of SELECTS) $(id).value = s[id] || '';
 
   const mode = document.querySelector(`input[name="exactLinesMode"][value="${s.exactLinesMode}"]`)
     || document.querySelector('input[name="exactLinesMode"][value="auto"]');
@@ -229,70 +234,128 @@ function collect() {
   const patch = collectTokens();
 
   for (const id of CHECKBOXES) patch[id] = $(id).checked;
+  for (const id of SELECTS) patch[id] = $(id).value;
 
   const mode = document.querySelector('input[name="exactLinesMode"]:checked');
   if (mode) patch.exactLinesMode = mode.value;
   for (const id of NUMBERS) {
-    const n = Number($(id).value);
-    if (Number.isFinite(n) && n >= 0) patch[id] = n;
+    // An emptied field is someone mid-edit, not a zero — and `Number('')` is 0,
+    // which would autosave a threshold of nothing and colour every file. A
+    // typed-out zero says the same thing, so it is held to the same floor.
+    const raw = $(id).value.trim();
+    /* All four are counts, so a typed fraction is rounded: one reaching the
+       fetch pool is an array of fractional length. Below the floor is not a
+       setting — a threshold of zero puts every file past it — and is left
+       unsaved, so what was in effect stays in effect. */
+    const n = Math.round(Number(raw));
+    if (raw && Number.isFinite(n) && n >= LEAST[id]) patch[id] = n;
   }
-  patch.concurrency = Math.min(16, Math.max(1, patch.concurrency || 8));
+  if (patch.concurrency !== undefined) {
+    patch.concurrency = Math.min(16, patch.concurrency);
+  }
+  if (patch.dangerLines < patch.warnLines) {
+    // Swapping is friendlier than rejecting; the intent is obvious.
+    [patch.warnLines, patch.dangerLines] = [patch.dangerLines, patch.warnLines];
+  }
   patch.excludePatterns = $('excludePatterns').value
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
 
-  if (patch.dangerLines < patch.warnLines) {
-    // Swapping is friendlier than rejecting; the intent is obvious.
-    [patch.warnLines, patch.dangerLines] = [patch.dangerLines, patch.warnLines];
-  }
   return patch;
 }
 
-async function save() {
-  const patch = collect();
-  await GHL.settings.set(patch);
-  await fill();
-  const n = patch.tokens.length;
-  flash(n ? `保存しました（トークン ${n} 件）` : '保存しました（トークンなし）', 'ok');
+/* Saving is automatic: there is no button to forget. Typing is debounced into
+   one write; anything discrete — a checkbox, a radio, leaving a field — writes
+   at once, so closing the page never loses the last edit.
+
+   What is deliberately missing is a re-render. Reading the form back would
+   move the cursor out from under whoever is typing, and the form is already
+   what was just saved. */
+const WRITE_DELAY = 400;
+let pendingWrite = null;
+
+function scheduleSave() {
+  clearTimeout(pendingWrite);
+  pendingWrite = setTimeout(saveNow, WRITE_DELAY);
+}
+
+async function saveNow() {
+  clearTimeout(pendingWrite);
+  pendingWrite = null;
+  await GHL.settings.set(collect());
+  flash(t('saved'), 'ok');
 }
 
 async function refreshCacheStats() {
   const res = await chrome.runtime.sendMessage({ type: 'CACHE_STATS' });
   if (res && res.ok) {
     $('cache-stats').textContent =
-      `行数 ${res.lines.toLocaleString()} 件 / ツリー ${res.trees} 件 / テキスト ${res.texts} 件`;
+      t('cacheStats', res.lines.toLocaleString(), res.trees, res.texts);
   } else {
-    $('cache-stats').textContent = 'キャッシュ情報を取得できませんでした';
+    $('cache-stats').textContent = t('cacheStatsFailed');
   }
 }
 
 async function clearCache() {
   await chrome.runtime.sendMessage({ type: 'CLEAR_CACHE' });
   await refreshCacheStats();
-  flash('キャッシュを削除しました', 'ok');
+  flash(t('cacheCleared'), 'ok');
 }
 
 async function reset() {
+  clearTimeout(pendingWrite);
+  pendingWrite = null;
   await GHL.settings.reset();
   await fill();
-  flash('初期設定に戻しました', 'ok');
+  flash(t('resetDone'), 'ok');
 }
 
 $('add-token').addEventListener('click', () => {
   addTokenRow({});
   ensureDefaultChecked();
 });
-$('save').addEventListener('click', save);
 $('reset').addEventListener('click', reset);
 $('clear-cache').addEventListener('click', clearCache);
 
+/* Every other setting takes effect without redrawing this page; a new language
+   changes every label on it, so the page comes back in it. */
+$('locale').addEventListener('change', async () => {
+  await saveNow();
+  location.reload();
+});
+
+document.addEventListener('input', (e) => {
+  /* Numbers are saved when the field is done with, not as they are typed: "1"
+     on the way to "1200" is a real setting for 400 ms — it reaches every open
+     tab, and can be taken for a threshold on the wrong side of the other. */
+  if (e.target && NUMBERS.includes(e.target.id)) return;
+  scheduleSave();
+});
+document.addEventListener('change', saveNow);
+
+// Ctrl/Cmd-S is muscle memory; honour it by flushing rather than by ignoring it.
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') {
     e.preventDefault();
-    save();
+    saveNow();
   }
 });
 
-fill();
-refreshCacheStats();
+// A page closing or backgrounding takes its timers with it.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') return;
+  /* Leaving the page is being done with the field. Blurring it fires the same
+     `change` that tabbing away would, which is what saves a number. */
+  const field = document.activeElement;
+  if (field && NUMBERS.includes(field.id)) field.blur();
+  if (pendingWrite) saveNow();
+});
+
+(async () => {
+  await GHL.i18n.ready();
+  GHL.i18n.applyDom();
+  document.documentElement.lang = t('lang');
+  await fill();
+  refreshCacheStats();
+})();

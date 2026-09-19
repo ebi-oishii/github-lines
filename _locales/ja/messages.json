@@ -1,0 +1,441 @@
+{
+  "appName": {
+    "message": "GitHub Lines"
+  },
+  "appDesc": {
+    "message": "GitHub のファイル一覧で行数を可視化し、肥大化したファイルを一目で見つけます。"
+  },
+  "actionTitle": {
+    "message": "GitHub Lines の設定"
+  },
+  "unitLinesOne": {
+    "message": "$1 行",
+    "description": "$1 is a formatted number"
+  },
+  "unitLines": {
+    "message": "$1 行",
+    "description": "$1 is a formatted number"
+  },
+  "unitFilesOne": {
+    "message": "$1 ファイル",
+    "description": "$1 is a formatted number"
+  },
+  "unitFiles": {
+    "message": "$1 ファイル",
+    "description": "$1 is a formatted number"
+  },
+  "unitLinesOrMore": {
+    "message": "$1 以上",
+    "description": "$1 is a line count with its unit"
+  },
+  "metricGroup": {
+    "message": "表示する量"
+  },
+  "metricLines": {
+    "message": "行数"
+  },
+  "metricBytes": {
+    "message": "サイズ"
+  },
+  "metricLinesTitle": {
+    "message": "バーと割合を行数で表示"
+  },
+  "metricBytesTitle": {
+    "message": "バーと割合をファイルサイズで表示"
+  },
+  "treemap": {
+    "message": "ツリーマップ"
+  },
+  "pickAll": {
+    "message": "すべて"
+  },
+  "pickAllTitle": {
+    "message": "GitHub Lines: すべての行を取得対象にする／外す"
+  },
+  "pickRow": {
+    "message": "この行を表示と取得に含める"
+  },
+  "pickRowLeft": {
+    "message": "この行を表示と取得に含める（未取得 $1 ファイル）",
+    "description": "$1 is a file count with its unit"
+  },
+  "fetchSizes": {
+    "message": "サイズを取得"
+  },
+  "fetchSizesTitle": {
+    "message": "ファイル一覧を 1 リクエストで取得し、各ファイルのサイズを表示します"
+  },
+  "fetchLines": {
+    "message": "行数を取得"
+  },
+  "fetchLinesCount": {
+    "message": "行数を取得（$1）",
+    "description": "$1 is how many files pressing it will fetch"
+  },
+  "fetchLinesTitle": {
+    "message": "ファイル一覧を取得し、続けてチェックした行の各ファイルの行数を GitHub から取得します\n（ファイル数と同じだけ API リクエストを使います）"
+  },
+  "fetchLinesCountTitle": {
+    "message": "$1 ファイルの行数を GitHub から取得します\n（同じ数だけ API リクエストを使います。取得済みのファイルは含みません）",
+    "description": "$1 is how many files pressing it will fetch"
+  },
+  "fetchNothingTicked": {
+    "message": "取得する行にチェックを入れてください"
+  },
+  "fetchBusy": {
+    "message": "取得中…"
+  },
+  "fetchDone": {
+    "message": "取得済み"
+  },
+  "fetchDoneLinesTitle": {
+    "message": "チェックした行の行数は取得済みです"
+  },
+  "fetchDoneSizesTitle": {
+    "message": "サイズは取得済みです"
+  },
+  "summaryBiggest": {
+    "message": "最大: $1 $2 ($3%)",
+    "description": "$1 is a name, $2 a measurement, $3 a percentage"
+  },
+  "restItems": {
+    "message": "他 $1 件",
+    "description": "$1 is how many further entries are folded into one segment"
+  },
+  "statusLoading": {
+    "message": "読み込み中…"
+  },
+  "statusIdle": {
+    "message": "未取得"
+  },
+  "statusRefining": {
+    "message": "行数を取得中 $1/$2",
+    "description": "$1 of $2 files counted so far"
+  },
+  "statusEstimating": {
+    "message": "バイト数から推定中…"
+  },
+  "statusEstimated": {
+    "message": "バイト数からの推定値"
+  },
+  "statusTruncated": {
+    "message": "巨大リポジトリのため一部推定"
+  },
+  "statusTruncatedSizes": {
+    "message": "巨大リポジトリのため一部のみ"
+  },
+  "errGeneric": {
+    "message": "エラー"
+  },
+  "errFailed": {
+    "message": "取得に失敗しました ($1)",
+    "description": "$1 is an error code"
+  },
+  "errRateLimit": {
+    "message": "API レート制限に到達しました$1",
+    "description": "$1 is the parenthesised time left, or empty"
+  },
+  "errRateLimitAnon": {
+    "message": "API レート制限（未認証 60回/時）— 設定でトークンを登録してください"
+  },
+  "errSecondary": {
+    "message": "GitHub の二次レート制限により一時停止中$1",
+    "description": "$1 is the parenthesised time left, or empty"
+  },
+  "errThrottled": {
+    "message": "短時間に取得しすぎたため待機中 — しばらくすると再開します"
+  },
+  "errBadToken": {
+    "message": "$1 が無効です — 設定を確認してください",
+    "description": "$1 is a token's label"
+  },
+  "errNotFound": {
+    "message": "リポジトリにアクセスできません（$1 の権限を確認）",
+    "description": "$1 is a token's label"
+  },
+  "errPrivate": {
+    "message": "private リポジトリ — 設定でトークンを登録してください"
+  },
+  "errTimeout": {
+    "message": "バックグラウンドが応答しません — ページを更新してください"
+  },
+  "errReloaded": {
+    "message": "拡張が再読み込みされました — ページを更新してください"
+  },
+  "untilMinutes": {
+    "message": "（あと約 $1 分）",
+    "description": "$1 is a number of minutes"
+  },
+  "tokenFallback": {
+    "message": "トークン"
+  },
+  "tokenDefaultLabel": {
+    "message": "既定"
+  },
+  "tipUnknown": {
+    "message": "GitHub Lines: この項目の情報を取得できませんでした（サブモジュール等）"
+  },
+  "tipBinary": {
+    "message": "$1\nバイナリのため行数を数えていません ($2)",
+    "description": "$1 is a path, $2 a byte size"
+  },
+  "tipGenerated": {
+    "message": "$1\n生成物として除外 ($2)",
+    "description": "$1 is a path, $2 a byte size"
+  },
+  "tipShare": {
+    "message": "$1 — このディレクトリの $2%",
+    "description": "$1 is a measurement, $2 a percentage"
+  },
+  "tipMaxFile": {
+    "message": "最大のファイル: $1",
+    "description": "$1 is a line count with its unit"
+  },
+  "tipEstimate": {
+    "message": "（推定値。行数を取得中または取得対象外）"
+  },
+  "tipOverDanger": {
+    "message": "⚠ 閾値 $1 を超えています",
+    "description": "$1 is a line count with its unit"
+  },
+  "tipNearWarn": {
+    "message": "閾値 $1 に近づいています",
+    "description": "$1 is a line count with its unit"
+  },
+  "tmLabel": {
+    "message": "GitHub Lines ツリーマップ"
+  },
+  "tmEmpty": {
+    "message": "カウント対象のファイルがありません"
+  },
+  "tmRefining": {
+    "message": "行数を取得中 $1/$2 — 残りはバイト数からの推定（~ 付き）",
+    "description": "$1 of $2 files counted so far"
+  },
+  "tmArea": {
+    "message": "面積 = $1",
+    "description": "$1 is the name of a metric — lines or size"
+  },
+  "tmOpen": {
+    "message": "開く"
+  },
+  "tmOpenTitle": {
+    "message": "このディレクトリを GitHub で開く"
+  },
+  "tmClose": {
+    "message": "閉じる"
+  },
+  "rampFileStart": {
+    "message": "ファイル 0 行"
+  },
+  "rampDirStart": {
+    "message": "フォルダ 最大ファイル"
+  },
+  "rampTick": {
+    "message": "注意 $1",
+    "description": "$1 is a line count with its unit"
+  },
+  "title": {
+    "message": "GitHub Lines の設定"
+  },
+  "lede": {
+    "message": "GitHub のファイル一覧で行数を可視化し、肥大化したファイルを一目で見つけます。"
+  },
+  "tokens": {
+    "message": "アクセストークン"
+  },
+  "tokensHint1": {
+    "message": "未設定でも public リポジトリでは動きますが、<strong>60 回/時</strong> の制限がかかります。トークンを登録すると <strong>5,000 回/時</strong> になり、private リポジトリも読めます。複数アカウントを使い分けるなら<strong>オーナーごと</strong>に登録してください（別アカウントの private は読めないため）。"
+  },
+  "addToken": {
+    "message": "＋ トークンを追加"
+  },
+  "tokenLink": {
+    "message": "Fine-grained token を作成"
+  },
+  "tokensHint3": {
+    "message": "— 必要な権限は <code>Contents: Read-only</code> のみ。トークンはこの端末の <code>chrome.storage.local</code> にのみ保存され、<code>api.github.com</code> 以外には送信しません。"
+  },
+  "tokenDefaultTitle": {
+    "message": "どのオーナーにも一致しないときに使うトークン"
+  },
+  "tokenDefault": {
+    "message": "既定"
+  },
+  "tokenLabelPlaceholder": {
+    "message": "ラベル（例: 個人 / 仕事）"
+  },
+  "tokenRemove": {
+    "message": "削除"
+  },
+  "tokenRemoveLabel": {
+    "message": "このトークンを削除"
+  },
+  "tokenValue": {
+    "message": "Personal Access Token"
+  },
+  "tokenValuePlaceholder": {
+    "message": "github_pat_… または ghp_…"
+  },
+  "tokenOwners": {
+    "message": "このトークンを使うオーナー（カンマ区切り）"
+  },
+  "tokenVerify": {
+    "message": "検証してオーナーを自動取得"
+  },
+  "thresholdsHint": {
+    "message": "1 ファイルの行数がこの値を超えたら警告色にします。"
+  },
+  "warn": {
+    "message": "注意 (黄)"
+  },
+  "danger": {
+    "message": "警告 (赤)"
+  },
+  "display": {
+    "message": "表示"
+  },
+  "showBars": {
+    "message": "ファイル一覧に割合バーを表示する"
+  },
+  "showTreemap": {
+    "message": "ツリーマップのボタンを表示する"
+  },
+  "counting": {
+    "message": "行数のカウント"
+  },
+  "modeAuto": {
+    "message": "<strong>自動</strong> — ページを開いたら取得する"
+  },
+  "modeManual": {
+    "message": "<strong>手動</strong> — ページを開いても何も取得しない。一覧の上の「行数 | サイズ」で選んだ方を「取得」ボタンで取りに行きます。各行のチェックで対象を絞れます"
+  },
+  "modeOff": {
+    "message": "<strong>取得しない</strong> — 推定値のみ。1 画面あたり API 1 リクエストで済みます"
+  },
+  "modeHint": {
+    "message": "どのモードでも、過去に取得してキャッシュ済みのファイルは API を使わずに実測値で表示されます。"
+  },
+  "maxFetch": {
+    "message": "1 画面あたりの取得上限"
+  },
+  "concurrency": {
+    "message": "並列数"
+  },
+  "cacheHint": {
+    "message": "取得した行数は blob SHA をキーにキャッシュされます。git の blob SHA は内容のハッシュなので、ブランチやコミットが変わっても内容が同じファイルは再取得されません。"
+  },
+  "respectGitattributes": {
+    "message": "<code>.gitattributes</code> の <code>linguist-generated</code> / <code>linguist-vendored</code> を尊重する"
+  },
+  "excludeGenerated": {
+    "message": "下記のパターンに一致するファイルを除外する"
+  },
+  "patterns": {
+    "message": "除外パターン（1 行に 1 つ、glob）"
+  },
+  "patternsHint": {
+    "message": "バイナリ（画像・フォント・アーカイブ等）は拡張子で判定して常に除外されます。"
+  },
+  "clearCache": {
+    "message": "キャッシュを削除"
+  },
+  "reset": {
+    "message": "初期設定に戻す"
+  },
+  "tokenEmpty": {
+    "message": "トークンが未入力です"
+  },
+  "verifying": {
+    "message": "確認中…"
+  },
+  "tokenInvalid": {
+    "message": "トークンが無効です"
+  },
+  "verifyHttp": {
+    "message": "確認に失敗しました (HTTP $1)",
+    "description": "$1 is an HTTP status code"
+  },
+  "verifyFailed": {
+    "message": "確認に失敗しました: $1",
+    "description": "$1 is an error message"
+  },
+  "ownersFound": {
+    "message": "対象: $1",
+    "description": "$1 is a list of owner names"
+  },
+  "ownersMore": {
+    "message": "$1 ほか$2件",
+    "description": "$1 is a list of names, $2 how many are not shown"
+  },
+  "ownersNone": {
+    "message": "対象のオーナーを特定できませんでした — 手動で入力してください"
+  },
+  "tokenWritable": {
+    "message": " / ⚠ 書き込み権限を含みます（$1）",
+    "description": "$1 is a list of permissions"
+  },
+  "tokenClassic": {
+    "message": " / classic（読み取りのみ）"
+  },
+  "verifyOk": {
+    "message": "$1 として有効 — $2（残り $3/$4 回/時）$5",
+    "description": "$1 login, $2 what it reaches, $3/$4 requests left, $5 a note about its kind"
+  },
+  "saved": {
+    "message": "保存しました"
+  },
+  "cacheStats": {
+    "message": "行数 $1 件 / ツリー $2 件 / テキスト $3 件",
+    "description": "$1, $2, $3 are entry counts"
+  },
+  "cacheStatsFailed": {
+    "message": "キャッシュ情報を取得できませんでした"
+  },
+  "cacheCleared": {
+    "message": "キャッシュを削除しました"
+  },
+  "resetDone": {
+    "message": "初期設定に戻しました"
+  },
+  "lang": {
+    "message": "ja",
+    "description": "The BCP 47 tag for this catalogue, for the options page's lang attribute"
+  },
+  "advanced": {
+    "message": "詳細設定"
+  },
+  "autosave": {
+    "message": "変更はその場で保存されます。"
+  },
+  "language": {
+    "message": "言語"
+  },
+  "languageAuto": {
+    "message": "ブラウザの設定に従う"
+  },
+  "setupGuide": {
+    "message": "セットアップと使い方"
+  },
+  "rampFileStartSize": {
+    "message": "ファイル 0 B"
+  },
+  "apiLeft": {
+    "message": "API $1/$2"
+  },
+  "apiLeftTitleAnon": {
+    "message": "この IP の残り $1/$2 回（1 時間あたり）。\n設定でトークンを登録すると、アカウント単位で 5,000 回/時になります。$3"
+  },
+  "apiLeftTitle": {
+    "message": "$4 のアカウントの残り $1/$2 回（1 時間あたり）。\n制限はアカウント単位なので、同じアカウントの他のツールと共有します。$3"
+  },
+  "apiResetsIn": {
+    "message": "\nあと約 $1 分で回復します。"
+  },
+  "errAttributes": {
+    "message": "除外ルールの一部を読めませんでした — 生成物が数えられている可能性があります"
+  },
+  "statusNoDirectory": {
+    "message": "このディレクトリの一覧を取得できていません"
+  }
+}
